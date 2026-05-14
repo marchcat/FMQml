@@ -4,7 +4,7 @@
 
 ThumbnailProvider::ThumbnailProvider()
     : QQuickImageProvider(QQuickImageProvider::Image)
-    , m_cache(200) // Cache 200 thumbnails
+    , m_cache(500) // Cache 500 thumbnails
 {
 }
 

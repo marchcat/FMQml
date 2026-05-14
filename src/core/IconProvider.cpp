@@ -11,7 +11,7 @@
 
 IconProvider::IconProvider()
     : QQuickImageProvider(QQuickImageProvider::Image)
-    , m_cache(500) // Cache 500 icons
+    , m_cache(2000) // Cache 2000 icons
 {
 }
 
@@ -28,7 +28,13 @@ QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &r
         *size = targetSize;
     }
 
-    QString cacheKey = path + QString::number(targetSize.width()) + "x" + QString::number(targetSize.height());
+    QFileInfo fi(path);
+    QString suffix = fi.suffix().toLower();
+    QString cacheKey = suffix.isEmpty()
+        ? (fi.isDir() ? QStringLiteral("_dir_") : path)
+        : QStringLiteral(".").append(suffix);
+    cacheKey += QString::number(targetSize.width()) + QStringLiteral("x") + QString::number(targetSize.height());
+
     if (m_cache.contains(cacheKey)) {
         return *m_cache.object(cacheKey);
     }

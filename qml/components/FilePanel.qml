@@ -213,6 +213,7 @@ Pane {
                 model: root.controller.directoryModel
                 currentIndex: -1
                 focus: root.active
+                cacheBuffer: height * 4
                 
                 highlight: null
                 highlightFollowsCurrentItem: false
@@ -288,6 +289,7 @@ Pane {
                 model: root.controller.directoryModel
                 currentIndex: -1
                 focus: root.active
+                cacheBuffer: Math.max(0, height * 4)
                 
                 highlight: null
                 highlightFollowsCurrentItem: false
@@ -331,6 +333,7 @@ Pane {
                     required property string suffix
                     required property bool isDirectory
                     required property bool isSelected
+                    required property bool isImage
 
                     Rectangle {
                         anchors.fill: parent
@@ -361,13 +364,7 @@ Pane {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: 48
                     Layout.preferredHeight: 48
-                    source: {
-                        const images = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico"]
-                        if (!isDirectory && images.includes(suffix.toLowerCase())) {
-                            return "image://thumbnail/" + path
-                        }
-                        return "image://icon/" + path
-                    }
+                    source: isImage ? "image://thumbnail/" + path : "image://icon/" + path
                     sourceSize: Qt.size(48, 48)
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true

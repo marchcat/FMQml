@@ -2,7 +2,9 @@
 #include "../models/DirectoryModel.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
+#include <QLocale>
 #include <QtConcurrent>
 
 DirectoryScanner::DirectoryScanner(QObject *parent)
@@ -51,17 +53,18 @@ void DirectoryScanner::scan(const QString &path)
             filters |= QDir::Hidden;
         }
 
-        const QFileInfoList infos = dir.entryInfoList(
-            filters,
-            QDir::DirsFirst | QDir::Name | QDir::IgnoreCase);
-
         QList<FileEntry> batch;
-        batch.reserve(infos.size());
+        batch.reserve(100);
+        QLocale loc;
+        QDirIterator it(dir.absolutePath(), filters);
 
-        for (const QFileInfo &fileInfo : infos) {
+        while (it.hasNext()) {
+            it.next();
             if (myGen != m_scanGeneration.load()) {
                 return;
             }
+
+            QFileInfo fileInfo = it.fileInfo();
 
             // Explicitly hide dot-files if showHidden is false
             if (!m_showHidden && fileInfo.fileName().startsWith('.')) {
@@ -76,6 +79,10 @@ void DirectoryScanner::scan(const QString &path)
             entry.modified = fileInfo.lastModified();
             entry.isDirectory = fileInfo.isDir();
             entry.isHidden = fileInfo.isHidden();
+            entry.sizeText = entry.isDirectory ? QStringLiteral("Folder") : loc.formattedDataSize(entry.size, 1, QLocale::DataSizeTraditionalFormat);
+            entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
+            static const QStringList imageSuffixes = {QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"), QStringLiteral("gif"), QStringLiteral("bmp"), QStringLiteral("webp"), QStringLiteral("ico")};
+            entry.isImage = !entry.isDirectory && imageSuffixes.contains(entry.suffix.toLower());
             batch.append(entry);
 
             // Send in batches of 100 or when finished
@@ -84,9 +91,6 @@ void DirectoryScanner::scan(const QString &path)
                 batch.clear();
             }
         }
-
-        if (myGen != m_scanGeneration.load())
-            return;
 
         if (!batch.isEmpty()) {
             emit batchReady(batch);

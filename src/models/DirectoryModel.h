@@ -12,10 +12,13 @@ struct FileEntry {
     QString path;
     QString suffix;
     qint64 size = 0;
+    QString sizeText;
+    QString modifiedText;
     QDateTime modified;
     bool isDirectory = false;
     bool isHidden = false;
     bool isSelected = false;
+    bool isImage = false;
 };
 
 class DirectoryModel final : public QAbstractListModel {
@@ -39,7 +42,8 @@ public:
         IsHiddenRole,
         IsSelectedRole,
         IconNameRole,
-        SuffixRole
+        SuffixRole,
+        IsImageRole
     };
     Q_ENUM(Role)
 
@@ -94,6 +98,7 @@ private:
     QString m_currentPath;
     bool m_loading = false;
     bool m_showHidden = false;
+    bool m_freshLoad = false;
     QString m_error;
     QString m_filterText;
     QList<FileEntry> m_entries;
