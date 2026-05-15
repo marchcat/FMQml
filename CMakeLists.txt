@@ -53,6 +53,7 @@ qt_add_qml_module(fm
         qml/components/FileDelegate.qml
         qml/components/FilePanel.qml
         qml/components/FileWorkspace.qml
+        qml/components/HelpDialog.qml
         qml/components/MainToolbar.qml
         qml/components/OperationsDrawer.qml
         qml/components/PathBar.qml

@@ -17,6 +17,11 @@ ApplicationWindow {
     color: Theme.bg
 
     Shortcut {
+        sequence: "F1"
+        onActivated: helpDialog.open()
+    }
+
+    Shortcut {
         sequence: "F3"
         onActivated: workspaceController.toggleSplit()
     }
@@ -215,6 +220,10 @@ ApplicationWindow {
 
     ConflictDialog {
         id: conflictDialog
+    }
+
+    HelpDialog {
+        id: helpDialog
     }
 
     QuickLook {

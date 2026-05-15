@@ -426,6 +426,21 @@ ToolBar {
             }
         }
 
+        ToolButton {
+            onClicked: helpDialog.open()
+            background: Rectangle {
+                implicitWidth: 32
+                implicitHeight: 32
+                color: parent.pressed ? Theme.surfaceActive : (parent.hovered ? Theme.surfaceHover : "transparent")
+                border.color: Theme.border
+                radius: 6
+            }
+            contentItem: TbIcon {
+                source: "../assets/icons/info.svg"
+                anchors.centerIn: parent
+            }
+        }
+
         TextField {
             id: searchField
             Layout.preferredWidth: 150
