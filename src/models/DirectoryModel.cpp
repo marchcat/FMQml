@@ -10,14 +10,6 @@
 #include <algorithm>
 
 namespace {
-bool compareEntries(const FileEntry &a, const FileEntry &b)
-{
-    if (a.isDirectory != b.isDirectory) {
-        return a.isDirectory; // Directories come first
-    }
-    return a.name.compare(b.name, Qt::CaseInsensitive) < 0;
-}
-
 FileEntry entryFromInfo(const QFileInfo &fileInfo)
 {
     FileEntry entry;
@@ -368,7 +360,7 @@ void DirectoryModel::processPendingInserts()
                 // Let's use std::lower_bound to find insertion point.
                 auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
                     [&](int existingIdx, int) {
-                        return compareEntries(m_entries.at(existingIdx), entry);
+                        return this->compareEntries(m_entries.at(existingIdx), entry);
                     });
                 const int row = std::distance(m_filteredIndices.begin(), it);
                 beginInsertRows(QModelIndex(), row, row);
@@ -553,6 +545,10 @@ void DirectoryModel::applyFilter()
             m_filteredIndices.append(i);
         }
     }
+    std::stable_sort(m_filteredIndices.begin(), m_filteredIndices.end(),
+        [this](int aIdx, int bIdx) {
+            return compareEntries(m_entries.at(aIdx), m_entries.at(bIdx));
+        });
     endResetModel();
     emit countChanged();
     emit selectionChanged();
@@ -602,7 +598,7 @@ bool DirectoryModel::insertPath(const QString &path)
     if (visible && matchesFilter) {
         auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
             [&](int existingIdx, int) {
-                return compareEntries(m_entries.at(existingIdx), entry);
+                return this->compareEntries(m_entries.at(existingIdx), entry);
             });
         const int row = std::distance(m_filteredIndices.begin(), it);
         beginInsertRows(QModelIndex(), row, row);
@@ -888,7 +884,9 @@ void DirectoryModel::processAllPendingInsertsFast()
 
         // Sort the new visible entries, then compute their filtered indices
         if (!newEntries.isEmpty()) {
-            std::sort(newEntries.begin(), newEntries.end(), compareEntries);
+            std::sort(newEntries.begin(), newEntries.end(), [this](const FileEntry &a, const FileEntry &b) {
+                return this->compareEntries(a, b);
+            });
 
             // Build the list of absolute indices for visible new entries in sorted order
             QList<int> sortedNewAbsoluteIndices;
@@ -963,7 +961,7 @@ void DirectoryModel::processAllPendingInsertsFast()
                 if (visible && matchesFilter) {
                     auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
                         [&](int existingIdx, int) {
-                            return compareEntries(m_entries.at(existingIdx), entry);
+                            return this->compareEntries(m_entries.at(existingIdx), entry);
                         });
                     const int row = std::distance(m_filteredIndices.begin(), it);
                     beginInsertRows(QModelIndex(), row, row);
@@ -1004,4 +1002,91 @@ void DirectoryModel::setError(const QString &error)
     }
     m_error = error;
     emit errorChanged();
+}
+
+DirectoryModel::SortRole DirectoryModel::sortRole() const
+{
+    return m_sortRole;
+}
+
+void DirectoryModel::setSortRole(SortRole role)
+{
+    if (m_sortRole == role) {
+        return;
+    }
+    m_sortRole = role;
+    sortModel();
+    emit sortRoleChanged();
+}
+
+Qt::SortOrder DirectoryModel::sortOrder() const
+{
+    return m_sortOrder;
+}
+
+void DirectoryModel::setSortOrder(Qt::SortOrder order)
+{
+    if (m_sortOrder == order) {
+        return;
+    }
+    m_sortOrder = order;
+    sortModel();
+    emit sortOrderChanged();
+}
+
+bool DirectoryModel::compareEntries(const FileEntry &a, const FileEntry &b) const
+{
+    if (a.isDirectory != b.isDirectory) {
+        return a.isDirectory; // Directories always come first
+    }
+
+    switch (m_sortRole) {
+    case SortByName: {
+        int comp = a.name.compare(b.name, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        break;
+    }
+    case SortBySize: {
+        if (a.size != b.size) {
+            return m_sortOrder == Qt::AscendingOrder ? (a.size < b.size) : (a.size > b.size);
+        }
+        break;
+    }
+    case SortByType: {
+        int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        break;
+    }
+    case SortByDate: {
+        if (a.modified != b.modified) {
+            return m_sortOrder == Qt::AscendingOrder ? (a.modified < b.modified) : (a.modified > b.modified);
+        }
+        break;
+    }
+    }
+
+    // Default stable sorting fallback
+    int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
+    if (nameComp != 0) {
+        return nameComp < 0;
+    }
+    return a.path.compare(b.path) < 0;
+}
+
+void DirectoryModel::sortModel()
+{
+    if (m_filteredIndices.isEmpty()) {
+        return;
+    }
+
+    beginResetModel();
+    std::stable_sort(m_filteredIndices.begin(), m_filteredIndices.end(),
+        [this](int aIdx, int bIdx) {
+            return compareEntries(m_entries.at(aIdx), m_entries.at(bIdx));
+        });
+    endResetModel();
 }

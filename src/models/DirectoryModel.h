@@ -22,8 +22,17 @@ class DirectoryModel final : public QAbstractListModel {
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectionChanged)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
+    Q_PROPERTY(SortRole sortRole READ sortRole WRITE setSortRole NOTIFY sortRoleChanged)
+    Q_PROPERTY(Qt::SortOrder sortOrder READ sortOrder WRITE setSortOrder NOTIFY sortOrderChanged)
 
 public:
+    enum SortRole {
+        SortByName = 0,
+        SortBySize,
+        SortByType,
+        SortByDate
+    };
+    Q_ENUM(SortRole)
     enum Role {
         NameRole = Qt::UserRole + 1,
         PathRole,
@@ -54,6 +63,12 @@ public:
     QString filterText() const;
     void setFilterText(const QString &text);
 
+    SortRole sortRole() const;
+    void setSortRole(SortRole role);
+
+    Qt::SortOrder sortOrder() const;
+    void setSortOrder(Qt::SortOrder order);
+
     bool showHidden() const;
     void setShowHidden(bool show);
 
@@ -81,6 +96,8 @@ signals:
     void countChanged();
     void selectionChanged();
     void filterTextChanged();
+    void sortRoleChanged();
+    void sortOrderChanged();
 
 private slots:
     void onScannerStarted();
@@ -96,6 +113,8 @@ private:
     void setLoading(bool loading);
     void setError(const QString &error);
     void applyFilter();
+    void sortModel();
+    bool compareEntries(const FileEntry &a, const FileEntry &b) const;
     void updatePathIndex();
     void finalizeScannerFinished(const QString &path, bool success, const QString &error);
     void processAllPendingInsertsFast();
@@ -114,6 +133,8 @@ private:
     QString m_error;
     QString m_filterText;
     QString m_previousPath;
+    SortRole m_sortRole = SortByName;
+    Qt::SortOrder m_sortOrder = Qt::AscendingOrder;
 
     QList<FileEntry> m_entries;
     QList<int> m_filteredIndices;

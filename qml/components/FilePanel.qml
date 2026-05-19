@@ -21,6 +21,16 @@ Pane {
     property bool scrolling: false
     focus: root.active
 
+    // Column widths for Details View (viewMode = 2)
+    property real colWidthName: 280
+    property real colWidthSize: 90
+    property real colWidthType: 130
+    property real colWidthDate: 150
+    
+    // Column visibility
+    property bool colShowType: true
+    property bool colShowDate: true
+
     Timer {
         id: scrollStopTimer
         interval: 120
@@ -56,8 +66,8 @@ Pane {
     }
 
     function updateScrollingState() {
-        const moving = root.viewMode === 0 ? listView.moving : gridView.moving
-        const flicking = root.viewMode === 0 ? listView.flicking : gridView.flicking
+        const moving = (root.viewMode === 0 || root.viewMode === 2) ? listView.moving : gridView.moving
+        const flicking = (root.viewMode === 0 || root.viewMode === 2) ? listView.flicking : gridView.flicking
         const isScrolling = moving || flicking
 
         if (isScrolling) {
@@ -175,14 +185,14 @@ Pane {
     }
 
     function contextRow() {
-        return root.viewMode === 0 ? listView.currentIndex : gridView.currentIndex
+        return (root.viewMode === 0 || root.viewMode === 2) ? listView.currentIndex : gridView.currentIndex
     }
 
     function startRename() {
         let idx = contextRow()
         if (idx < 0) return
         
-        if (root.viewMode === 0) {
+        if (root.viewMode === 0 || root.viewMode === 2) {
             if (listView.currentItem) listView.currentItem.startRename()
         } else {
             if (gridView.currentItem) gridView.currentItem.startRename()
@@ -190,11 +200,30 @@ Pane {
     }
 
     function focusContent() {
-        if (root.viewMode === 0) {
+        if (root.viewMode === 0 || root.viewMode === 2) {
             listView.forceActiveFocus()
         } else {
             gridView.forceActiveFocus()
         }
+    }
+
+    function handleItemClick(index, mouse) {
+        root.activated()
+        listView.currentIndex = index
+        if (mouse.modifiers & Qt.ControlModifier) {
+            root.controller.directoryModel.toggleSelected(index)
+        } else {
+            root.controller.directoryModel.selectOnly(index)
+        }
+    }
+
+    function handleItemRightClick(index, path) {
+        root.activated()
+        listView.currentIndex = index
+        if (!root.controller.directoryModel.selectedCount || !root.controller.directoryModel.selectedPaths().includes(path)) {
+            root.controller.directoryModel.selectOnly(index)
+        }
+        contextMenu.popup()
     }
 
     function loadingFolderName() {
@@ -464,10 +493,52 @@ Pane {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
+            FilePanelHeader {
+                id: tableHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: root.viewMode === 2
+                controller: root.controller
+                panel: root
+            }
+
+            Component {
+                id: listDelegate
+                FileDelegate {
+                    width: listView.width
+                    controller: root.controller
+                    currentItem: ListView.isCurrentItem
+                    panelActive: root.active
+                    scrolling: root.scrolling
+                    onClicked: (mouse) => root.handleItemClick(index, mouse)
+                    onRightClicked: root.handleItemRightClick(index, path)
+                    onDoubleClicked: root.controller.openItem(index)
+                }
+            }
+
+            Component {
+                id: detailsDelegate
+                FileTableDelegate {
+                    width: listView.width
+                    controller: root.controller
+                    panel: root
+                    currentItem: ListView.isCurrentItem
+                    panelActive: root.active
+                    scrolling: root.scrolling
+                    onClicked: (mouse) => root.handleItemClick(index, mouse)
+                    onRightClicked: root.handleItemRightClick(index, path)
+                    onDoubleClicked: root.controller.openItem(index)
+                }
+            }
+
             ListView {
                 id: listView
-                anchors.fill: parent
-                visible: root.viewMode === 0
+                anchors.top: root.viewMode === 2 ? tableHeader.bottom : parent.top
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                visible: root.viewMode === 0 || root.viewMode === 2
                 enabled: visible
                 clip: true
                 boundsBehavior: Flickable.DragAndOvershootBounds
@@ -516,33 +587,7 @@ Pane {
                     }
                 }
 
-                delegate: FileDelegate {
-                    id: fileDelegate
-                    width: listView.width
-                    controller: root.controller
-                    currentItem: ListView.isCurrentItem
-                    panelActive: root.active
-                    scrolling: root.scrolling
-                    
-                    onClicked: (mouse) => {
-                        root.activated()
-                        listView.currentIndex = index
-                        if (mouse.modifiers & Qt.ControlModifier) {
-                            root.controller.directoryModel.toggleSelected(index)
-                        } else {
-                            root.controller.directoryModel.selectOnly(index)
-                        }
-                    }
-                    onRightClicked: {
-                        root.activated()
-                        listView.currentIndex = index
-                        if (!root.controller.directoryModel.selectedCount || !root.controller.directoryModel.selectedPaths().includes(path)) {
-                            root.controller.directoryModel.selectOnly(index)
-                        }
-                        contextMenu.popup()
-                    }
-                    onDoubleClicked: root.controller.openItem(index)
-                }
+                delegate: root.viewMode === 2 ? detailsDelegate : listDelegate
 
                 ScrollBar.vertical: ScrollBar {}
             }
