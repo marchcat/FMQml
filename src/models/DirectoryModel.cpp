@@ -57,7 +57,13 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
         QStringLiteral("mkv"),
         QStringLiteral("mov"),
         QStringLiteral("wmv"),
-        QStringLiteral("pdf")
+        QStringLiteral("pdf"),
+        QStringLiteral("svg"),
+        QStringLiteral("svgz"),
+        QStringLiteral("ttf"),
+        QStringLiteral("otf"),
+        QStringLiteral("woff"),
+        QStringLiteral("woff2")
     };
     entry.isImage = !entry.isDirectory && imageSuffixes.contains(entry.suffix.toLower());
     entry.hasThumbnail = entry.isImage || (!entry.isDirectory && mediaSuffixes.contains(entry.suffix.toLower()));

@@ -24,6 +24,25 @@ bool isImageSuffix(const QString &suffix)
     return imageSuffixes.contains(suffix.toLower());
 }
 
+bool hasThumbnailSuffix(const QString &suffix)
+{
+    static const QStringList thumbnailSuffixes = {
+        QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
+        QStringLiteral("gif"),  QStringLiteral("bmp"),  QStringLiteral("webp"),
+        QStringLiteral("ico"),
+        QStringLiteral("svg"),  QStringLiteral("svgz"),
+        QStringLiteral("mp3"),  QStringLiteral("flac"), QStringLiteral("ogg"),
+        QStringLiteral("m4a"),  QStringLiteral("m4b"),  QStringLiteral("wav"),
+        QStringLiteral("wma"),
+        QStringLiteral("mp4"),  QStringLiteral("avi"),  QStringLiteral("mkv"),
+        QStringLiteral("mov"),  QStringLiteral("wmv"),
+        QStringLiteral("pdf"),
+        QStringLiteral("ttf"),  QStringLiteral("otf"),  QStringLiteral("woff"),
+        QStringLiteral("woff2")
+    };
+    return thumbnailSuffixes.contains(suffix.toLower());
+}
+
 FileEntry entryFromInfo(const QFileInfo &fileInfo)
 {
     FileEntry entry;
@@ -41,6 +60,7 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
         : loc.formattedDataSize(entry.size, 1, QLocale::DataSizeTraditionalFormat);
     entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
     entry.isImage = !entry.isDirectory && isImageSuffix(entry.suffix);
+    entry.hasThumbnail = !entry.isDirectory && hasThumbnailSuffix(entry.suffix);
     return entry;
 }
 }

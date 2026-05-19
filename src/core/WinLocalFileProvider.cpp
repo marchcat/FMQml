@@ -27,6 +27,21 @@ static const QStringList kImageSuffixes = {
     QStringLiteral("ico")
 };
 
+static const QStringList kThumbnailSuffixes = {
+    QStringLiteral("jpg"),  QStringLiteral("jpeg"), QStringLiteral("png"),
+    QStringLiteral("gif"),  QStringLiteral("bmp"),  QStringLiteral("webp"),
+    QStringLiteral("ico"),
+    QStringLiteral("svg"),  QStringLiteral("svgz"),
+    QStringLiteral("mp3"),  QStringLiteral("flac"), QStringLiteral("ogg"),
+    QStringLiteral("m4a"),  QStringLiteral("m4b"),  QStringLiteral("wav"),
+    QStringLiteral("wma"),
+    QStringLiteral("mp4"),  QStringLiteral("avi"),  QStringLiteral("mkv"),
+    QStringLiteral("mov"),  QStringLiteral("wmv"),
+    QStringLiteral("pdf"),
+    QStringLiteral("ttf"),  QStringLiteral("otf"),  QStringLiteral("woff"),
+    QStringLiteral("woff2")
+};
+
 // FILETIME → QDateTime (no extra syscall, uses values from WIN32_FIND_DATA)
 inline QDateTime filetimeToQDateTime(const FILETIME &ft)
 {
@@ -73,7 +88,10 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &fd,
         sz.HighPart = fd.nFileSizeHigh;
         entry.size     = static_cast<qint64>(sz.QuadPart);
         entry.sizeText = loc.formattedDataSize(entry.size, 1, QLocale::DataSizeTraditionalFormat);
-        entry.isImage  = kImageSuffixes.contains(entry.suffix.toLower());
+        
+        const QString lowerSuffix = entry.suffix.toLower();
+        entry.isImage      = kImageSuffixes.contains(lowerSuffix);
+        entry.hasThumbnail = kThumbnailSuffixes.contains(lowerSuffix);
     }
 
     entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
