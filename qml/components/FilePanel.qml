@@ -300,7 +300,7 @@ Pane {
         ThemedMenuItem {
             text: revealInOsLabel
             icon.source: "../assets/icons/reveal.svg"
-            iconColor: "#22c55e"
+            iconColor: "#3b82f6"
             enabled: contextRow() >= 0
             onTriggered: root.controller.revealInFileManager(contextRow())
         }

@@ -1,1 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">  <defs>    <mask id="m1_eye">      <g fill="none" stroke-width="1.2">        <path stroke="#fff" d="M20.188 10.934c.388.472.582.707.582 1.066s-.194.594-.582 1.066C18.768 14.79 15.636 18 12 18s-6.768-3.21-8.188-4.934c-.388-.472-.582-.707-.582-1.066s.194-.594.582-1.066C5.232 9.21 8.364 6 12 6s6.768 3.21 8.188 4.934Z"/>      </g>    </mask>    <mask id="m2_eye">      <g fill="none" stroke-width="1.2">        <circle cx="12" cy="12" r="3.4" stroke="#fff"/>      </g>    </mask>  </defs>  <path fill="#3b82f6" fill-opacity=".3" d="M0 0h24v24H0z" mask="url(#m1_eye)"/>  <path fill="#999999" d="M0 0h24v24H0z" mask="url(#m2_eye)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#999999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+  <circle cx="12" cy="12" r="3" />
+</svg>

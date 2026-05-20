@@ -104,6 +104,7 @@ qt_add_qml_module(fm
         qml/assets/icons/folder-plus.svg
         qml/assets/icons/folder.svg
         qml/assets/icons/file-manager.svg
+        qml/assets/icons/app_icon.png
         qml/assets/icons/grid.svg
         qml/assets/icons/hard-drive.svg
         qml/assets/icons/home.svg
@@ -184,6 +185,7 @@ endif()
 
 if(WIN32)
     set_target_properties(fm PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_sources(fm PRIVATE fm.rc)
     target_link_libraries(fm PRIVATE Shell32 Comctl32)
 
     # Automatically copy dependency DLLs (tag.dll, zd.dll/z.dll) from vcpkg to output dir on Windows

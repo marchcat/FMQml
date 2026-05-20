@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     QApplication::setApplicationName(QStringLiteral("FM"));
     QApplication::setOrganizationName(QStringLiteral("FM"));
-    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/FM/qml/assets/icons/file-manager.svg")));
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/qt/qml/FM/qml/assets/icons/app_icon.png")));
 
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 
     if (!mainWin) return -1;
 
-    mainWin->setIcon(QIcon(QStringLiteral(":/qt/qml/FM/qml/assets/icons/file-manager.svg")));
+    mainWin->setIcon(QIcon(QStringLiteral(":/qt/qml/FM/qml/assets/icons/app_icon.png")));
 
     mainWin->setColor(QColor(QStringLiteral("#0D0D0D")));
     mainWin->setOpacity(0.0);

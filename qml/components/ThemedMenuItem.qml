@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import "../style"
 
 MenuItem {
@@ -65,14 +66,20 @@ MenuItem {
         anchors.rightMargin: 8
 
         Image {
+            id: menuIcon
             Layout.preferredWidth: 14
             Layout.preferredHeight: 14
             source: root.icon ? root.icon.source : ""
             sourceSize: Qt.size(16, 16)
-            smooth: false
+            smooth: true
             mipmap: false
             visible: root.icon && root.icon.source.toString().length > 0
             opacity: root.enabled ? 1.0 : 0.35
+            layer.enabled: root.icon && root.icon.source.toString().length > 0
+            layer.effect: MultiEffect {
+                colorization: 1.0
+                colorizationColor: root.iconColor
+            }
         }
 
         Label {
