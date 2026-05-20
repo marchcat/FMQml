@@ -59,6 +59,7 @@ set(MY_QML_FILES
     qml/Splash.qml
     qml/components/ConflictDialog.qml
     qml/components/DeleteConfirmDialog.qml
+    qml/components/ColumnPickerMenu.qml
     qml/components/FileDelegate.qml
     qml/components/FilePanel.qml
     qml/components/FilePanelHeader.qml

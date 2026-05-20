@@ -51,14 +51,26 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     entry.suffix = fileInfo.suffix();
     entry.size = fileInfo.size();
     entry.modified = fileInfo.lastModified();
+    entry.created = fileInfo.birthTime().isValid() ? fileInfo.birthTime() : fileInfo.lastModified();
     entry.isDirectory = fileInfo.isDir();
     entry.isHidden = fileInfo.isHidden();
+    entry.isReadOnly = !fileInfo.isWritable();
 
     QLocale loc;
     entry.sizeText = entry.isDirectory
-        ? QStringLiteral("Folder")
+        ? QString()
         : loc.formattedDataSize(entry.size, 1, QLocale::DataSizeTraditionalFormat);
     entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
+    entry.createdText  = loc.toString(entry.created,  QLocale::ShortFormat);
+
+    // Build attributes string
+    QString attrs;
+    if (entry.isDirectory) attrs += QLatin1Char('D');
+    if (entry.isHidden)    attrs += QLatin1Char('H');
+    if (entry.isReadOnly)  attrs += QLatin1Char('R');
+    if (fileInfo.isSymLink()) attrs += QLatin1Char('L');
+    entry.attributesText = attrs;
+
     entry.isImage = !entry.isDirectory && isImageSuffix(entry.suffix);
     entry.hasThumbnail = !entry.isDirectory && hasThumbnailSuffix(entry.suffix);
     return entry;

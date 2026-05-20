@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QStringList>
+#include <QVariantList>
+#include <QVariantMap>
 #include <memory>
 
 #include "../core/FileProvider.h"
@@ -55,6 +57,11 @@ public:
     Q_INVOKABLE bool createFile(const QString &name);
     Q_INVOKABLE void showProperties(int row);
 
+    // Async media metadata fetch for Details View columns
+    // Returns immediately; emits metadataReady(path, map) when done.
+    // map keys: "resolution", "duration", "artist", "album", "bitrate"
+    Q_INVOKABLE void fetchMetadataAsync(const QString &path);
+
 signals:
     void currentPathChanged();
     void historyChanged();
@@ -67,6 +74,8 @@ signals:
     void contentsChanged(const QString &path);
     void statusMessageChanged();
     void scrollingChanged();
+    // Emitted on the GUI thread when async metadata finishes
+    void metadataReady(const QString &path, const QVariantMap &meta);
 
 private:
     bool openPathInternal(const QString &path, bool addToHistory);

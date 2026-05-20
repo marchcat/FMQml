@@ -240,8 +240,8 @@ ToolBar {
                 iconSource: root.activeController.viewMode === 0 
                             ? "../assets/lucide-toolbar/layout-grid.svg" 
                             : (root.activeController.viewMode === 1 
-                               ? "../assets/lucide-toolbar/columns-2.svg" 
-                               : "../assets/lucide-toolbar/layout-list.svg")
+                               ? "../assets/lucide-toolbar/layout-list.svg" 
+                               : "../assets/lucide-toolbar/list.svg")
                 iconTone: "view"
                 onClicked: root.activeController.viewMode = (root.activeController.viewMode + 1) % 3
                 ToolTip.visible: hovered

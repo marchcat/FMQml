@@ -195,7 +195,7 @@ Item {
         }
 
         Label {
-            text: sizeText
+            text: root.isDirectory ? "Folder" : root.sizeText
             color: Theme.textSecondary
             opacity: 0.92
             font.pixelSize: 12

@@ -73,6 +73,8 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &fd,
 {
     const bool isDir    = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     const bool isHidden = (fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN)    != 0;
+    const bool isReadOnly = (fd.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0;
+    const bool isSystem   = (fd.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM)  != 0;
 
     FileEntry entry;
     entry.name        = QString::fromWCharArray(fd.cFileName);
@@ -80,7 +82,10 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &fd,
     entry.suffix      = suffixFromWcs(fd.cFileName);
     entry.isDirectory = isDir;
     entry.isHidden    = isHidden;
+    entry.isReadOnly  = isReadOnly;
+    entry.isSystem    = isSystem;
     entry.modified    = filetimeToQDateTime(fd.ftLastWriteTime);
+    entry.created     = filetimeToQDateTime(fd.ftCreationTime);
 
     if (isDir) {
         entry.size     = 0;
@@ -98,6 +103,15 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &fd,
     }
 
     entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
+    entry.createdText  = loc.toString(entry.created, QLocale::ShortFormat);
+
+    // Build attributes string
+    QString attrs;
+    if (entry.isHidden)   attrs += QLatin1Char('H');
+    if (entry.isReadOnly) attrs += QLatin1Char('R');
+    if (entry.isSystem)   attrs += QLatin1Char('S');
+    entry.attributesText = attrs;
+
     return entry;
 }
 

@@ -5,8 +5,10 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QUrl>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include "../core/LocalFileProvider.h"
+#include "../core/MetadataExtractor.h"
 
 FilePanelController::FilePanelController(QObject *parent)
     : QObject(parent)
@@ -274,6 +276,31 @@ void FilePanelController::showProperties(int row)
     if (!selected.isEmpty()) {
         emit revealProperties(selected);
     }
+}
+
+void FilePanelController::fetchMetadataAsync(const QString &path)
+{
+    // Run extraction on a worker thread; marshal result back to GUI thread via signal.
+    QtConcurrent::run([this, path]() {
+        const QVariantList props = MetadataExtractor::extract(path);
+        // Convert the label/value list into a flat map for efficient QML access
+        QVariantMap meta;
+        for (const QVariant &v : props) {
+            const QVariantMap pair = v.toMap();
+            const QString label = pair.value(QStringLiteral("label")).toString();
+            const QString value = pair.value(QStringLiteral("value")).toString();
+            // Normalize keys to camelCase for QML
+            if (label == QLatin1String("Dimensions"))  meta[QStringLiteral("resolution")] = value;
+            if (label == QLatin1String("Duration"))    meta[QStringLiteral("duration")]   = value;
+            if (label == QLatin1String("Artist"))      meta[QStringLiteral("artist")]     = value;
+            if (label == QLatin1String("Album"))       meta[QStringLiteral("album")]      = value;
+            if (label == QLatin1String("Bitrate"))     meta[QStringLiteral("bitrate")]    = value;
+        }
+        // Always emit even if empty so delegate knows loading is done
+        QMetaObject::invokeMethod(this, [this, path, meta]() {
+            emit metadataReady(path, meta);
+        }, Qt::QueuedConnection);
+    });
 }
 
 void FilePanelController::refresh()

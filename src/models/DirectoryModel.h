@@ -30,7 +30,9 @@ public:
         SortByName = 0,
         SortBySize,
         SortByType,
-        SortByDate
+        SortByDate,
+        SortByDateCreated,
+        SortByExtension
     };
     Q_ENUM(SortRole)
     enum Role {
@@ -39,6 +41,8 @@ public:
         SizeRole,
         SizeTextRole,
         ModifiedTextRole,
+        CreatedTextRole,
+        AttributesRole,
         IsDirectoryRole,
         IsHiddenRole,
         IsSelectedRole,

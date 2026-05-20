@@ -17,19 +17,116 @@ Pane {
     readonly property int gridCellWidth: Math.max(96, gridIconSize + 52)
     readonly property int gridCellHeight: Math.max(112, gridIconSize + 72)
     readonly property bool statusRailVisible: root.statusMessage.length > 0 || root.showLoadingRail
+    readonly property real horizontalScrollX: horizontalFlick ? horizontalFlick.contentX : 0
+    readonly property bool horizontalScrollActive: root.viewMode === 2 && horizontalFlick && horizontalFlick.contentWidth > horizontalFlick.width
     property bool showLoadingRail: false
     property bool scrolling: false
     focus: root.active
+    property bool showZebraStriping: true
+    property bool showGridlines: true
 
     // Column widths for Details View (viewMode = 2)
-    property real colWidthName: 280
-    property real colWidthSize: 90
-    property real colWidthType: 130
-    property real colWidthDate: 150
-    
-    // Column visibility
-    property bool colShowType: true
-    property bool colShowDate: true
+    property real preferredColWidthName: 220
+    property bool nameColumnManuallyResized: false
+    readonly property real totalOtherColumnsWidth: {
+        let w = 0
+        if (colShowSize) w += colWidthSize
+        if (colShowType) w += colWidthType
+        if (colShowDate) w += colWidthDate
+        if (colShowDateCreated) w += colWidthDateCreated
+        if (colShowExtension) w += colWidthExtension
+        if (colShowAttributes) w += colWidthAttributes
+        if (colShowResolution) w += colWidthResolution
+        if (colShowDuration) w += colWidthDuration
+        if (colShowArtist) w += colWidthArtist
+        if (colShowAlbum) w += colWidthAlbum
+        if (colShowBitrate) w += colWidthBitrate
+        return w
+    }
+    property real colWidthName: 220
+    property real colWidthSize:         90
+    property real colWidthType:        130
+    property real colWidthDate:        150
+    property real colWidthDateCreated: 150
+    property real colWidthExtension:    70
+    property real colWidthAttributes:   70
+    property real colWidthResolution:  100
+    property real colWidthDuration:     80
+    property real colWidthArtist:      140
+    property real colWidthAlbum:       140
+    property real colWidthBitrate:      80
+
+    // Column visibility (Name is always visible and not togglable)
+    property bool colShowSize:         true
+    property bool colShowType:         true
+    property bool colShowDate:         true
+    property bool colShowDateCreated:  false
+    property bool colShowExtension:    false
+    property bool colShowAttributes:   false
+    property bool colShowResolution:   false
+    property bool colShowDuration:     false
+    property bool colShowArtist:       false
+    property bool colShowAlbum:        false
+    property bool colShowBitrate:      false
+
+    readonly property real totalColumnsWidth: {
+        let w = colWidthName
+        if (colShowSize) w += colWidthSize
+        if (colShowType) w += colWidthType
+        if (colShowDate) w += colWidthDate
+        if (colShowDateCreated) w += colWidthDateCreated
+        if (colShowExtension) w += colWidthExtension
+        if (colShowAttributes) w += colWidthAttributes
+        if (colShowResolution) w += colWidthResolution
+        if (colShowDuration) w += colWidthDuration
+        if (colShowArtist) w += colWidthArtist
+        if (colShowAlbum) w += colWidthAlbum
+        if (colShowBitrate) w += colWidthBitrate
+        return w + 24 // 12+12 side margins
+    }
+
+    function resetColumnsToDefaults() {
+        preferredColWidthName = 220; colWidthSize = 90; colWidthType = 130; colWidthDate = 150
+        colWidthDateCreated = 150; colWidthExtension = 70; colWidthAttributes = 70
+        colWidthResolution = 100; colWidthDuration = 80; colWidthArtist = 140
+        colWidthAlbum = 140; colWidthBitrate = 80
+        colShowSize = true; colShowType = true; colShowDate = true
+        colShowDateCreated = false; colShowExtension = false; colShowAttributes = false
+        colShowResolution = false; colShowDuration = false; colShowArtist = false
+        colShowAlbum = false; colShowBitrate = false
+        nameColumnManuallyResized = false
+        showZebraStriping = true
+        showGridlines = true
+        updateNameColumnWidth()
+    }
+
+    function updateNameColumnWidth() {
+        if (nameColumnManuallyResized) {
+            colWidthName = Math.max(180, preferredColWidthName)
+        } else {
+            let space = (contentArea ? contentArea.width : 500) - 24 - totalOtherColumnsWidth
+            colWidthName = Math.max(180, space)
+        }
+    }
+
+    onPreferredColWidthNameChanged: updateNameColumnWidth()
+    onNameColumnManuallyResizedChanged: updateNameColumnWidth()
+    onColShowSizeChanged: updateNameColumnWidth()
+    onColShowTypeChanged: updateNameColumnWidth()
+    onColShowDateChanged: updateNameColumnWidth()
+    onColShowDateCreatedChanged: updateNameColumnWidth()
+    onColShowExtensionChanged: updateNameColumnWidth()
+    onColShowAttributesChanged: updateNameColumnWidth()
+    onColShowResolutionChanged: updateNameColumnWidth()
+    onColShowDurationChanged: updateNameColumnWidth()
+    onColShowArtistChanged: updateNameColumnWidth()
+    onColShowAlbumChanged: updateNameColumnWidth()
+    onColShowBitrateChanged: updateNameColumnWidth()
+    onViewModeChanged: updateNameColumnWidth()
+
+    Component.onCompleted: {
+        updateNameColumnWidth()
+    }
 
     Timer {
         id: scrollStopTimer
@@ -490,18 +587,10 @@ Pane {
         }
 
         Item {
+            id: contentArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-
-            FilePanelHeader {
-                id: tableHeader
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                visible: root.viewMode === 2
-                controller: root.controller
-                panel: root
-            }
+            onWidthChanged: root.updateNameColumnWidth()
 
             Component {
                 id: listDelegate
@@ -532,64 +621,109 @@ Pane {
                 }
             }
 
-            ListView {
-                id: listView
-                anchors.top: root.viewMode === 2 ? tableHeader.bottom : parent.top
-                anchors.bottom: parent.bottom
-                anchors.left: parent.left
-                anchors.right: parent.right
-                visible: root.viewMode === 0 || root.viewMode === 2
-                enabled: visible
+            Flickable {
+                id: horizontalFlick
+                anchors.fill: parent
+                contentWidth: root.viewMode === 2 ? Math.max(width, root.totalColumnsWidth) : width
+                flickableDirection: Flickable.HorizontalFlick
+                boundsBehavior: Flickable.StopAtBounds
                 clip: true
-                boundsBehavior: Flickable.DragAndOvershootBounds
-                pixelAligned: false
-                flickableDirection: Flickable.VerticalFlick
-                model: root.controller.directoryModel
-                currentIndex: -1
-                focus: root.active
-                cacheBuffer: height * 2
-                reuseItems: true
-                onMovingChanged: root.updateScrollingState()
-                onFlickingChanged: root.updateScrollingState()
-                
-                highlight: null
-                highlightFollowsCurrentItem: false
+                interactive: root.viewMode === 2
 
-                add: root.controller.directoryModel.count < 500 && !root.controller.directoryModel.loading ? listAddTransition : null
-                remove: root.controller.directoryModel.count < 500 && !root.controller.directoryModel.loading ? listRemoveTransition : null
-
-                Transition {
-                    id: listAddTransition
-                    NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 140; easing.type: Easing.OutQuad }
-                    NumberAnimation { property: "visualOffsetX"; from: -18; to: 0; duration: 160; easing.type: Easing.OutCubic }
-                }
-                Transition {
-                    id: listRemoveTransition
-                    NumberAnimation { property: "opacity"; to: 0.0; duration: 110; easing.type: Easing.InQuad }
-                    NumberAnimation { property: "visualOffsetX"; to: -10; duration: 110; easing.type: Easing.InQuad }
+                ScrollBar.horizontal: ScrollBar {
+                    id: hScrollBar
+                    parent: contentArea
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: root.statusRailVisible ? (root.controller.directoryModel.loading ? 52 : 36) : 0
+                    policy: ScrollBar.AlwaysOn
+                    visible: root.viewMode === 2 && root.horizontalScrollActive
+                    z: 10
                 }
 
-                Keys.onPressed: (event) => {
-                    if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
-                        if (currentIndex >= 0 && listView.currentItem && !listView.currentItem.isRenaming)
-                            root.controller.openItem(currentIndex)
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Backspace) {
-                        root.controller.goUp()
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_F2) {
-                        root.startRename()
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_Escape) {
-                        root.controller.directoryModel.clearSelection()
-                        workspaceController.focusActivePanel()
-                        event.accepted = true
+                Column {
+                    width: horizontalFlick.contentWidth
+                    height: horizontalFlick.height
+
+                    FilePanelHeader {
+                        id: tableHeader
+                        width: parent.width
+                        visible: root.viewMode === 2
+                        controller: root.controller
+                        panel: root
+                    }
+
+                    ListView {
+                        id: listView
+                        width: parent.width
+                        height: root.viewMode === 2 ? parent.height - tableHeader.height : parent.height
+                        visible: root.viewMode === 0 || root.viewMode === 2
+                        enabled: visible
+                        clip: true
+                        boundsBehavior: Flickable.DragAndOvershootBounds
+                        pixelAligned: false
+                        flickableDirection: Flickable.VerticalFlick
+                        model: root.controller.directoryModel
+                        currentIndex: -1
+                        focus: root.active
+                        cacheBuffer: height * 2
+                        reuseItems: true
+                        onMovingChanged: root.updateScrollingState()
+                        onFlickingChanged: root.updateScrollingState()
+                        bottomMargin: (root.statusRailVisible ? (root.controller.directoryModel.loading ? 52 : 36) : 0) + (root.horizontalScrollActive ? 12 : 0)
+                        
+                        highlight: null
+                        highlightFollowsCurrentItem: false
+
+                        add: root.controller.directoryModel.count < 500 && !root.controller.directoryModel.loading ? listAddTransition : null
+                        remove: root.controller.directoryModel.count < 500 && !root.controller.directoryModel.loading ? listRemoveTransition : null
+
+                        Transition {
+                            id: listAddTransition
+                            NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 140; easing.type: Easing.OutQuad }
+                            NumberAnimation { property: "visualOffsetX"; from: -18; to: 0; duration: 160; easing.type: Easing.OutCubic }
+                        }
+                        Transition {
+                            id: listRemoveTransition
+                            NumberAnimation { property: "opacity"; to: 0.0; duration: 110; easing.type: Easing.InQuad }
+                            NumberAnimation { property: "visualOffsetX"; to: -10; duration: 110; easing.type: Easing.InQuad }
+                        }
+
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
+                                if (currentIndex >= 0 && listView.currentItem && !listView.currentItem.isRenaming)
+                                    root.controller.openItem(currentIndex)
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Backspace) {
+                                root.controller.goUp()
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_F2) {
+                                root.startRename()
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Escape) {
+                                root.controller.directoryModel.clearSelection()
+                                workspaceController.focusActivePanel()
+                                event.accepted = true
+                            }
+                        }
+
+                        delegate: root.viewMode === 2 ? detailsDelegate : listDelegate
+
+                        ScrollBar.vertical: ScrollBar {
+                            parent: contentArea
+                            anchors.right: parent.right
+                            anchors.top: parent.top
+                            anchors.topMargin: root.viewMode === 2 ? tableHeader.height : 0
+                            anchors.bottom: parent.bottom
+                            anchors.bottomMargin: (root.statusRailVisible ? (root.controller.directoryModel.loading ? 52 : 36) : 0) + (root.horizontalScrollActive ? 12 : 0)
+                            active: listView.moving || listView.flicking || scrollHover.hovered
+                            policy: ScrollBar.AsNeeded
+                            z: 10
+                            HoverHandler { id: scrollHover }
+                        }
                     }
                 }
-
-                delegate: root.viewMode === 2 ? detailsDelegate : listDelegate
-
-                ScrollBar.vertical: ScrollBar {}
             }
 
             GridView {

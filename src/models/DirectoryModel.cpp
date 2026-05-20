@@ -18,14 +18,26 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     entry.suffix = fileInfo.suffix();
     entry.size = fileInfo.size();
     entry.modified = fileInfo.lastModified();
+    entry.created = fileInfo.birthTime().isValid() ? fileInfo.birthTime() : fileInfo.lastModified();
     entry.isDirectory = fileInfo.isDir();
     entry.isHidden = fileInfo.isHidden();
+    entry.isReadOnly = !fileInfo.isWritable();
+    entry.isSystem = fileInfo.isSymLink();
 
     QLocale loc;
     entry.sizeText = entry.isDirectory
-        ? QStringLiteral("Folder")
+        ? QString()
         : loc.formattedDataSize(entry.size, 1, QLocale::DataSizeTraditionalFormat);
     entry.modifiedText = loc.toString(entry.modified, QLocale::ShortFormat);
+    entry.createdText  = loc.toString(entry.created,  QLocale::ShortFormat);
+
+    // Build attributes string
+    QString attrs;
+    if (entry.isDirectory) attrs += QLatin1Char('D');
+    if (entry.isHidden)    attrs += QLatin1Char('H');
+    if (entry.isReadOnly)  attrs += QLatin1Char('R');
+    if (fileInfo.isSymLink()) attrs += QLatin1Char('L');
+    entry.attributesText = attrs;
 
     static const QStringList imageSuffixes = {
         QStringLiteral("jpg"),
@@ -110,6 +122,10 @@ QVariant DirectoryModel::data(const QModelIndex &index, int role) const
         return entry.sizeText;
     case ModifiedTextRole:
         return entry.modifiedText;
+    case CreatedTextRole:
+        return entry.createdText;
+    case AttributesRole:
+        return entry.attributesText;
     case IsDirectoryRole:
         return entry.isDirectory;
     case IsHiddenRole:
@@ -137,6 +153,8 @@ QHash<int, QByteArray> DirectoryModel::roleNames() const
         {SizeRole, "size"},
         {SizeTextRole, "sizeText"},
         {ModifiedTextRole, "modifiedText"},
+        {CreatedTextRole, "createdText"},
+        {AttributesRole, "attributesText"},
         {IsDirectoryRole, "isDirectory"},
         {IsHiddenRole, "isHidden"},
         {IsSelectedRole, "isSelected"},
@@ -318,7 +336,9 @@ void DirectoryModel::processPendingInserts()
                                   || existing.suffix != entry.suffix
                                   || existing.isImage != entry.isImage
                                   || existing.sizeText != entry.sizeText
-                                  || existing.modifiedText != entry.modifiedText);
+                                  || existing.modifiedText != entry.modifiedText
+                                  || existing.createdText != entry.createdText
+                                  || existing.attributesText != entry.attributesText);
 
             if (changed) {
                 // Preserving selection state
@@ -929,7 +949,9 @@ void DirectoryModel::processAllPendingInsertsFast()
                                       || existing.suffix != entry.suffix
                                       || existing.isImage != entry.isImage
                                       || existing.sizeText != entry.sizeText
-                                      || existing.modifiedText != entry.modifiedText);
+                                      || existing.modifiedText != entry.modifiedText
+                                      || existing.createdText != entry.createdText
+                                      || existing.attributesText != entry.attributesText);
 
                 if (changed) {
                     bool wasSelected = existing.isSelected;
@@ -1064,6 +1086,24 @@ bool DirectoryModel::compareEntries(const FileEntry &a, const FileEntry &b) cons
     case SortByDate: {
         if (a.modified != b.modified) {
             return m_sortOrder == Qt::AscendingOrder ? (a.modified < b.modified) : (a.modified > b.modified);
+        }
+        break;
+    }
+    case SortByDateCreated: {
+        if (a.created != b.created) {
+            return m_sortOrder == Qt::AscendingOrder ? (a.created < b.created) : (a.created > b.created);
+        }
+        break;
+    }
+    case SortByExtension: {
+        int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        // Secondary: sort by name within same extension
+        int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
+        if (nameComp != 0) {
+            return m_sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
         }
         break;
     }

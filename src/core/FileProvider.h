@@ -16,12 +16,17 @@ struct FileEntry {
     qint64 size = 0;
     QString sizeText;
     QString modifiedText;
+    QString createdText;
+    QString attributesText;
     QDateTime modified;
+    QDateTime created;
     bool isDirectory = false;
     bool isHidden = false;
     bool isSelected = false;
     bool isImage = false;
     bool hasThumbnail = false;
+    bool isReadOnly = false;
+    bool isSystem = false;
 };
 Q_DECLARE_METATYPE(FileEntry)
 
