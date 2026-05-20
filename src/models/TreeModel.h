@@ -11,6 +11,7 @@
 
 class TreeModel final : public QAbstractItemModel {
     Q_OBJECT
+    Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
 
 public:
     enum Role {
@@ -37,6 +38,12 @@ public:
     Q_INVOKABLE QModelIndex indexForPath(const QString &path);
     Q_INVOKABLE bool isTopLevelIndex(const QModelIndex &index) const;
 
+    bool showHidden() const;
+    void setShowHidden(bool show);
+
+signals:
+    void showHiddenChanged();
+
 private:
     struct Node {
         Node *parent = nullptr;
@@ -55,6 +62,7 @@ private:
     Node *nodeForPath(const QString &path);
     Node *findChild(Node *parent, const QString &path) const;
     void refreshNode(Node *node);
+    void refreshNodeRecursive(Node *node);
     void watchNode(Node *node);
     void unwatchNode(Node *node);
     void unwatchSubtree(Node *node);
@@ -71,4 +79,5 @@ private:
     QSet<QString> m_watchedPaths;
     QSet<QString> m_pendingRefreshPaths;
     QTimer m_refreshTimer;
+    bool m_showHidden = false;
 };

@@ -197,7 +197,8 @@ QStringList LocalFileProvider::childPaths(const QString &path, bool includeHidde
         QDir::AllEntries | QDir::NoDotAndDotDot | QDir::System | (includeHidden ? QDir::Hidden : QDir::NoFilter));
     children.reserve(infos.size());
     for (const QFileInfo &info : infos) {
-        if (!includeHidden && info.fileName().startsWith('.')) {
+        const bool isHidden = info.isHidden() || info.fileName().startsWith('.');
+        if (!includeHidden && isHidden) {
             continue;
         }
         children.append(info.absoluteFilePath());
@@ -286,7 +287,8 @@ void LocalFileProvider::scan(const QString &path)
             }
 
             QFileInfo fileInfo = it.fileInfo();
-            if (!m_showHidden && fileInfo.fileName().startsWith('.')) {
+            const bool isHidden = fileInfo.isHidden() || fileInfo.fileName().startsWith('.');
+            if (!m_showHidden && isHidden) {
                 continue;
             }
 

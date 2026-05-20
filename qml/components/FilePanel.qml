@@ -460,8 +460,11 @@ Pane {
         ThemedMenuItem {
             text: root.controller.directoryModel.showHidden ? "Hide Hidden Files" : "Show Hidden Files"
             icon.source: root.controller.directoryModel.showHidden ? "../assets/icons/eye-off.svg" : "../assets/icons/eye.svg"
-            iconColor: "#10b981"
-            onTriggered: root.controller.directoryModel.showHidden = !root.controller.directoryModel.showHidden
+            onTriggered: {
+                const newValue = !root.controller.directoryModel.showHidden
+                root.controller.directoryModel.showHidden = newValue
+                workspaceController.treeModel.showHidden = newValue
+            }
         }
         ThemedMenuSeparator {}
         ThemedMenuItem {
@@ -617,6 +620,7 @@ Pane {
                     scrolling: root.scrolling
                     onClicked: (mouse) => root.handleItemClick(index, mouse)
                     onRightClicked: root.handleItemRightClick(index, path)
+                    onEmptySpaceRightClicked: emptyContextMenu.popup()
                     onDoubleClicked: root.controller.openItem(index)
                 }
             }
@@ -814,6 +818,7 @@ Pane {
                     GridView.onReused: {
                         isRenaming = false
                         visualOffsetY = 0
+                        opacity = 1.0
                     }
 
                     function startRename() {
@@ -1161,5 +1166,20 @@ Pane {
             }
         }
     }
+
+    // Transparent border overlay to prevent content from overlapping the panel border
+    Rectangle {
+        id: panelBorderOverlay
+        anchors.fill: parent
+        radius: Theme.radius
+        color: "transparent"
+        border.color: root.active ? Theme.activeAccent : Theme.border
+        border.width: root.active ? 3 : 1
+        z: 9999
+
+        Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+        Behavior on border.width { NumberAnimation { duration: Theme.motionFast } }
+    }
 }
+
 

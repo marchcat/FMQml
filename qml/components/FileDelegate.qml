@@ -43,6 +43,7 @@ Item {
     ListView.onReused: {
         isRenaming = false
         visualOffsetX = 0
+        opacity = 1.0
     }
 
     function startRename() {

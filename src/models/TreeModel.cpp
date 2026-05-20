@@ -139,40 +139,15 @@ void TreeModel::fetchMore(const QModelIndex &parent)
 
 void TreeModel::refresh()
 {
-    for (const auto &child : m_root.children) {
-        if (child && child->loaded) {
-            refreshNode(child.get());
-        }
-    }
+    refreshNodeRecursive(&m_root);
 }
 
 void TreeModel::refreshPath(const QString &path)
 {
-    if (path.isEmpty()) {
-        refresh();
-        return;
+    Node *node = nodeForPath(path);
+    if (node) {
+        refreshNode(node);
     }
-
-    const QString normalized = m_provider->normalizedPath(path);
-    if (normalized.isEmpty()) {
-        return;
-    }
-
-    QString targetPath = normalized;
-    if (!m_provider->pathExists(targetPath) || !m_provider->isDirectory(targetPath)) {
-        targetPath = m_provider->parentPath(targetPath);
-    }
-
-    if (targetPath.isEmpty()) {
-        return;
-    }
-
-    Node *node = nodeForPath(targetPath);
-    if (!node) {
-        return;
-    }
-
-    refreshNode(node);
 }
 
 QModelIndex TreeModel::indexForPath(const QString &path)
@@ -243,7 +218,17 @@ void TreeModel::refreshNode(Node *node)
         return;
     }
 
-    if (node != &m_root && (!m_provider->pathExists(node->path) || !m_provider->isDirectory(node->path))) {
+    if (node == &m_root) {
+        // For root, just recurse into already loaded children
+        for (const auto &child : node->children) {
+            if (child->loaded) {
+                refreshNodeRecursive(child.get());
+            }
+        }
+        return;
+    }
+
+    if (!m_provider->pathExists(node->path) || !m_provider->isDirectory(node->path)) {
         Node *parent = node->parent && node->parent != &m_root ? node->parent : nullptr;
         if (parent) {
             refreshNode(parent);
@@ -256,16 +241,18 @@ void TreeModel::refreshNode(Node *node)
         return;
     }
 
-    const QStringList paths = node == &m_root ? QStringList() : m_provider->childPaths(node->path, false);
+    const QStringList paths = m_provider->childPaths(node->path, m_showHidden);
 
     std::vector<std::unique_ptr<Node>> oldChildren = std::move(node->children);
     std::vector<std::unique_ptr<Node>> newChildren;
     newChildren.reserve(paths.size());
 
     auto takeChild = [&oldChildren](const QString &childPath) -> std::unique_ptr<Node> {
-        for (auto &child : oldChildren) {
-            if (child && pathEquals(child->path, childPath)) {
-                return std::move(child);
+        for (auto it = oldChildren.begin(); it != oldChildren.end(); ++it) {
+            if (*it && (*it)->path == childPath) {
+                std::unique_ptr<Node> ret = std::move(*it);
+                oldChildren.erase(it);
+                return ret;
             }
         }
         return nullptr;
@@ -290,8 +277,6 @@ void TreeModel::refreshNode(Node *node)
             child->parent = node;
             child->name = name;
             child->path = normalized;
-            child->icon = QStringLiteral("folder");
-            child->isDrive = false;
         } else {
             child = makeNode(node, name, normalized, QStringLiteral("folder"), false);
         }
@@ -312,6 +297,12 @@ void TreeModel::refreshNode(Node *node)
             return lhs->name.compare(rhs->name, Qt::CaseInsensitive) < 0;
         });
 
+    // Check if anything actually changed in terms of children paths
+    bool changed = (newChildren.size() != oldChildren.size()); // This oldChildren is now only the "removed" ones
+    if (!changed) {
+        // Could check names or presence, but since we are swapping anyway...
+    }
+
     layoutAboutToBeChanged();
     node->children = std::move(newChildren);
     node->loaded = true;
@@ -319,6 +310,22 @@ void TreeModel::refreshNode(Node *node)
     layoutChanged();
 
     watchNode(node);
+}
+
+void TreeModel::refreshNodeRecursive(Node *node)
+{
+    if (!node) return;
+    
+    if (node == &m_root) {
+        for (const auto &child : node->children) {
+            refreshNodeRecursive(child.get());
+        }
+    } else if (node->loaded) {
+        refreshNode(node);
+        for (const auto &child : node->children) {
+            refreshNodeRecursive(child.get());
+        }
+    }
 }
 
 TreeModel::Node *TreeModel::nodeForPath(const QString &path)
@@ -480,7 +487,7 @@ void TreeModel::loadChildren(Node *node)
         return;
     }
 
-    const QStringList paths = m_provider->childPaths(node->path, false);
+    const QStringList paths = m_provider->childPaths(node->path, m_showHidden);
     std::vector<std::unique_ptr<Node>> children;
     children.reserve(paths.size());
 
@@ -523,6 +530,25 @@ void TreeModel::loadChildren(Node *node)
     }
     endInsertRows();
     watchNode(node);
+}
+
+bool TreeModel::showHidden() const
+{
+    return m_showHidden;
+}
+
+void TreeModel::setShowHidden(bool show)
+{
+    if (m_showHidden == show) {
+        return;
+    }
+
+    m_showHidden = show;
+    
+    // Surgical refresh of the tree without collapsing everything
+    refreshNodeRecursive(&m_root);
+
+    emit showHiddenChanged();
 }
 
 void TreeModel::watchNode(Node *node)

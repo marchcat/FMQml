@@ -117,6 +117,7 @@ private:
     void setLoading(bool loading);
     void setError(const QString &error);
     void applyFilter();
+    void applyFilterInternal(bool keepSelection);
     void sortModel();
     bool compareEntries(const FileEntry &a, const FileEntry &b) const;
     void updatePathIndex();

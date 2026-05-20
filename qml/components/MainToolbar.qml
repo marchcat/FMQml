@@ -254,7 +254,11 @@ ToolBar {
             IconButton {
                 iconSource: root.activeController.directoryModel.showHidden ? "../assets/lucide-toolbar/eye-off.svg" : "../assets/lucide-toolbar/eye.svg"
                 iconTone: "hidden"
-                onClicked: root.activeController.directoryModel.showHidden = !root.activeController.directoryModel.showHidden
+                onClicked: {
+                    const newValue = !root.activeController.directoryModel.showHidden
+                    root.activeController.directoryModel.showHidden = newValue
+                    workspaceController.treeModel.showHidden = newValue
+                }
                 ToolTip.visible: hovered
                 ToolTip.text: root.activeController.directoryModel.showHidden ? "Hide Hidden Files" : "Show Hidden Files"
             }

@@ -217,6 +217,12 @@ void DirectoryModel::setShowHidden(bool show)
     }
     m_showHidden = show;
     m_provider->setShowHidden(show);
+    
+    // Immediately update the filtered indices for items we already have.
+    // This is instant and uses beginResetModel, which is safe and prevents artifacts.
+    // We keep selection because toggling hidden files shouldn't clear it.
+    applyFilterInternal(true);
+    
     refresh();
     emit showHiddenChanged();
 }
@@ -321,6 +327,12 @@ void DirectoryModel::processPendingInserts()
     const int chunkSize = 150;
     int processed = 0;
     
+    // If we are doing a lot of visibility changes (e.g. toggling hidden files),
+    // it's safer and faster to just reset the model at the end of the chunk
+    // if the number of insertions/removals is high.
+    bool manyChanges = false;
+    int changeCount = 0;
+
     while (m_pendingInsertOffset < m_pendingInserts.size() && processed < chunkSize) {
         FileEntry entry = m_pendingInserts.at(m_pendingInsertOffset++);
         processed++;
@@ -328,9 +340,13 @@ void DirectoryModel::processPendingInserts()
         const QString normalizedPath = QDir::fromNativeSeparators(entry.path);
         const int absoluteIdx = m_pathIndex.value(normalizedPath, -1);
 
+        const bool visible = m_showHidden || !entry.isHidden;
+        const bool matchesFilter = m_filterText.isEmpty() || entry.name.contains(m_filterText, Qt::CaseInsensitive);
+        const bool shouldBeVisible = visible && matchesFilter;
+
         if (absoluteIdx >= 0 && absoluteIdx < m_entries.size()) {
             FileEntry &existing = m_entries[absoluteIdx];
-            const bool changed = (existing.size != entry.size
+            const bool hasChanged = (existing.size != entry.size
                                   || existing.modified != entry.modified
                                   || existing.isDirectory != entry.isDirectory
                                   || existing.suffix != entry.suffix
@@ -340,26 +356,41 @@ void DirectoryModel::processPendingInserts()
                                   || existing.createdText != entry.createdText
                                   || existing.attributesText != entry.attributesText);
 
-            if (changed) {
-                // Preserving selection state
+            int filteredRow = -1;
+            for (int i = 0; i < m_filteredIndices.size(); ++i) {
+                if (m_filteredIndices[i] == absoluteIdx) {
+                    filteredRow = i;
+                    break;
+                }
+            }
+
+            if (shouldBeVisible && filteredRow == -1) {
+                // Was hidden, now visible: INSERT
+                auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), absoluteIdx,
+                    [this, &entry](int existingIdx, int val) {
+                        Q_UNUSED(val);
+                        return this->compareEntries(m_entries.at(existingIdx), entry);
+                    });
+                const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
+                beginInsertRows(QModelIndex(), row, row);
+                m_filteredIndices.insert(row, absoluteIdx);
+                endInsertRows();
+                changeCount++;
+            } else if (!shouldBeVisible && filteredRow != -1) {
+                // Was visible, now hidden: REMOVE
+                beginRemoveRows(QModelIndex(), filteredRow, filteredRow);
+                m_filteredIndices.removeAt(filteredRow);
+                endRemoveRows();
+                changeCount++;
+            } else if (shouldBeVisible && filteredRow != -1 && hasChanged) {
                 bool wasSelected = existing.isSelected;
                 existing = entry;
                 existing.isSelected = wasSelected;
-                
-                int filteredRow = -1;
-                // For fresh load, we don't have filteredIndices yet or it's being built
-                // But if it's an update, we need to find the row.
-                // indexOf is O(N), but we only do it for updates.
-                for (int i = 0; i < m_filteredIndices.size(); ++i) {
-                    if (m_filteredIndices[i] == absoluteIdx) {
-                        filteredRow = i;
-                        break;
-                    }
-                }
-                
-                if (filteredRow != -1) {
-                    emit dataChanged(index(filteredRow), index(filteredRow));
-                }
+                emit dataChanged(index(filteredRow), index(filteredRow));
+            } else if (hasChanged) {
+                bool wasSelected = existing.isSelected;
+                existing = entry;
+                existing.isSelected = wasSelected;
             }
             m_foundPaths.insert(normalizedPath);
         } else {
@@ -369,24 +400,25 @@ void DirectoryModel::processPendingInserts()
             m_pathIndex.insert(normalizedPath, newAbsoluteIdx);
             m_foundPaths.insert(normalizedPath);
 
-            const bool visible = m_showHidden || !entry.isHidden;
-            const bool matchesFilter = m_filterText.isEmpty() || entry.name.contains(m_filterText, Qt::CaseInsensitive);
-
-            if (visible && matchesFilter) {
-                // If we are in a fresh load, we might want to just append for speed 
-                // and sort at the very end, OR insert into sorted position.
-                // Inserting into sorted position is O(N) per insert, total O(N^2).
-                // For 10k items, that's slow.
-                // Let's use std::lower_bound to find insertion point.
+            if (shouldBeVisible) {
                 auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
-                    [&](int existingIdx, int) {
+                    [this, &entry](int existingIdx, int val) {
+                        Q_UNUSED(val);
                         return this->compareEntries(m_entries.at(existingIdx), entry);
                     });
-                const int row = std::distance(m_filteredIndices.begin(), it);
+                const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
                 beginInsertRows(QModelIndex(), row, row);
                 m_filteredIndices.insert(row, newAbsoluteIdx);
                 endInsertRows();
+                changeCount++;
             }
+        }
+        
+        if (changeCount > 50) {
+            manyChanges = true;
+            // If we have too many changes in one chunk, it's better to just finish the chunk
+            // and do a reset if we encounter even more, or just continue one-by-one.
+            // Actually, for now let's stick to one-by-one but be careful.
         }
     }
 
@@ -408,7 +440,6 @@ void DirectoryModel::processPendingInserts()
 void DirectoryModel::onScannerFinished(const QString &path, bool success, int generation, const QString &error)
 {
     if (generation != m_currentScanGeneration) {
-        setLoading(false);
         return;
     }
 
@@ -548,11 +579,17 @@ void DirectoryModel::onDebounceTimeout()
 
 void DirectoryModel::applyFilter()
 {
-    // Clear selection when filtering to avoid "ghost" selections in filtered view
-    for (FileEntry &entry : m_entries) {
-        entry.isSelected = false;
+    applyFilterInternal(false);
+}
+
+void DirectoryModel::applyFilterInternal(bool keepSelection)
+{
+    if (!keepSelection) {
+        for (FileEntry &entry : m_entries) {
+            entry.isSelected = false;
+        }
+        m_selectedCount = 0;
     }
-    m_selectedCount = 0;
 
     beginResetModel();
     m_filteredIndices.clear();
@@ -953,22 +990,41 @@ void DirectoryModel::processAllPendingInsertsFast()
                                       || existing.createdText != entry.createdText
                                       || existing.attributesText != entry.attributesText);
 
-                if (changed) {
+                const bool visible = m_showHidden || !entry.isHidden;
+                const bool matchesFilter = m_filterText.isEmpty() || entry.name.contains(m_filterText, Qt::CaseInsensitive);
+                const bool shouldBeVisible = visible && matchesFilter;
+
+                int filteredRow = -1;
+                for (int i = 0; i < m_filteredIndices.size(); ++i) {
+                    if (m_filteredIndices[i] == absoluteIdx) {
+                        filteredRow = i;
+                        break;
+                    }
+                }
+
+                if (shouldBeVisible && filteredRow == -1) {
+                    auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), absoluteIdx,
+                        [this, &entry](int existingIdx, int val) {
+                            Q_UNUSED(val);
+                            return this->compareEntries(m_entries.at(existingIdx), entry);
+                        });
+                    const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
+                    beginInsertRows(QModelIndex(), row, row);
+                    m_filteredIndices.insert(row, absoluteIdx);
+                    endInsertRows();
+                } else if (!shouldBeVisible && filteredRow != -1) {
+                    beginRemoveRows(QModelIndex(), filteredRow, filteredRow);
+                    m_filteredIndices.removeAt(filteredRow);
+                    endRemoveRows();
+                } else if (shouldBeVisible && filteredRow != -1 && changed) {
                     bool wasSelected = existing.isSelected;
                     existing = entry;
                     existing.isSelected = wasSelected;
-
-                    int filteredRow = -1;
-                    for (int i = 0; i < m_filteredIndices.size(); ++i) {
-                        if (m_filteredIndices[i] == absoluteIdx) {
-                            filteredRow = i;
-                            break;
-                        }
-                    }
-
-                    if (filteredRow != -1) {
-                        emit dataChanged(index(filteredRow), index(filteredRow));
-                    }
+                    emit dataChanged(index(filteredRow), index(filteredRow));
+                } else if (changed) {
+                    bool wasSelected = existing.isSelected;
+                    existing = entry;
+                    existing.isSelected = wasSelected;
                 }
                 m_foundPaths.insert(normalizedPath);
             } else {
@@ -979,13 +1035,15 @@ void DirectoryModel::processAllPendingInsertsFast()
 
                 const bool visible = m_showHidden || !entry.isHidden;
                 const bool matchesFilter = m_filterText.isEmpty() || entry.name.contains(m_filterText, Qt::CaseInsensitive);
+                const bool shouldBeVisible = visible && matchesFilter;
 
-                if (visible && matchesFilter) {
+                if (shouldBeVisible) {
                     auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
-                        [&](int existingIdx, int) {
+                        [this, &entry](int existingIdx, int val) {
+                            Q_UNUSED(val);
                             return this->compareEntries(m_entries.at(existingIdx), entry);
                         });
-                    const int row = std::distance(m_filteredIndices.begin(), it);
+                    const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
                     beginInsertRows(QModelIndex(), row, row);
                     m_filteredIndices.insert(row, newAbsoluteIdx);
                     endInsertRows();

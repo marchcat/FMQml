@@ -28,6 +28,7 @@ Item {
     signal clicked(var mouse)
     signal doubleClicked()
     signal rightClicked()
+    signal emptySpaceRightClicked()
 
     implicitHeight: Theme.rowHeight
 
@@ -91,6 +92,7 @@ Item {
     ListView.onReused: {
         isRenaming = false
         visualOffsetX = 0
+        opacity = 1.0
         _ensureMetaLoaded()
     }
 
@@ -176,7 +178,12 @@ Item {
 
         onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                root.rightClicked()
+                var colNamePos = root.mapToItem(colName, mouse.x, mouse.y)
+                if (colNamePos.x >= 0 && colNamePos.x <= colName.width) {
+                    root.rightClicked()
+                } else {
+                    root.emptySpaceRightClicked()
+                }
             } else {
                 root.clicked(mouse)
             }

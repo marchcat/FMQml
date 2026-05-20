@@ -428,6 +428,7 @@ ApplicationWindow {
             if (root.previewPaneVisible) {
                 syncPreviewFromActivePanel(true)
             }
+            workspaceController.treeModel.showHidden = activePanelController().directoryModel.showHidden
         }
     }
 
