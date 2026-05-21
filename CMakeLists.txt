@@ -48,6 +48,10 @@ qt_add_executable(fm
     src/core/MetadataExtractor.h
     src/core/WinThumbnailExtractor.cpp
     src/core/WinThumbnailExtractor.h
+    src/core/DriveUtils.cpp
+    src/core/DriveUtils.h
+    src/core/SystemInfoProvider.cpp
+    src/core/SystemInfoProvider.h
 )
 
 set_source_files_properties(qml/style/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -78,6 +82,7 @@ set(MY_QML_FILES
     qml/components/ThemedMenuItem.qml
     qml/components/ThemedMenuSeparator.qml
     qml/components/Sidebar.qml
+    qml/components/StorageView.qml
     qml/style/Theme.qml
 )
 
@@ -99,6 +104,7 @@ qt_add_qml_module(fm
         qml/assets/icons/columns-2.svg
         qml/assets/icons/copy.svg
         qml/assets/icons/delete.svg
+        qml/assets/icons/computer.svg
         qml/assets/icons/desktop.svg
         qml/assets/icons/document.svg
         qml/assets/icons/download.svg

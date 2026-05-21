@@ -2,12 +2,21 @@
 
 #include <QAbstractListModel>
 #include <QStringList>
+#include <QTimer>
 
 struct PlaceItem {
     QString name;
     QString path;
     QString icon;
-    bool isDrive = false;
+    bool    isDrive    = false;
+
+    // Storage info (drives only)
+    qint64  totalBytes = 0;
+    qint64  freeBytes  = 0;
+    QString fileSystem;   // "NTFS", "FAT32", "exFAT", …
+    QString driveType;    // "hdd" | "ssd" | "usb" | "optical" | "network"
+    bool    isReady    = false;
+    bool    isCritical = false; // freeBytes < 10% totalBytes
 };
 
 class PlacesModel final : public QAbstractListModel {
@@ -18,7 +27,15 @@ public:
         NameRole = Qt::UserRole + 1,
         PathRole,
         IconRole,
-        IsDriveRole
+        IsDriveRole,
+        TotalSpaceRole,
+        FreeSpaceRole,
+        UsedSpaceRole,
+        UsagePercentRole,
+        FileSystemRole,
+        DriveTypeRole,
+        IsReadyRole,
+        IsCriticalRole
     };
 
     explicit PlacesModel(QObject *parent = nullptr);
@@ -29,6 +46,13 @@ public:
 
     Q_INVOKABLE void refresh();
 
+signals:
+    void lowDiskSpaceWarning(const QString &driveName, qint64 freeBytes);
+
+private slots:
+    void refreshDriveInfo();
+
 private:
     QList<PlaceItem> m_items;
+    QTimer *m_refreshTimer = nullptr;
 };

@@ -267,6 +267,9 @@ void WorkspaceController::copyActiveSelectionToOpposite()
     }
     FilePanelController *source = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
     FilePanelController *destination = m_activePanel == 0 ? &m_rightPanel : &m_leftPanel;
+    if (source->isDeviceRoot() || destination->isDeviceRoot()) {
+        return;
+    }
     m_operationQueue.copyTo(source->selectedPaths(), destination->currentPath());
 }
 
@@ -277,12 +280,18 @@ void WorkspaceController::moveActiveSelectionToOpposite()
     }
     FilePanelController *source = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
     FilePanelController *destination = m_activePanel == 0 ? &m_rightPanel : &m_leftPanel;
+    if (source->isDeviceRoot() || destination->isDeviceRoot()) {
+        return;
+    }
     m_operationQueue.moveTo(source->selectedPaths(), destination->currentPath());
 }
 
 void WorkspaceController::deleteActiveSelection()
 {
     FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isDeviceRoot()) {
+        return;
+    }
     requestDelete(active->selectedPaths(), active->currentPath());
 }
 
@@ -329,6 +338,9 @@ QString WorkspaceController::clipboardSummary() const
 void WorkspaceController::copyToClipboard()
 {
     FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isDeviceRoot()) {
+        return;
+    }
     m_clipboard = active->selectedPaths();
     m_isCut = false;
     emit clipboardChanged();
@@ -340,6 +352,9 @@ void WorkspaceController::copyToClipboard()
 void WorkspaceController::cutToClipboard()
 {
     FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isDeviceRoot()) {
+        return;
+    }
     m_clipboard = active->selectedPaths();
     m_isCut = true;
     emit clipboardChanged();
@@ -354,6 +369,9 @@ void WorkspaceController::pasteFromClipboard()
         return;
     }
     FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isDeviceRoot()) {
+        return;
+    }
     if (m_isCut) {
         m_operationQueue.moveTo(m_clipboard, active->currentPath());
         m_clipboard.clear();

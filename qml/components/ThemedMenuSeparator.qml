@@ -5,7 +5,7 @@ import "../style"
 MenuSeparator {
     id: root
 
-    implicitHeight: 8
+    implicitHeight: visible ? 8 : 0
     padding: 0
 
     contentItem: Rectangle {

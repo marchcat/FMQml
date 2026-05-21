@@ -41,6 +41,9 @@ Pane {
     function iconToneFor(name, active, hovered) {
         let base = Theme.textSecondary
         switch (String(name)) {
+        case "computer":
+            base = "#6366f1"
+            break
         case "home":
             base = "#8b5cf6"
             break
@@ -148,6 +151,101 @@ Pane {
             model: workspaceController.placesModel
             clip: true
             interactive: contentHeight > height
+
+            header: Item {
+                width: placesList.width
+                height: 40
+
+                readonly property bool isActive: {
+                    let panel = workspaceController.activePanel === 0
+                        ? workspaceController.leftPanel
+                        : workspaceController.rightPanel
+                    return panel.isDeviceRoot
+                }
+
+                Rectangle {
+                    id: thisPcBg
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    radius: 9
+
+                    color: {
+                        if (parent.isActive)
+                            return Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, themeController.isDark ? 0.16 : 0.11)
+                        if (thisPcMouse.containsPress)
+                            return Theme.surfaceActive
+                        if (thisPcMouse.containsMouse)
+                            return Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, themeController.isDark ? 0.07 : 0.05)
+                        return "transparent"
+                    }
+
+                    border.color: parent.isActive
+                        ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.32)
+                        : (thisPcMouse.containsMouse ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.18) : "transparent")
+                    border.width: parent.isActive || thisPcMouse.containsMouse ? 1 : 0
+
+                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+
+                    // Active indicator bar
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.topMargin: 6
+                        anchors.bottomMargin: 6
+                        width: 4
+                        radius: 2
+                        visible: thisPcBg.parent.isActive
+                        color: Theme.accent
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 6
+                        spacing: 10
+
+                        Image {
+                            Layout.preferredWidth: 20
+                            Layout.preferredHeight: 20
+                            source: "../assets/icons/computer.svg"
+                            sourceSize: Qt.size(20, 20)
+                            asynchronous: true
+                            cache: true
+                            opacity: thisPcBg.parent.isActive || thisPcMouse.containsMouse ? 1 : 0.86
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                colorization: 1.0
+                                colorizationColor: root.iconToneFor("computer", thisPcBg.parent.isActive, thisPcMouse.containsMouse)
+                            }
+                        }
+
+                        Label {
+                            text: "This PC"
+                            Layout.fillWidth: true
+                            font.pixelSize: 13
+                            font.weight: thisPcBg.parent.isActive ? Font.Medium : Font.Normal
+                            color: Theme.textPrimary
+                            opacity: thisPcBg.parent.isActive ? 1.0 : 0.92
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    MouseArea {
+                        id: thisPcMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            let panel = workspaceController.activePanel === 0
+                                ? workspaceController.leftPanel
+                                : workspaceController.rightPanel
+                            panel.openPath("devices://")
+                        }
+                    }
+                }
+            }
 
             delegate: ItemDelegate {
                 id: placeDelegate

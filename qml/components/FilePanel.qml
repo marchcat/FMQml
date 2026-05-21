@@ -10,6 +10,7 @@ Pane {
 
     required property var controller
     property bool active: false
+    readonly property bool showActiveHighlight: root.active && workspaceController.splitEnabled
     readonly property int viewMode: root.controller.viewMode
     property int gridIconSize: 48
     readonly property int gridIconMinSize: 32
@@ -234,7 +235,7 @@ Pane {
     background: Item {
         id: backgroundWrapper
         
-        layer.enabled: root.active
+        layer.enabled: root.showActiveHighlight
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowColor: Theme.activeGlow
@@ -248,14 +249,14 @@ Pane {
             anchors.fill: parent
             radius: Theme.radius
             color: themeController.isDark ? Theme.surface : Theme.bg
-            border.color: root.active ? Theme.activeAccent : Theme.border
-            border.width: root.active ? 3 : 1
+            border.color: root.showActiveHighlight ? Theme.activeAccent : Theme.border
+            border.width: root.showActiveHighlight ? 3 : 1
 
             // Subtle overlay for the whole panel
             Rectangle {
                 anchors.fill: parent
                 radius: Theme.radius
-                color: root.active 
+                color: root.showActiveHighlight 
                        ? Qt.rgba(Theme.activeAccent.r, Theme.activeAccent.g, Theme.activeAccent.b, themeController.isDark ? 0.03 : 0.05)
                        : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, themeController.isDark ? 0.015 : 0.03)
             }
@@ -266,9 +267,9 @@ Pane {
                 anchors.top: parent.top
                 anchors.left: parent.left
                 anchors.right: parent.right
-                height: root.active ? 4 : 1 // The visible height of the accent
+                height: root.showActiveHighlight ? 4 : 1 // The visible height of the accent
                 clip: true 
-                visible: root.active
+                visible: root.showActiveHighlight
                 
                 Rectangle {
                     anchors.top: parent.top
@@ -433,7 +434,9 @@ Pane {
             enabled: contextRow() >= 0
             onTriggered: root.controller.showProperties(contextRow())
         }
-        ThemedMenuSeparator {}
+        ThemedMenuSeparator {
+            visible: Qt.platform.os === "windows"
+        }
         ThemedMenuItem {
             text: "Open in PowerShell"
             icon.source: "../assets/icons/terminal.svg"
@@ -454,7 +457,9 @@ Pane {
             enabled: root.controller.currentPath.length > 0
             onTriggered: root.controller.openInTerminal()
         }
-        ThemedMenuSeparator {}
+        ThemedMenuSeparator {
+            visible: Qt.platform.os === "windows"
+        }
         ThemedMenuItem {
             text: "New Folder"
             icon.source: "../assets/icons/folder-plus.svg"
@@ -540,7 +545,7 @@ Pane {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 height: 1
-                color: root.active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55)
+                color: root.showActiveHighlight ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.55)
                                   : Theme.border
             }
 
@@ -573,6 +578,7 @@ Pane {
 
                 IconButton {
                     id: panelViewToggle
+                    visible: !root.controller.isDeviceRoot
                     iconSource: root.viewMode === 0 
                                 ? "../assets/lucide-toolbar/list.svg" 
                                 : (root.viewMode === 1 
@@ -609,6 +615,7 @@ Pane {
                     implicitHeight: 26
                     implicitWidth: selectionText.implicitWidth + 18
                     radius: 13
+                    visible: !root.controller.isDeviceRoot
                     color: root.controller.directoryModel.selectedCount > 0
                            ? (root.active ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                            : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, 0.12)
@@ -687,6 +694,8 @@ Pane {
             Flickable {
                 id: horizontalFlick
                 anchors.fill: parent
+                visible: !root.controller.isDeviceRoot
+                enabled: visible
                 contentWidth: root.viewMode === 0 ? Math.max(width, root.totalColumnsWidth) : width
                 flickableDirection: Flickable.HorizontalFlick
                 boundsBehavior: Flickable.StopAtBounds
@@ -789,11 +798,13 @@ Pane {
                 }
             }
 
-            // ── Empty Folder Message ─────────────────────────────────────────
+            // ── Empty Folder Message ─────────────────────────────────────
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 12
-                visible: !root.controller.directoryModel.loading && root.controller.directoryModel.count === 0
+                visible: !root.controller.isDeviceRoot
+                         && !root.controller.directoryModel.loading
+                         && root.controller.directoryModel.count === 0
                 opacity: 0.5
 
                 Image {
@@ -816,7 +827,7 @@ Pane {
             GridView {
                 id: briefView
                 anchors.fill: parent
-                visible: root.viewMode === 2
+                visible: root.viewMode === 2 && !root.controller.isDeviceRoot
                 enabled: visible
                 clip: true
                 flow: GridView.FlowLeftToRight
@@ -914,7 +925,7 @@ Pane {
                 anchors.fill: parent
                 anchors.margins: 10
                 anchors.bottomMargin: root.viewMode === 1 ? (root.showLoadingRail ? 92 : (root.statusMessage.length > 0 ? 92 : 56)) : 10
-                visible: root.viewMode === 1
+                visible: root.viewMode === 1 && !root.controller.isDeviceRoot
                 enabled: visible
                 clip: true
                 boundsBehavior: Flickable.DragAndOvershootBounds
@@ -1187,7 +1198,7 @@ Pane {
 
             Rectangle {
                 id: gridDensityBar
-                visible: root.viewMode === 1
+                visible: root.viewMode === 1 && !root.controller.isDeviceRoot
                 z: 5
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
@@ -1272,7 +1283,7 @@ Pane {
 
             Rectangle {
                 id: briefDensityBar
-                visible: root.viewMode === 2
+                visible: root.viewMode === 2 && !root.controller.isDeviceRoot
                 z: 5
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
@@ -1346,16 +1357,28 @@ Pane {
                 }
             }
 
+            // ── Storage View (This PC / devices://) ──────────────────────────
+            StorageView {
+                id: storageView
+                anchors.fill: parent
+                controller: root.controller
+                visible: root.controller.isDeviceRoot
+                enabled: visible
+                focus: root.active && root.controller.isDeviceRoot
+            }
+
             MouseArea {
                 anchors.fill: parent
                 z: -1
                 acceptedButtons: Qt.RightButton
+                enabled: !root.controller.isDeviceRoot
                 onClicked: (mouse) => {
                     root.activated()
                     emptyContextMenu.popup()
                 }
             }
 
+            // ── Status Rail ───────────────────────────────────────────────────
             Rectangle {
                 anchors.left: parent.left
                 anchors.right: parent.right
@@ -1437,8 +1460,8 @@ Pane {
         anchors.fill: parent
         radius: Theme.radius
         color: "transparent"
-        border.color: root.active ? Theme.activeAccent : Theme.border
-        border.width: root.active ? 3 : 1
+        border.color: root.showActiveHighlight ? Theme.activeAccent : Theme.border
+        border.width: root.showActiveHighlight ? 3 : 1
         z: 9999
 
         Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }

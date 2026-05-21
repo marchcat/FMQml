@@ -4,6 +4,7 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QLatin1String>
 #include <memory>
 
 #include "../core/FileProvider.h"
@@ -19,12 +20,17 @@ class FilePanelController final : public QObject {
     Q_PROPERTY(QString hoveredPath READ hoveredPath WRITE setHoveredPath NOTIFY hoveredPathChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(bool scrolling READ scrolling WRITE setScrolling NOTIFY scrollingChanged)
+    Q_PROPERTY(bool isDeviceRoot READ isDeviceRoot NOTIFY isDeviceRootChanged)
+
+    static constexpr QLatin1String DEVICE_ROOT{"devices://"};
 
 public:
     explicit FilePanelController(QObject *parent = nullptr);
 
     int viewMode() const;
     void setViewMode(int mode);
+
+    bool isDeviceRoot() const;
 
     DirectoryModel *directoryModel();
     QString currentPath() const;
@@ -50,6 +56,8 @@ public:
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void refresh();
     Q_INVOKABLE QStringList selectedPaths() const;
+    Q_INVOKABLE QVariantMap storageInfoForPath(const QString &rootPath) const;
+    Q_INVOKABLE void ejectDrive(const QString &rootPath);
 
     Q_INVOKABLE bool rename(int row, const QString &newName);
     Q_INVOKABLE bool renamePath(const QString &oldPath, const QString &newName);
@@ -67,6 +75,7 @@ signals:
     void historyChanged();
     void hoveredPathChanged();
     void viewModeChanged();
+    void isDeviceRootChanged();
     void revealProperties(const QStringList &paths);
     void entryRenamed(const QString &oldPath, const QString &newPath);
     void entryCreated(const QString &path);
@@ -74,6 +83,7 @@ signals:
     void contentsChanged(const QString &path);
     void statusMessageChanged();
     void scrollingChanged();
+    void ejectFinished(const QString &rootPath, bool success);
     // Emitted on the GUI thread when async metadata finishes
     void metadataReady(const QString &path, const QVariantMap &meta);
 
@@ -92,4 +102,7 @@ private:
     QStringList m_forwardStack;
     int m_viewMode = 0;
     bool m_scrolling = false;
+    bool m_isDeviceRoot = false;
+
+    void setIsDeviceRoot(bool value);
 };

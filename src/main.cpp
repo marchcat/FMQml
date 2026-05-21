@@ -20,6 +20,7 @@
 #include "controllers/PropertiesController.h"
 #include "core/IconProvider.h"
 #include "core/ThumbnailProvider.h"
+#include "core/SystemInfoProvider.h"
 
 int main(int argc, char *argv[])
 {
@@ -63,6 +64,7 @@ int main(int argc, char *argv[])
     ThemeController theme;
     QuickLookController quickLook;
     PropertiesController properties;
+    SystemInfoProvider systemInfo;
 
     QQmlApplicationEngine engine;
 
@@ -72,6 +74,7 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty(QStringLiteral("themeController"), &theme);
     engine.rootContext()->setContextProperty(QStringLiteral("quickLookController"), &quickLook);
     engine.rootContext()->setContextProperty(QStringLiteral("propertiesController"), &properties);
+    engine.rootContext()->setContextProperty(QStringLiteral("systemInfoProvider"), &systemInfo);
 
     QObject::connect(
         &engine,

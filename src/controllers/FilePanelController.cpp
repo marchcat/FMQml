@@ -4,11 +4,19 @@
 #include <QDir>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QStorageInfo>
 #include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
 
+#ifdef Q_OS_WIN
+#  include <windows.h>
+#  include <winioctl.h>
+#endif
+
 #include "../core/LocalFileProvider.h"
 #include "../core/MetadataExtractor.h"
+#include "../core/DriveUtils.h"
+
 
 FilePanelController::FilePanelController(QObject *parent)
     : QObject(parent)
@@ -18,6 +26,18 @@ FilePanelController::FilePanelController(QObject *parent)
     connect(&m_directoryModel, &DirectoryModel::directoryUnavailable, this, &FilePanelController::recoverFromMissingPath);
 }
 
+bool FilePanelController::isDeviceRoot() const
+{
+    return m_isDeviceRoot;
+}
+
+void FilePanelController::setIsDeviceRoot(bool value)
+{
+    if (m_isDeviceRoot == value) return;
+    m_isDeviceRoot = value;
+    emit isDeviceRootChanged();
+}
+
 DirectoryModel *FilePanelController::directoryModel()
 {
     return &m_directoryModel;
@@ -25,6 +45,9 @@ DirectoryModel *FilePanelController::directoryModel()
 
 QString FilePanelController::currentPath() const
 {
+    if (m_isDeviceRoot) {
+        return QString(DEVICE_ROOT);
+    }
     return m_directoryModel.currentPath();
 }
 
@@ -86,6 +109,10 @@ bool FilePanelController::openPath(const QString &path)
         return false;
     }
 
+    if (path == QString(DEVICE_ROOT)) {
+        return openPathInternal(path, true);
+    }
+
     if (!m_fileProvider->pathExists(path)) {
         return false;
     }
@@ -95,6 +122,7 @@ bool FilePanelController::openPath(const QString &path)
 
 void FilePanelController::openRow(int row)
 {
+    if (m_isDeviceRoot) return;
     if (!m_directoryModel.isDirectoryAt(row)) {
         return;
     }
@@ -103,6 +131,7 @@ void FilePanelController::openRow(int row)
 
 void FilePanelController::openItem(int row)
 {
+    if (m_isDeviceRoot) return;
     if (m_directoryModel.isDirectoryAt(row)) {
         openPath(m_directoryModel.pathAt(row));
         return;
@@ -115,6 +144,7 @@ void FilePanelController::openItem(int row)
 
 void FilePanelController::revealInFileManager(int row)
 {
+    if (m_isDeviceRoot) return;
     const QString path = m_directoryModel.pathAt(row);
     if (path.isEmpty()) {
         return;
@@ -134,6 +164,7 @@ void FilePanelController::revealInFileManager(int row)
 
 void FilePanelController::openInTerminal()
 {
+    if (m_isDeviceRoot) return;
 #if defined(Q_OS_WIN)
     const QString path = QDir::toNativeSeparators(currentPath());
     QProcess::startDetached(QStringLiteral("wt.exe"),
@@ -173,14 +204,24 @@ void FilePanelController::goForward()
 
 void FilePanelController::goUp()
 {
-    const QString parent = m_fileProvider->parentPath(currentPath());
-    if (!parent.isEmpty() && parent != currentPath()) {
+    if (m_isDeviceRoot) {
+        return; // Already at the top
+    }
+    const QString cp = currentPath();
+    const QString parent = m_fileProvider->parentPath(cp);
+    // If parent == current, we are at the drive root — go to devices://
+    if (parent.isEmpty() || parent == cp) {
+        openPath(QString(DEVICE_ROOT));
+    } else {
         openPath(parent);
     }
 }
 
 bool FilePanelController::rename(int row, const QString &newName)
 {
+    if (m_isDeviceRoot) {
+        return false;
+    }
     const QString oldPath = m_directoryModel.pathAt(row);
     if (oldPath.isEmpty()) {
         return false;
@@ -191,6 +232,9 @@ bool FilePanelController::rename(int row, const QString &newName)
 
 bool FilePanelController::renamePath(const QString &oldPath, const QString &newName)
 {
+    if (m_isDeviceRoot) {
+        return false;
+    }
     if (oldPath.isEmpty()) {
         return false;
     }
@@ -213,6 +257,9 @@ bool FilePanelController::renamePath(const QString &oldPath, const QString &newN
 
 bool FilePanelController::createFolder(const QString &name)
 {
+    if (m_isDeviceRoot) {
+        return false;
+    }
     QString path;
     if (m_fileProvider->createFolder(currentPath(), name, &path)) {
         if (!m_directoryModel.insertPath(path)) {
@@ -229,6 +276,9 @@ bool FilePanelController::createFolder(const QString &name)
 
 bool FilePanelController::createFile(const QString &name)
 {
+    if (m_isDeviceRoot) {
+        return false;
+    }
     QString path;
     if (m_fileProvider->createFile(currentPath(), name, &path)) {
         if (!m_directoryModel.insertPath(path)) {
@@ -265,6 +315,7 @@ QString FilePanelController::childPathForPath(const QString &parentPath, const Q
 
 void FilePanelController::showProperties(int row)
 {
+    if (m_isDeviceRoot) return;
     QStringList selected = m_directoryModel.selectedPaths();
     if (selected.isEmpty()) {
         // Fallback: use the path at the given row
@@ -280,6 +331,7 @@ void FilePanelController::showProperties(int row)
 
 void FilePanelController::fetchMetadataAsync(const QString &path)
 {
+    if (m_isDeviceRoot) return;
     // Run extraction on a worker thread; marshal result back to GUI thread via signal.
     QtConcurrent::run([this, path]() {
         const QVariantList props = MetadataExtractor::extract(path);
@@ -315,12 +367,101 @@ QStringList FilePanelController::selectedPaths() const
     return m_directoryModel.selectedPaths();
 }
 
+QVariantMap FilePanelController::storageInfoForPath(const QString &rootPath) const
+{
+    const QStorageInfo storage(rootPath);
+    if (!storage.isValid() || !storage.isReady()) {
+        return {};
+    }
+    const qint64 total = storage.bytesTotal();
+    const qint64 free  = storage.bytesFree();
+    const qint64 used  = total - free;
+    const double pct   = total > 0 ? static_cast<double>(used) / static_cast<double>(total) : 0.0;
+    return {
+        {QStringLiteral("total"),      total},
+        {QStringLiteral("free"),       free},
+        {QStringLiteral("used"),       used},
+        {QStringLiteral("percent"),    pct},
+        {QStringLiteral("totalStr"),   DriveUtils::formatSize(total)},
+        {QStringLiteral("freeStr"),    DriveUtils::formatSize(free)},
+        {QStringLiteral("fs"),         QString::fromLatin1(storage.fileSystemType())},
+        {QStringLiteral("isCritical"), total > 0 && (static_cast<double>(free) / static_cast<double>(total)) < 0.10},
+    };
+}
+
+void FilePanelController::ejectDrive(const QString &rootPath)
+{
+#ifdef Q_OS_WIN
+    // Run eject asynchronously so we don't block the GUI thread
+    const QString path = rootPath;
+    QtConcurrent::run([this, path]() {
+        // Build volume path like "\\.\C:"
+        QString vol = path;
+        if (vol.endsWith('/') || vol.endsWith('\\')) vol.chop(1);
+        const QString devPath = QStringLiteral("\\\\.\\%1").arg(vol);
+        const std::wstring wdev = devPath.toStdWString();
+
+        HANDLE hDevice = ::CreateFileW(
+            wdev.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_EXISTING,
+            0,
+            nullptr);
+
+        bool ok = false;
+        if (hDevice != INVALID_HANDLE_VALUE) {
+            DWORD bytesReturned = 0;
+            ok = ::DeviceIoControl(
+                hDevice,
+                IOCTL_STORAGE_EJECT_MEDIA,
+                nullptr, 0,
+                nullptr, 0,
+                &bytesReturned,
+                nullptr) != 0;
+            ::CloseHandle(hDevice);
+        }
+
+        QMetaObject::invokeMethod(this, [this, path, ok]() {
+            emit ejectFinished(path, ok);
+        }, Qt::QueuedConnection);
+    });
+#else
+    Q_UNUSED(rootPath)
+    emit ejectFinished(rootPath, false);
+#endif
+}
+
 bool FilePanelController::openPathInternal(const QString &path, bool addToHistory)
 {
-    const QString newPath = m_fileProvider->normalizedPath(path);
-    const QString oldPath = m_fileProvider->normalizedPath(currentPath());
+    const bool targetIsDeviceRoot = (path == DEVICE_ROOT);
+    const bool wasDeviceRoot = m_isDeviceRoot;
+
+    QString newPath;
+    if (targetIsDeviceRoot) {
+        newPath = DEVICE_ROOT;
+    } else {
+        newPath = m_fileProvider->normalizedPath(path);
+    }
+
+    const QString oldPath = currentPath();
 
     if (!newPath.isEmpty() && newPath == oldPath) {
+        return true;
+    }
+
+    if (targetIsDeviceRoot) {
+        m_directoryModel.setFilterText({});
+        setStatusMessage({});
+        if (addToHistory && !oldPath.isEmpty()) {
+            pushHistory(oldPath);
+            m_forwardStack.clear();
+        }
+        setIsDeviceRoot(true);
+        emit pathNavigated(newPath);
+        emit currentPathChanged();
+        emit historyChanged();
         return true;
     }
 
@@ -331,7 +472,11 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
             pushHistory(oldPath);
             m_forwardStack.clear();
         }
+        setIsDeviceRoot(false);
         emit pathNavigated(newPath);
+        if (wasDeviceRoot) {
+            emit currentPathChanged();
+        }
         emit historyChanged();
         return true;
     }

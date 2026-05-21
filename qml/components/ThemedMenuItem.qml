@@ -8,7 +8,7 @@ MenuItem {
     id: root
 
     implicitWidth: 196
-    implicitHeight: 26
+    implicitHeight: visible ? 26 : 0
     clip: true
 
     property bool destructive: false
