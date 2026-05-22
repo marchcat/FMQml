@@ -171,12 +171,16 @@ Pane {
         function onLoadingChanged() {
             if (root.controller.directoryModel.loading) {
                 loadingRailTimer.start()
+                root.scrolling = true
+                root.controller.scrolling = true
+                scrollStopTimer.stop()
             } else {
                 loadingRailTimer.stop()
                 root.showLoadingRail = false
                 if (root.pendingScrollRestorePath.length > 0) {
                     scrollRestoreTimer.restart()
                 }
+                scrollStopTimer.restart()
             }
         }
     }
@@ -190,16 +194,25 @@ Pane {
                 root.pendingScrollRestorePath = ""
                 root.pendingScrollRestoreY = -1
             }
+            root.scrolling = true
+            root.controller.scrolling = true
+            scrollStopTimer.stop()
         }
         function onPathNavigated(path) {
             if (root.pendingScrollRestoreEnabled) {
                 root.queueScrollRestoreForPath(path)
                 root.pendingScrollRestoreEnabled = false
             }
+            root.scrolling = true
+            root.controller.scrolling = true
+            if (!root.controller.directoryModel.loading) {
+                scrollStopTimer.restart()
+            }
         }
     }
 
     function updateScrollingState() {
+        if (root.controller.directoryModel.loading) return
         const moving   = root.viewMode === 2 ? briefView.moving   : root.viewMode === 0 ? listView.moving   : gridView.moving
         const flicking = root.viewMode === 2 ? briefView.flicking : root.viewMode === 0 ? listView.flicking : gridView.flicking
         const isScrolling = moving || flicking
@@ -217,6 +230,17 @@ Pane {
                 scrollStopTimer.start()
             }
         }
+    }
+
+    function handleScrollActivity() {
+        if (root.controller.directoryModel.loading) return
+        if (!root.scrolling) {
+            root.scrolling = true
+            root.controller.scrolling = true
+            // Clear hover on scroll start
+            root.controller.hoveredPath = ""
+        }
+        scrollStopTimer.restart()
     }
 
     function activeView() {
@@ -882,6 +906,8 @@ Pane {
                         reuseItems: true
                         onMovingChanged: root.updateScrollingState()
                         onFlickingChanged: root.updateScrollingState()
+                        onContentYChanged: root.handleScrollActivity()
+                        onContentXChanged: root.handleScrollActivity()
                         bottomMargin: (root.statusRailVisible ? (root.controller.directoryModel.loading ? 52 : 36) : 0) + (root.horizontalScrollActive ? 12 : 0)
                         
                         highlight: null
@@ -981,6 +1007,8 @@ Pane {
                 pixelAligned: false
                 onMovingChanged:  root.updateScrollingState()
                 onFlickingChanged: root.updateScrollingState()
+                onContentYChanged: root.handleScrollActivity()
+                onContentXChanged: root.handleScrollActivity()
                 bottomMargin: root.statusRailVisible ? (root.controller.directoryModel.loading ? 52 : 36) : 0
 
                 add:    root.controller.directoryModel.count < 500 && !root.controller.directoryModel.loading ? briefAddTransition : null
@@ -1079,6 +1107,8 @@ Pane {
                 reuseItems: true
                 onMovingChanged: root.updateScrollingState()
                 onFlickingChanged: root.updateScrollingState()
+                onContentYChanged: root.handleScrollActivity()
+                onContentXChanged: root.handleScrollActivity()
                 
                 highlight: null
                 highlightFollowsCurrentItem: false
@@ -1140,17 +1170,41 @@ Pane {
                     onPathChanged: {
                         isRenaming = false
                         visualOffsetY = 0
+                        Qt.callLater(() => {
+                            if (hoverGrid) {
+                                hoverGrid.enabled = false
+                                hoverGrid.enabled = true
+                            }
+                        })
+                    }
+
+                    Component.onCompleted: {
+                        Qt.callLater(() => {
+                            if (hoverGrid) {
+                                hoverGrid.enabled = false
+                                hoverGrid.enabled = true
+                            }
+                        })
                     }
 
                     GridView.onPooled: {
                         isRenaming = false
                         visualOffsetY = 0
+                        if (root.controller.hoveredPath === path) {
+                            root.controller.hoveredPath = ""
+                        }
                     }
 
                     GridView.onReused: {
                         isRenaming = false
                         visualOffsetY = 0
                         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
+                        Qt.callLater(() => {
+                            if (hoverGrid) {
+                                hoverGrid.enabled = false
+                                hoverGrid.enabled = true
+                            }
+                        })
                     }
 
                     function startRename() {
@@ -1165,7 +1219,7 @@ Pane {
                                ? (root.active ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                                : (currentItem
                                   ? Theme.itemCurrentFill
-                                  : (hoverGrid.hovered ? Theme.itemHoverFill : "transparent"))
+                                  : ((hoverGrid.hovered && !root.scrolling) ? Theme.itemHoverFill : "transparent"))
                         border.color: isSelected
                                       ? (root.active ? Theme.itemSelectedBorder : Theme.itemSelectedBorderInactive)
                                       : (currentItem ? Theme.itemCurrentBorder : "transparent")
@@ -1175,12 +1229,48 @@ Pane {
 
                     HoverHandler { 
                         id: hoverGrid 
-                        enabled: !root.scrolling
+                        enabled: true
                         onHoveredChanged: {
+                            if (root.scrolling) return
                             if (hovered) {
                                 root.controller.hoveredPath = path
                             } else if (root.controller.hoveredPath === path) {
                                 root.controller.hoveredPath = ""
+                            }
+                        }
+                    }
+
+                    Connections {
+                        target: root
+                        function onScrollingChanged() {
+                            if (!root.scrolling) {
+                                Qt.callLater(() => {
+                                    if (hoverGrid) {
+                                        hoverGrid.enabled = false
+                                        hoverGrid.enabled = true
+                                        if (hoverGrid.hovered) {
+                                            root.controller.hoveredPath = path
+                                        }
+                                    }
+                                })
+                            }
+                        }
+                    }
+
+                    Connections {
+                        target: root.controller ? root.controller.directoryModel : null
+                        ignoreUnknownSignals: true
+                        function onLoadingChanged() {
+                            if (root.controller && root.controller.directoryModel && !root.controller.directoryModel.loading) {
+                                Qt.callLater(() => {
+                                    if (hoverGrid) {
+                                        hoverGrid.enabled = false
+                                        hoverGrid.enabled = true
+                                        if (hoverGrid.hovered) {
+                                            root.controller.hoveredPath = path
+                                        }
+                                    }
+                                })
                             }
                         }
                     }

@@ -82,13 +82,30 @@ Item {
         _metaRequested = false
         _metaLoaded = false
         _ensureMetaLoaded()
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
     }
 
-    Component.onCompleted: _ensureMetaLoaded()
+    Component.onCompleted: {
+        _ensureMetaLoaded()
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
+    }
 
     ListView.onPooled: {
         isRenaming = false
         visualOffsetX = 0
+        if (root.controller.hoveredPath === root.path) {
+            root.controller.hoveredPath = ""
+        }
     }
 
     ListView.onReused: {
@@ -96,6 +113,12 @@ Item {
         visualOffsetX = 0
         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
         _ensureMetaLoaded()
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
     }
 
     function startRename() {
@@ -118,7 +141,7 @@ Item {
                ? (root.panelActive ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                : (root.currentItem
                   ? Theme.itemCurrentFill
-                  : (hover.hovered ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
+                  : ((hover.hovered && !root.scrolling) ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
                                                Theme.itemHoverFill.a + (themeController.isDark ? 0.02 : 0.015))
                                    : "transparent"))
         border.color: isSelected
@@ -144,7 +167,7 @@ Item {
             radius: parent.radius
             color: themeController.isDark ? "white" : "black"
             opacity: themeController.isDark ? 0.015 : 0.025
-            visible: root.panel.showZebraStriping && (index % 2 === 1) && !isSelected && !root.currentItem && !hover.hovered
+            visible: root.panel.showZebraStriping && (index % 2 === 1) && !isSelected && !root.currentItem && !(hover.hovered && !root.scrolling)
         }
 
         Behavior on color { ColorAnimation { duration: 90 } }
@@ -164,8 +187,9 @@ Item {
 
     HoverHandler {
         id: hover
-        enabled: !root.scrolling
+        enabled: true
         onHoveredChanged: {
+            if (root.scrolling) return
             if (hovered) {
                 root.controller.hoveredPath = root.path
             } else if (root.controller.hoveredPath === root.path) {
@@ -173,6 +197,39 @@ Item {
             }
         }
     }
+
+    onScrollingChanged: {
+        if (!scrolling) {
+            Qt.callLater(() => {
+                if (hover) {
+                    hover.enabled = false
+                    hover.enabled = true
+                    if (hover.hovered) {
+                        root.controller.hoveredPath = root.path
+                    }
+                }
+            })
+        }
+    }
+
+    Connections {
+        target: root.controller ? root.controller.directoryModel : null
+        ignoreUnknownSignals: true
+        function onLoadingChanged() {
+            if (root.controller && root.controller.directoryModel && !root.controller.directoryModel.loading) {
+                Qt.callLater(() => {
+                    if (hover) {
+                        hover.enabled = false
+                        hover.enabled = true
+                        if (hover.hovered) {
+                            root.controller.hoveredPath = root.path
+                        }
+                    }
+                })
+            }
+        }
+    }
+
 
     MouseArea {
         id: mouseArea
@@ -216,7 +273,7 @@ Item {
                    ? (root.panelActive ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                    : (root.currentItem
                       ? Theme.itemCurrentFill
-                      : (hover.hovered ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
+                      : ((hover.hovered && !root.scrolling) ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
                                                    Theme.itemHoverFill.a + (themeController.isDark ? 0.02 : 0.015))
                                        : (themeController.isDark ? Theme.surface : Theme.bg)))
 
@@ -235,7 +292,7 @@ Item {
                 anchors.fill: parent
                 color: themeController.isDark ? "white" : "black"
                 opacity: themeController.isDark ? 0.015 : 0.025
-                visible: root.panel.showZebraStriping && (index % 2 === 1) && !isSelected && !root.currentItem && !hover.hovered
+                visible: root.panel.showZebraStriping && (index % 2 === 1) && !isSelected && !root.currentItem && !(hover.hovered && !root.scrolling)
             }
 
             // Drop shadow-like gradient on the right of the sticky column

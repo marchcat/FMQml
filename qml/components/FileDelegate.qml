@@ -35,17 +35,41 @@ Item {
     onPathChanged: {
         isRenaming = false
         visualOffsetX = 0
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
+    }
+
+    Component.onCompleted: {
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
     }
 
     ListView.onPooled: {
         isRenaming = false
         visualOffsetX = 0
+        if (root.controller.hoveredPath === root.path) {
+            root.controller.hoveredPath = ""
+        }
     }
 
     ListView.onReused: {
         isRenaming = false
         visualOffsetX = 0
         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
+        Qt.callLater(() => {
+            if (hover) {
+                hover.enabled = false
+                hover.enabled = true
+            }
+        })
     }
 
     function startRename() {
@@ -67,7 +91,7 @@ Item {
                ? (root.panelActive ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                : (root.currentItem
                   ? Theme.itemCurrentFill
-                  : (hover.hovered ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
+                  : ((hover.hovered && !root.scrolling) ? Qt.rgba(Theme.itemHoverFill.r, Theme.itemHoverFill.g, Theme.itemHoverFill.b,
                                                Theme.itemHoverFill.a + (themeController.isDark ? 0.02 : 0.015))
                                    : "transparent"))
         border.color: isSelected
@@ -91,8 +115,9 @@ Item {
 
     HoverHandler {
         id: hover
-        enabled: !root.scrolling
+        enabled: true
         onHoveredChanged: {
+            if (root.scrolling) return
             if (hovered) {
                 root.controller.hoveredPath = root.path
             } else if (root.controller.hoveredPath === root.path) {
@@ -100,6 +125,39 @@ Item {
             }
         }
     }
+
+    onScrollingChanged: {
+        if (!scrolling) {
+            Qt.callLater(() => {
+                if (hover) {
+                    hover.enabled = false
+                    hover.enabled = true
+                    if (hover.hovered) {
+                        root.controller.hoveredPath = root.path
+                    }
+                }
+            })
+        }
+    }
+
+    Connections {
+        target: root.controller ? root.controller.directoryModel : null
+        ignoreUnknownSignals: true
+        function onLoadingChanged() {
+            if (root.controller && root.controller.directoryModel && !root.controller.directoryModel.loading) {
+                Qt.callLater(() => {
+                    if (hover) {
+                        hover.enabled = false
+                        hover.enabled = true
+                        if (hover.hovered) {
+                            root.controller.hoveredPath = root.path
+                        }
+                    }
+                })
+            }
+        }
+    }
+
 
     MouseArea {
         id: mouseArea
