@@ -207,6 +207,21 @@ void DirectoryModel::setFilterText(const QString &text)
     emit filterTextChanged();
 }
 
+bool DirectoryModel::mixFilesAndFolders() const
+{
+    return m_mixFilesAndFolders;
+}
+
+void DirectoryModel::setMixFilesAndFolders(bool mix)
+{
+    if (m_mixFilesAndFolders == mix) {
+        return;
+    }
+    m_mixFilesAndFolders = mix;
+    sortModel();
+    emit mixFilesAndFoldersChanged();
+}
+
 bool DirectoryModel::showHidden() const
 {
     return m_showHidden;
@@ -221,8 +236,6 @@ void DirectoryModel::setShowHidden(bool show)
     m_provider->setShowHidden(show);
     
     // Immediately update the filtered indices for items we already have.
-    // This is instant and uses beginResetModel, which is safe and prevents artifacts.
-    // We keep selection because toggling hidden files shouldn't clear it.
     applyFilterInternal(true);
     
     refresh();
@@ -359,15 +372,8 @@ void DirectoryModel::processPendingInserts()
         return;
     }
 
-    // Process in chunks to keep GUI responsive
     const int chunkSize = 150;
     int processed = 0;
-    
-    // If we are doing a lot of visibility changes (e.g. toggling hidden files),
-    // it's safer and faster to just reset the model at the end of the chunk
-    // if the number of insertions/removals is high.
-    bool manyChanges = false;
-    int changeCount = 0;
 
     while (m_pendingInsertOffset < m_pendingInserts.size() && processed < chunkSize) {
         FileEntry entry = m_pendingInserts.at(m_pendingInsertOffset++);
@@ -401,23 +407,18 @@ void DirectoryModel::processPendingInserts()
             }
 
             if (shouldBeVisible && filteredRow == -1) {
-                // Was hidden, now visible: INSERT
                 auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), absoluteIdx,
-                    [this, &entry](int existingIdx, int val) {
-                        Q_UNUSED(val);
+                    [this, &entry](int existingIdx, int) {
                         return this->compareEntries(m_entries.at(existingIdx), entry);
                     });
                 const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
                 beginInsertRows(QModelIndex(), row, row);
                 m_filteredIndices.insert(row, absoluteIdx);
                 endInsertRows();
-                changeCount++;
             } else if (!shouldBeVisible && filteredRow != -1) {
-                // Was visible, now hidden: REMOVE
                 beginRemoveRows(QModelIndex(), filteredRow, filteredRow);
                 m_filteredIndices.removeAt(filteredRow);
                 endRemoveRows();
-                changeCount++;
             } else if (shouldBeVisible && filteredRow != -1 && hasChanged) {
                 bool wasSelected = existing.isSelected;
                 existing = entry;
@@ -430,7 +431,6 @@ void DirectoryModel::processPendingInserts()
             }
             m_foundPaths.insert(normalizedPath);
         } else {
-            // New entry
             const int newAbsoluteIdx = m_entries.size();
             m_entries.append(entry);
             m_pathIndex.insert(normalizedPath, newAbsoluteIdx);
@@ -438,23 +438,14 @@ void DirectoryModel::processPendingInserts()
 
             if (shouldBeVisible) {
                 auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
-                    [this, &entry](int existingIdx, int val) {
-                        Q_UNUSED(val);
+                    [this, &entry](int existingIdx, int) {
                         return this->compareEntries(m_entries.at(existingIdx), entry);
                     });
                 const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
                 beginInsertRows(QModelIndex(), row, row);
                 m_filteredIndices.insert(row, newAbsoluteIdx);
                 endInsertRows();
-                changeCount++;
             }
-        }
-        
-        if (changeCount > 50) {
-            manyChanges = true;
-            // If we have too many changes in one chunk, it's better to just finish the chunk
-            // and do a reset if we encounter even more, or just continue one-by-one.
-            // Actually, for now let's stick to one-by-one but be careful.
         }
     }
 
@@ -479,15 +470,6 @@ void DirectoryModel::onScannerFinished(const QString &path, bool success, int ge
         return;
     }
 
-#ifdef FM_DEBUG_LOAD_TIMING
-    qDebug("[FM_TIMING] finished() signal received, pending=%d, elapsed: %lld ms",
-           static_cast<int>(m_pendingInserts.size() - m_pendingInsertOffset),
-           m_loadTimingTimer.elapsed());
-#endif
-
-    // Small-directory fast path: if the scan finished and pending entries
-    // are below the threshold, process them all in one synchronous commit
-    // instead of draining through the 16ms insert timer.
     const qsizetype pendingCount = m_pendingInserts.size() - m_pendingInsertOffset;
     if (pendingCount > 0 && pendingCount <= SmallDirectoryThreshold) {
         m_insertTimer.stop();
@@ -518,13 +500,8 @@ void DirectoryModel::finalizeScannerFinished(const QString &path, bool success, 
     m_pendingScannerError.clear();
     m_pendingScannerSuccess = false;
 
-#ifdef FM_DEBUG_LOAD_TIMING
-    qDebug("[FM_TIMING] finalizeScannerFinished() called, elapsed: %lld ms, rows=%d, railShown=%d",
-           m_loadTimingTimer.elapsed(), m_filteredIndices.size(), m_loadTimingRailShown);
-#endif
     setLoading(false);
     if (success) {
-        // Remove items that were not found in the scan (unless it was a fresh load where we cleared everything)
         if (!m_freshLoad) {
             for (int i = m_entries.size() - 1; i >= 0; --i) {
                 const QString normPath = QDir::fromNativeSeparators(m_entries.at(i).path);
@@ -548,7 +525,6 @@ void DirectoryModel::finalizeScannerFinished(const QString &path, bool success, 
                     }
 
                     m_entries.removeAt(i);
-                    // Update indices in m_filteredIndices
                     for (int &idx : m_filteredIndices) {
                         if (idx > i) idx--;
                     }
@@ -581,7 +557,6 @@ void DirectoryModel::finalizeScannerFinished(const QString &path, bool success, 
         setError(error);
         emit directoryUnavailable(path, error);
     }
-
     m_previousPath.clear();
 }
 
@@ -738,7 +713,6 @@ bool DirectoryModel::removePath(const QString &path)
     m_pathIndex.remove(normalizedPath);
     m_entries.removeAt(absoluteIdx);
     
-    // Update indices in m_filteredIndices and m_pathIndex
     for (int &idx : m_filteredIndices) {
         if (idx > absoluteIdx) {
             --idx;
@@ -811,9 +785,6 @@ void DirectoryModel::selectOnly(int row)
             m_entries[i].isSelected = false;
             --m_selectedCount;
             selectionChangedOccurred = true;
-            
-            // Optimization: we don't need to search if we know it's not visible,
-            // but for simplicity we'll do it. O(N) but only for selected items.
             for (int j = 0; j < m_filteredIndices.size(); ++j) {
                 if (m_filteredIndices[j] == i) {
                     emit dataChanged(index(j), index(j), {IsSelectedRole});
@@ -846,13 +817,6 @@ void DirectoryModel::selectRange(int from, int to)
 
     bool selectionChangedOccurred = false;
 
-    // First clear anything outside the range if needed? 
-    // Usually Shift+Click means "select everything between last selected and this one".
-    // If Ctrl is NOT pressed, we usually clear first. 
-    // But let's assume UI handles clearing if needed, OR we just ADD to selection.
-    // Standard Windows behavior: Shift+Click clears current selection and selects the range.
-    
-    // Let's clear first for simplicity and common behavior.
     for (int i = 0; i < m_entries.size(); ++i) {
         if (m_entries[i].isSelected) {
             m_entries[i].isSelected = false;
@@ -980,17 +944,6 @@ QString DirectoryModel::iconNameFor(const FileEntry &entry)
 
 void DirectoryModel::processAllPendingInsertsFast()
 {
-    // Fast path for small directories: drain all pending inserts in one
-    // synchronous GUI-thread commit. This avoids the per-frame insert timer
-    // overhead and makes small directories appear instantly.
-    //
-    // For fresh loads we batch all new entries into a single
-    // beginInsertRows/endInsertRows pair, which is significantly faster than
-    // inserting one-by-one with sorted positioning (O(N log N) vs O(N^2)).
-    //
-    // For non-fresh loads (refreshes), we fall through to the per-entry
-    // update/insert logic because existing entries may need updating.
-
     if (m_pendingInsertOffset >= m_pendingInserts.size()) {
         m_pendingInserts.clear();
         m_pendingInsertOffset = 0;
@@ -998,8 +951,6 @@ void DirectoryModel::processAllPendingInsertsFast()
     }
 
     if (m_freshLoad) {
-        // Fast fresh load: collect all entries, sort once, then do a single
-        // batch insert notification.
         QList<FileEntry> newEntries;
         newEntries.reserve(m_pendingInserts.size() - m_pendingInsertOffset);
 
@@ -1007,7 +958,6 @@ void DirectoryModel::processAllPendingInsertsFast()
             FileEntry entry = m_pendingInserts.at(m_pendingInsertOffset++);
             const QString normalizedPath = QDir::fromNativeSeparators(entry.path);
 
-            // Skip duplicates (shouldn't happen on fresh load, but be safe)
             if (m_pathIndex.contains(normalizedPath)) {
                 m_foundPaths.insert(normalizedPath);
                 continue;
@@ -1025,13 +975,11 @@ void DirectoryModel::processAllPendingInsertsFast()
             }
         }
 
-        // Sort the new visible entries, then compute their filtered indices
         if (!newEntries.isEmpty()) {
             std::sort(newEntries.begin(), newEntries.end(), [this](const FileEntry &a, const FileEntry &b) {
                 return this->compareEntries(a, b);
             });
 
-            // Build the list of absolute indices for visible new entries in sorted order
             QList<int> sortedNewAbsoluteIndices;
             sortedNewAbsoluteIndices.reserve(newEntries.size());
             for (const FileEntry &entry : newEntries) {
@@ -1039,26 +987,14 @@ void DirectoryModel::processAllPendingInsertsFast()
                 sortedNewAbsoluteIndices.append(m_pathIndex.value(normPath));
             }
 
-            // Merge sortedNewAbsoluteIndices into m_filteredIndices
-            // Since existing m_filteredIndices is empty for fresh loads, this is trivial
             const int firstRow = m_filteredIndices.size();
             const int lastRow = firstRow + sortedNewAbsoluteIndices.size() - 1;
 
             beginInsertRows(QModelIndex(), firstRow, lastRow);
             m_filteredIndices.append(sortedNewAbsoluteIndices);
             endInsertRows();
-
-#ifdef FM_DEBUG_LOAD_TIMING
-            if (!m_loadTimingFirstRowInserted) {
-                m_loadTimingFirstRowInserted = true;
-                qDebug("[FM_TIMING] First rows inserted (fast path, count=%d), elapsed: %lld ms",
-                       sortedNewAbsoluteIndices.size(), m_loadTimingTimer.elapsed());
-            }
-#endif
         }
     } else {
-        // Non-fresh load (refresh): process entries one by one, same as
-        // processPendingInserts but without chunking.
         while (m_pendingInsertOffset < m_pendingInserts.size()) {
             FileEntry entry = m_pendingInserts.at(m_pendingInsertOffset++);
             const QString normalizedPath = QDir::fromNativeSeparators(entry.path);
@@ -1125,8 +1061,7 @@ void DirectoryModel::processAllPendingInsertsFast()
 
                 if (shouldBeVisible) {
                     auto it = std::lower_bound(m_filteredIndices.begin(), m_filteredIndices.end(), newAbsoluteIdx,
-                        [this, &entry](int existingIdx, int val) {
-                            Q_UNUSED(val);
+                        [this, &entry](int existingIdx, int) {
                             return this->compareEntries(m_entries.at(existingIdx), entry);
                         });
                     const int row = static_cast<int>(std::distance(m_filteredIndices.begin(), it));
@@ -1142,15 +1077,6 @@ void DirectoryModel::processAllPendingInsertsFast()
     m_pendingInsertOffset = 0;
     emit countChanged();
 }
-
-#ifdef FM_DEBUG_LOAD_TIMING
-void DirectoryModel::dumpLoadTiming() const
-{
-    qDebug("[FM_TIMING] Dump: elapsed=%lld ms, rows=%d, firstRowInserted=%d, railShown=%d",
-           m_loadTimingTimer.elapsed(), m_filteredIndices.size(),
-           m_loadTimingFirstRowInserted, m_loadTimingRailShown);
-}
-#endif
 
 void DirectoryModel::setLoading(bool loading)
 {
@@ -1202,8 +1128,8 @@ void DirectoryModel::setSortOrder(Qt::SortOrder order)
 
 bool DirectoryModel::compareEntries(const FileEntry &a, const FileEntry &b) const
 {
-    if (a.isDirectory != b.isDirectory) {
-        return a.isDirectory; // Directories always come first
+    if (!m_mixFilesAndFolders && a.isDirectory != b.isDirectory) {
+        return a.isDirectory; // Directories always come first unless mixing is enabled
     }
 
     switch (m_sortRole) {
@@ -1244,16 +1170,14 @@ bool DirectoryModel::compareEntries(const FileEntry &a, const FileEntry &b) cons
         if (comp != 0) {
             return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
         }
-        // Secondary: sort by name within same extension
         int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
         if (nameComp != 0) {
-            return m_sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
+            return nameComp < 0;
         }
         break;
     }
     }
 
-    // Default stable sorting fallback
     int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
     if (nameComp != 0) {
         return nameComp < 0;

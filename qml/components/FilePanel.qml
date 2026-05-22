@@ -737,6 +737,16 @@ Pane {
                             iconColor: "#3b82f6"
                             onTriggered: root.controller.viewMode = 2
                         }
+                        ThemedMenuSeparator {}
+                        ThemedMenuItem {
+                            text: root.controller.directoryModel.mixFilesAndFolders ? "Separate Folders" : "Mix Files & Folders"
+                            icon.source: "../assets/icons/list.svg"
+                            iconColor: "#64748b"
+                            onTriggered: {
+                                const newValue = !root.controller.directoryModel.mixFilesAndFolders
+                                root.controller.directoryModel.mixFilesAndFolders = newValue
+                            }
+                        }
                     }
                 }
 

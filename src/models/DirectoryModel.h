@@ -10,11 +10,11 @@
 
 #include "../core/FileProvider.h"
 
-// Uncomment to enable timing diagnostics for directory loading
 // #define FM_DEBUG_LOAD_TIMING
 
-class DirectoryModel final : public QAbstractListModel {
+class DirectoryModel : public QAbstractListModel {
     Q_OBJECT
+    Q_PROPERTY(bool mixFilesAndFolders READ mixFilesAndFolders WRITE setMixFilesAndFolders NOTIFY mixFilesAndFoldersChanged)
     Q_PROPERTY(QString currentPath READ currentPath NOTIFY currentPathChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
@@ -55,6 +55,9 @@ public:
 
     explicit DirectoryModel(QObject *parent = nullptr);
 
+    bool mixFilesAndFolders() const;
+    void setMixFilesAndFolders(bool mix);
+
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
@@ -93,6 +96,7 @@ public:
     Q_INVOKABLE QStringList selectedPaths() const;
 
 signals:
+    void mixFilesAndFoldersChanged();
     void currentPathChanged();
     void loadingChanged();
     void showHiddenChanged();
@@ -133,6 +137,7 @@ private:
     QString m_currentPath;
     bool m_loading = false;
     bool m_showHidden = false;
+    bool m_mixFilesAndFolders = false;
     bool m_freshLoad = false;
     int m_currentScanGeneration = 0; 
     QTimer m_debounceTimer;

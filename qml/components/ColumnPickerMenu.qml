@@ -254,6 +254,16 @@ Popup {
                 GroupHeader { text: "TABLE STYLE" }
 
                 ColumnRow {
+                    label: "Mixed Sorting"
+                    iconSource: "../assets/icons/list.svg"
+                    iconColor: "#f59e0b"
+                    sortRole: -1
+                    checked: root.panel.controller.directoryModel.mixFilesAndFolders
+                    onToggled: root.panel.controller.directoryModel.mixFilesAndFolders = !root.panel.controller.directoryModel.mixFilesAndFolders
+                    panel: root.panel
+                }
+
+                ColumnRow {
                     label: "Zebra Striping"
                     iconSource: "../assets/icons/list.svg"
                     iconColor: "#14b8a6"
