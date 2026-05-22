@@ -143,13 +143,14 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F2"
-        onActivated: {
+        enabled: {
             let activeCtrl = workspaceController.activePanel === 0 
                              ? workspaceController.leftPanel 
                              : workspaceController.rightPanel
-            // We need a way to find the actual panel component.
-            // For now, let's assume we can trigger it through a signal or workspace controller.
-            // A better way is to find the focused panel.
+            let isArchive = activeCtrl.currentPath ? activeCtrl.currentPath.toLowerCase().startsWith("archive://") : false
+            return !isArchive
+        }
+        onActivated: {
             workspaceController.triggerRename()
         }
     }
@@ -200,15 +201,23 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Delete"
-        enabled: !mainToolbar.textEditingActive
-                 && !propertiesDialog.opened
-                 && !conflictDialog.opened
-                 && !deleteConfirmDialog.opened
-                 && !workspaceController.operationQueue.busy
-                 && ((workspaceController.activePanel === 0
-                      && workspaceController.leftPanel.directoryModel.selectedCount > 0)
-                     || (workspaceController.activePanel === 1
-                         && workspaceController.rightPanel.directoryModel.selectedCount > 0))
+        enabled: {
+            if (mainToolbar.textEditingActive
+                || propertiesDialog.opened
+                || conflictDialog.opened
+                || deleteConfirmDialog.opened
+                || workspaceController.operationQueue.busy) {
+                return false
+            }
+            let activeCtrl = workspaceController.activePanel === 0 
+                             ? workspaceController.leftPanel 
+                             : workspaceController.rightPanel
+            let isArchive = activeCtrl.currentPath ? activeCtrl.currentPath.toLowerCase().startsWith("archive://") : false
+            if (isArchive) {
+                return false
+            }
+            return activeCtrl.directoryModel.selectedCount > 0
+        }
         onActivated: {
             const active = workspaceController.activePanel === 0
                            ? workspaceController.leftPanel

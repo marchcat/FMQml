@@ -452,6 +452,7 @@ Pane {
     }
 
     function startRename() {
+        if (root.isCurrentPathArchive) return
         let idx = contextRow()
         if (idx < 0) return
         
@@ -574,7 +575,7 @@ Pane {
             text: "Rename"
             icon.source: "../assets/icons/rename.svg"
             iconColor: "#a855f7"
-            enabled: contextRow() >= 0
+            enabled: contextRow() >= 0 && !root.isCurrentPathArchive
             onTriggered: root.startRename()
         }
         ThemedMenuItem {
@@ -584,6 +585,7 @@ Pane {
             iconColor: "#ef4444"
             enabled: root.controller.directoryModel.selectedCount > 0
                      && !workspaceController.operationQueue.busy
+                     && !root.isCurrentPathArchive
             onTriggered: workspaceController.requestDelete(root.controller.selectedPaths(), root.controller.currentPath)
         }
         ThemedMenuSeparator {}
@@ -653,12 +655,14 @@ Pane {
             text: "New Folder"
             icon.source: "../assets/icons/folder-plus.svg"
             iconColor: "#22c55e"
+            enabled: !root.isCurrentPathArchive
             onTriggered: root.controller.createFolder("New Folder")
         }
         ThemedMenuItem {
             text: "New Text File"
             icon.source: "../assets/icons/document.svg"
             iconColor: "#f59e0b"
+            enabled: !root.isCurrentPathArchive
             onTriggered: root.controller.createFile("New Text File.txt")
         }
         ThemedMenuSeparator {}

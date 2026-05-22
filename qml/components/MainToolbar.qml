@@ -648,6 +648,7 @@ ToolBar {
             IconButton {
                 iconSource: "../assets/lucide-toolbar/folder-plus.svg"
                 iconTone: "folder"
+                enabled: root.activeController.currentPath ? !root.activeController.currentPath.toLowerCase().startsWith("archive://") : true
                 onClicked: root.activeController.createFolder("New Folder")
                 ToolTip.visible: hovered
                 ToolTip.text: "Create Folder"
