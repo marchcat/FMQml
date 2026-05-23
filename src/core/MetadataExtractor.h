@@ -24,6 +24,7 @@ private:
     static QVariantList extractExecutable(const QString &path);
     static QVariantList extractShortcut(const QString &path);
 #endif
+    static QVariantList extractDirectory(const QString &path);
 
     // Helper to append a {label, value} pair
     static inline void add(QVariantList &list, const QString &label, const QString &value) {

@@ -28,6 +28,20 @@ struct PreviewData {
     int lines = 0;
 };
 
+struct DevicesPreviewData {
+    QString sizeText;
+    QVariantList extraProperties;
+};
+
+struct DrivePreviewData {
+    QString name;
+    QString extension;
+    QString sizeText;
+    QString modifiedText;
+    QString mimeName;
+    QVariantList extraProperties;
+};
+
 static constexpr qint64 kTextPreviewLimit = 8192;
 
 bool isImageSuffix(const QString &suffix)
@@ -123,7 +137,7 @@ int QuickLookController::imageHeight() const { return m_imageHeight; }
 void QuickLookController::preview(const QString &path)
 {
     if (path.isEmpty() || path == QStringLiteral("devices://")) {
-        ++m_previewGeneration;
+        const int myGen = ++m_previewGeneration;
         if (path.isEmpty()) {
             m_path.clear();
         } else {
@@ -133,7 +147,7 @@ void QuickLookController::preview(const QString &path)
         m_type = QStringLiteral("info");
         m_extension.clear();
         m_name = QStringLiteral("Devices and Drives");
-        m_sizeText.clear();
+        m_sizeText = QStringLiteral("Detecting drives...");
         m_modifiedText.clear();
         m_mimeName.clear();
         m_directory = false;
@@ -149,16 +163,40 @@ void QuickLookController::preview(const QString &path)
         m_lines = 0;
         m_imageWidth = 0;
         m_imageHeight = 0;
-        if (m_loading) {
-            m_loading = false;
+        m_extraProperties.clear();
+        if (!m_loading) {
+            m_loading = true;
             emit loadingChanged();
         }
 
-        const QFileInfoList drives = QDir::drives();
-        m_sizeText = QStringLiteral("%1 drive(s)").arg(drives.size());
+        emit extensionChanged();
+        emit nameChanged();
+        emit sizeTextChanged();
+        emit modifiedTextChanged();
+        emit mimeNameChanged();
+        emit directoryChanged();
+        emit hiddenChanged();
+        emit symlinkChanged();
+        emit readableChanged();
+        emit writableChanged();
+        emit executableChanged();
+        emit absolutePathChanged();
+        emit parentPathChanged();
+        emit canonicalPathChanged();
+        emit permissionsTextChanged();
+        emit linesChanged();
+        emit typeChanged();
+        emit pathChanged();
+        emit contentChanged();
+        emit extraPropertiesChanged();
+        emit imageSizeChanged();
 
-        m_extraProperties.clear();
-        {
+        QPointer<QuickLookController> self(this);
+        (void)QtConcurrent::run([self, myGen]() {
+            DevicesPreviewData data;
+            const QFileInfoList drives = QDir::drives();
+            data.sizeText = QStringLiteral("%1 drive(s)").arg(drives.size());
+
             QLocale loc;
             for (const QFileInfo &drive : drives) {
                 QStorageInfo storage(drive.absolutePath());
@@ -186,31 +224,22 @@ void QuickLookController::preview(const QString &path)
                 } else {
                     m.insert(QStringLiteral("value"), QStringLiteral("—"));
                 }
-                m_extraProperties.append(QVariant::fromValue(m));
+                data.extraProperties.append(QVariant::fromValue(m));
             }
-        }
 
-        emit extensionChanged();
-        emit nameChanged();
-        emit sizeTextChanged();
-        emit modifiedTextChanged();
-        emit mimeNameChanged();
-        emit directoryChanged();
-        emit hiddenChanged();
-        emit symlinkChanged();
-        emit readableChanged();
-        emit writableChanged();
-        emit executableChanged();
-        emit absolutePathChanged();
-        emit parentPathChanged();
-        emit canonicalPathChanged();
-        emit permissionsTextChanged();
-        emit linesChanged();
-        emit typeChanged();
-        emit pathChanged();
-        emit contentChanged();
-        emit extraPropertiesChanged();
-        emit imageSizeChanged();
+            if (!self) return;
+            QMetaObject::invokeMethod(self.data(), [self, myGen, data = std::move(data)]() mutable {
+                if (!self || myGen != self->m_previewGeneration.load()) {
+                    return;
+                }
+                self->m_sizeText = std::move(data.sizeText);
+                self->m_extraProperties = std::move(data.extraProperties);
+                self->m_loading = false;
+                emit self->sizeTextChanged();
+                emit self->extraPropertiesChanged();
+                emit self->loadingChanged();
+            });
+        });
         return;
     }
 
@@ -303,15 +332,26 @@ void QuickLookController::preview(const QString &path)
 
     const bool isDriveRoot = QFileInfo(path).isRoot();
     if (!isDriveRoot) {
-        (void)QtConcurrent::run([self, path, myGen]() {
+        const bool isDir = info.isDir();
+        if (isDir) {
+            if (!m_loading) {
+                m_loading = true;
+                emit loadingChanged();
+            }
+        }
+        (void)QtConcurrent::run([self, path, myGen, isDir]() {
             QVariantList props = MetadataExtractor::extract(path);
             if (!self) return;
-            QMetaObject::invokeMethod(self.data(), [self, myGen, props = std::move(props)]() {
+            QMetaObject::invokeMethod(self.data(), [self, myGen, props = std::move(props), isDir]() {
                 if (!self || myGen != self->m_previewGeneration.load()) {
                     return;
                 }
                 self->m_extraProperties = props;
                 emit self->extraPropertiesChanged();
+                if (isDir && self->m_loading) {
+                    self->m_loading = false;
+                    emit self->loadingChanged();
+                }
             });
         });
     }
@@ -320,61 +360,94 @@ void QuickLookController::preview(const QString &path)
         m_mimeName = QStringLiteral("inode/directory");
         m_type = "info";
 
-        // Enrich with drive info if path is a volume root
-        m_extraProperties.clear();
-        const QFileInfo rootCheck(path);
-        if (rootCheck.isRoot()) {
-            QStorageInfo storage(path);
-            if (storage.isValid()) {
-                QLocale loc;
-                const qint64 total = storage.bytesTotal();
-                const qint64 free  = storage.bytesFree();
-                const qint64 used  = total - free;
-
-                // Override info-card fields for drive display
-                {
-                    QString n = path;
-                    while (n.endsWith(QChar('/')) || n.endsWith(QChar('\\')))
-                        n.chop(1);
-                    m_name = n;
-                }
-                m_mimeName = QStringLiteral("drive");
-                m_extension = DriveUtils::detectDriveType(storage);
-                m_sizeText = loc.formattedDataSize(total, 1, QLocale::DataSizeTraditionalFormat);
-                if (total > 0) {
-                    const int freePct = static_cast<int>(free * 100 / total);
-                    m_modifiedText = QStringLiteral("%1% free").arg(freePct);
-                } else {
-                    m_modifiedText = QStringLiteral("no media");
-                }
-
-                auto prop = [](const QString &label, const QString &value) {
-                    QVariantMap m;
-                    m.insert(QStringLiteral("label"), label);
-                    m.insert(QStringLiteral("value"), value);
-                    return QVariant::fromValue(m);
-                };
-                m_extraProperties.append(prop(QStringLiteral("File System"), QString::fromLatin1(storage.fileSystemType())));
-                m_extraProperties.append(prop(QStringLiteral("Total Space"), loc.formattedDataSize(total, 1, QLocale::DataSizeTraditionalFormat)));
-                m_extraProperties.append(prop(QStringLiteral("Free Space"),  loc.formattedDataSize(free,  1, QLocale::DataSizeTraditionalFormat)));
-                m_extraProperties.append(prop(QStringLiteral("Used Space"),  loc.formattedDataSize(used,  1, QLocale::DataSizeTraditionalFormat)));
-                if (total > 0) {
-                    const int pct = static_cast<int>(used * 100 / total);
-                    m_extraProperties.append(prop(QStringLiteral("Usage"), QStringLiteral("%1%").arg(pct)));
-                }
-                m_extraProperties.append(prop(QStringLiteral("Drive Type"), m_extension));
-            }
-        }
-        emit extraPropertiesChanged();
-
         m_content = QString("Folder: %1\nSize: %2\nModified: %3")
                         .arg(m_name)
                         .arg(m_sizeText)
                         .arg(m_modifiedText);
         m_lines = 0;
-        if (m_loading) {
-            m_loading = false;
-            emit loadingChanged();
+
+        const QFileInfo rootCheck(path);
+        if (rootCheck.isRoot()) {
+            if (!m_loading) {
+                m_loading = true;
+                emit loadingChanged();
+            }
+            m_extraProperties.clear();
+            emit extraPropertiesChanged();
+
+            QPointer<QuickLookController> self(this);
+            (void)QtConcurrent::run([self, path, myGen]() {
+                DrivePreviewData data;
+                QStorageInfo storage(path);
+                if (storage.isValid()) {
+                    QLocale loc;
+                    const qint64 total = storage.bytesTotal();
+                    const qint64 free  = storage.bytesFree();
+                    const qint64 used  = total - free;
+
+                    {
+                        QString n = path;
+                        while (n.endsWith(QChar('/')) || n.endsWith(QChar('\\')))
+                            n.chop(1);
+                        data.name = n;
+                    }
+                    data.mimeName = QStringLiteral("drive");
+                    data.extension = DriveUtils::detectDriveType(storage);
+                    data.sizeText = loc.formattedDataSize(total, 1, QLocale::DataSizeTraditionalFormat);
+                    if (total > 0) {
+                        const int freePct = static_cast<int>(free * 100 / total);
+                        data.modifiedText = QStringLiteral("%1% free").arg(freePct);
+                    } else {
+                        data.modifiedText = QStringLiteral("no media");
+                    }
+
+                    auto prop = [](const QString &label, const QString &value) {
+                        QVariantMap m;
+                        m.insert(QStringLiteral("label"), label);
+                        m.insert(QStringLiteral("value"), value);
+                        return QVariant::fromValue(m);
+                    };
+                    data.extraProperties.append(prop(QStringLiteral("File System"), QString::fromLatin1(storage.fileSystemType())));
+                    data.extraProperties.append(prop(QStringLiteral("Total Space"), loc.formattedDataSize(total, 1, QLocale::DataSizeTraditionalFormat)));
+                    data.extraProperties.append(prop(QStringLiteral("Free Space"),  loc.formattedDataSize(free,  1, QLocale::DataSizeTraditionalFormat)));
+                    data.extraProperties.append(prop(QStringLiteral("Used Space"),  loc.formattedDataSize(used,  1, QLocale::DataSizeTraditionalFormat)));
+                    if (total > 0) {
+                        const int pct = static_cast<int>(used * 100 / total);
+                        data.extraProperties.append(prop(QStringLiteral("Usage"), QStringLiteral("%1%").arg(pct)));
+                    }
+                    data.extraProperties.append(prop(QStringLiteral("Drive Type"), data.extension));
+                }
+
+                if (!self) return;
+                QMetaObject::invokeMethod(self.data(), [self, myGen, data = std::move(data)]() mutable {
+                    if (!self || myGen != self->m_previewGeneration.load()) {
+                        return;
+                    }
+                    if (!data.name.isEmpty()) {
+                        self->m_name = std::move(data.name);
+                        emit self->nameChanged();
+                    }
+                    self->m_mimeName = std::move(data.mimeName);
+                    self->m_extension = std::move(data.extension);
+                    self->m_sizeText = std::move(data.sizeText);
+                    self->m_modifiedText = std::move(data.modifiedText);
+                    self->m_extraProperties = std::move(data.extraProperties);
+                    self->m_loading = false;
+
+                    emit self->mimeNameChanged();
+                    emit self->extensionChanged();
+                    emit self->sizeTextChanged();
+                    emit self->modifiedTextChanged();
+                    emit self->extraPropertiesChanged();
+                    emit self->loadingChanged();
+
+                    self->m_content = QString("Folder: %1\nSize: %2\nModified: %3")
+                                    .arg(self->m_name)
+                                    .arg(self->m_sizeText)
+                                    .arg(self->m_modifiedText);
+                    emit self->contentChanged();
+                });
+            });
         }
     } else if (mime.name() == "image/svg+xml" || m_extension == "svg" || m_extension == "svgz") {
         m_type = "svg";

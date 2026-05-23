@@ -1,6 +1,7 @@
 #include "MetadataExtractor.h"
 
 #include <QFileInfo>
+#include <QDir>
 #include <QFile>
 #include <QImageReader>
 #include <QImage>
@@ -40,8 +41,12 @@
 QVariantList MetadataExtractor::extract(const QString &path)
 {
     QFileInfo fi(path);
-    if (!fi.exists() || fi.isDir())
+    if (!fi.exists())
         return {};
+
+    if (fi.isDir()) {
+        return extractDirectory(path);
+    }
 
     QMimeDatabase db;
     QMimeType mime = db.mimeTypeForFile(path);
@@ -648,3 +653,25 @@ QVariantList MetadataExtractor::extractShortcut(const QString &path)
 }
 
 #endif // Q_OS_WIN
+
+QVariantList MetadataExtractor::extractDirectory(const QString &path)
+{
+    QVariantList props;
+    QDir dir(path);
+    QFileInfoList list = dir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries | QDir::System | QDir::Hidden);
+    int filesCount = 0;
+    int foldersCount = 0;
+    for (const QFileInfo &info : list) {
+        if (info.isDir()) {
+            foldersCount++;
+        } else {
+            filesCount++;
+        }
+    }
+    add(props, QStringLiteral("Contains"), QStringLiteral("%1 items (%2 files, %3 folders)")
+        .arg(list.size())
+        .arg(filesCount)
+        .arg(foldersCount));
+    return props;
+}
+

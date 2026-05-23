@@ -650,10 +650,15 @@ Pane {
                             model: {
                                 let base = [
                                     { label: "Name", value: quickLookController.name },
-                                    { label: "Type", value: quickLookController.directory ? "Folder" : "File" },
-                                    { label: "Size", value: quickLookController.sizeText },
-                                    { label: "Modified", value: quickLookController.modifiedText }
+                                    { label: "Type", value: quickLookController.mimeName === "drive" ? "Local Disk" : (quickLookController.directory ? "Folder" : "File") }
                                 ];
+                                if (quickLookController.path.length > 0 && quickLookController.path !== "devices://") {
+                                    base.push({ label: "Location", value: quickLookController.absolutePath });
+                                }
+                                base.push({ label: "Size", value: quickLookController.sizeText });
+                                if (quickLookController.modifiedText.length > 0) {
+                                    base.push({ label: "Modified", value: quickLookController.modifiedText });
+                                }
                                 
                                 // Add extra properties from controller
                                 for (let i = 0; i < quickLookController.extraProperties.length; i++) {

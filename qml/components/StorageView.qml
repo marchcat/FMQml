@@ -529,10 +529,12 @@ Item {
 
                         Rectangle {
                             id: card
-                            anchors.fill: parent
+                            x: 0
+                            y: cardMouse.containsMouse ? -2 : 0
+                            width: parent.width
+                            height: parent.height
                             radius: 10
                             scale: cardMouse.containsMouse ? 1.02 : (cardWrapper.isSelected ? 1.01 : 1.0)
-                            y: cardMouse.containsMouse ? -2 : 0
 
                             color: {
                                 if (themeController.isDark) {
@@ -836,10 +838,12 @@ Item {
 
                         Rectangle {
                             id: folderCard
-                            anchors.fill: parent
+                            x: 0
+                            y: folderMouse.containsMouse ? -2 : (folderCardWrapper.isSelected ? -1 : 0)
+                            width: parent.width
+                            height: parent.height
                             radius: 8
                             scale: folderMouse.containsMouse ? 1.02 : (folderCardWrapper.isSelected ? 1.01 : 1.0)
-                            y: folderMouse.containsMouse ? -2 : (folderCardWrapper.isSelected ? -1 : 0)
 
                             color: {
                                 if (folderCardWrapper.isSelected) {
