@@ -75,6 +75,7 @@ set(MY_QML_FILES
     qml/components/DeleteConfirmDialog.qml
     qml/components/ChecksumDialog.qml
     qml/components/BatchRenameDialog.qml
+    qml/components/CommandPalette.qml
     qml/components/ColumnPickerMenu.qml
     qml/components/FileDelegate.qml
     qml/components/FileBriefDelegate.qml
