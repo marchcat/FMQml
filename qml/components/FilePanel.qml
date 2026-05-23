@@ -225,8 +225,7 @@ Pane {
                                     }
                                     root.targetSelectPath = ""
                                 }
-                                view.currentIndex = idx
-                                root.controller.directoryModel.selectOnly(idx)
+                                root.setViewCurrentIndexWithoutSelection(view, idx)
                                 view.positionViewAtIndex(idx, root.viewMode === 0 ? ListView.Contain : GridView.Contain)
                             }
                         }
@@ -270,8 +269,7 @@ Pane {
                         root.focusContent()
                     }
                     
-                    // If loading is already complete (small directory synchronous load),
-                    // initialize the selection immediately now that the view is visible and focused!
+                    // If loading is already complete, initialize only the keyboard cursor.
                     if (!root.controller.directoryModel.loading && root.controller.directoryModel.count > 0) {
                         const view = activeView()
                         if (view) {
@@ -283,8 +281,7 @@ Pane {
                                 }
                                 root.targetSelectPath = ""
                             }
-                            view.currentIndex = idx
-                            root.controller.directoryModel.selectOnly(idx)
+                            root.setViewCurrentIndexWithoutSelection(view, idx)
                             view.positionViewAtIndex(idx, root.viewMode === 0 ? ListView.Contain : GridView.Contain)
                         }
                     }
@@ -338,6 +335,14 @@ Pane {
         if (root.viewMode === 2) return briefView
         if (root.viewMode === 0) return listView
         return gridView
+    }
+
+    function setViewCurrentIndexWithoutSelection(view, index) {
+        root.disableSelectionOnCurrentIndexChanged = true
+        view.currentIndex = index
+        Qt.callLater(() => {
+            root.disableSelectionOnCurrentIndexChanged = false
+        })
     }
 
     function scrollKeyForPath(path) {
@@ -470,6 +475,10 @@ Pane {
     }
 
     Keys.onPressed: (event) => {
+        if (root.panelKeysBlockedByOverlay()) {
+            event.accepted = true
+            return
+        }
         if (event.matches(StandardKey.SelectAll)) {
             root.controller.directoryModel.selectAll()
             event.accepted = true
@@ -564,6 +573,10 @@ Pane {
         } else {
             gridView.forceActiveFocus()
         }
+    }
+
+    function panelKeysBlockedByOverlay() {
+        return root.Window.window && root.Window.window.anyOverlayOpen
     }
 
     function handleItemClick(index, mouse) {
@@ -1038,10 +1051,7 @@ Pane {
                         onActiveFocusChanged: {
                             if (activeFocus && model.count > 0) {
                                 if (currentIndex === -1) {
-                                    currentIndex = 0
-                                }
-                                if (!root.disableSelectionOnCurrentIndexChanged && root.controller.directoryModel.selectedCount === 0) {
-                                    root.controller.directoryModel.selectOnly(currentIndex)
+                                    root.setViewCurrentIndexWithoutSelection(listView, 0)
                                 }
                             }
                         }
@@ -1063,8 +1073,7 @@ Pane {
                                     }
                                     root.targetSelectPath = ""
                                 }
-                                currentIndex = idx
-                                root.controller.directoryModel.selectOnly(idx)
+                                root.setViewCurrentIndexWithoutSelection(listView, idx)
                                 positionViewAtIndex(idx, ListView.Contain)
                             }
                         }
@@ -1094,6 +1103,10 @@ Pane {
                         }
 
                         Keys.onPressed: (event) => {
+                            if (root.panelKeysBlockedByOverlay()) {
+                                event.accepted = true
+                                return
+                            }
                             if (event.key === Qt.Key_Space && (event.modifiers & Qt.ControlModifier)) {
                                 if (currentIndex >= 0 && currentIndex < model.count) {
                                     root.controller.directoryModel.toggleSelected(currentIndex)
@@ -1124,9 +1137,6 @@ Pane {
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Backspace) {
                                 root.controller.goUp()
-                                event.accepted = true
-                            } else if (event.key === Qt.Key_F2) {
-                                root.startRename()
                                 event.accepted = true
                             } else if (event.key === Qt.Key_Escape) {
                                 root.controller.directoryModel.clearSelection()
@@ -1195,10 +1205,7 @@ Pane {
                 onActiveFocusChanged: {
                     if (activeFocus && model.count > 0) {
                         if (currentIndex === -1) {
-                            currentIndex = 0
-                        }
-                        if (!root.disableSelectionOnCurrentIndexChanged && root.controller.directoryModel.selectedCount === 0) {
-                            root.controller.directoryModel.selectOnly(currentIndex)
+                            root.setViewCurrentIndexWithoutSelection(briefView, 0)
                         }
                     }
                 }
@@ -1220,8 +1227,7 @@ Pane {
                             }
                             root.targetSelectPath = ""
                         }
-                        currentIndex = idx
-                        root.controller.directoryModel.selectOnly(idx)
+                        root.setViewCurrentIndexWithoutSelection(briefView, idx)
                         positionViewAtIndex(idx, GridView.Contain)
                     }
                 }
@@ -1250,6 +1256,10 @@ Pane {
                 }
 
                 Keys.onPressed: (event) => {
+                    if (root.panelKeysBlockedByOverlay()) {
+                        event.accepted = true
+                        return
+                    }
                     if (event.key === Qt.Key_Space && (event.modifiers & Qt.ControlModifier)) {
                         if (currentIndex >= 0 && currentIndex < model.count) {
                             root.controller.directoryModel.toggleSelected(currentIndex)
@@ -1280,9 +1290,6 @@ Pane {
                         event.accepted = true
                     } else if (event.key === Qt.Key_Backspace) {
                         root.controller.goUp()
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_F2) {
-                        root.startRename()
                         event.accepted = true
                     } else if (event.key === Qt.Key_Escape) {
                         root.controller.directoryModel.clearSelection()
@@ -1355,10 +1362,7 @@ Pane {
                 onActiveFocusChanged: {
                     if (activeFocus && model.count > 0) {
                         if (currentIndex === -1) {
-                            currentIndex = 0
-                        }
-                        if (!root.disableSelectionOnCurrentIndexChanged && root.controller.directoryModel.selectedCount === 0) {
-                            root.controller.directoryModel.selectOnly(currentIndex)
+                            root.setViewCurrentIndexWithoutSelection(gridView, 0)
                         }
                     }
                 }
@@ -1380,8 +1384,7 @@ Pane {
                             }
                             root.targetSelectPath = ""
                         }
-                        currentIndex = idx
-                        root.controller.directoryModel.selectOnly(idx)
+                        root.setViewCurrentIndexWithoutSelection(gridView, idx)
                         positionViewAtIndex(idx, GridView.Contain)
                     }
                 }
@@ -1410,6 +1413,10 @@ Pane {
                 }
 
                 Keys.onPressed: (event) => {
+                    if (root.panelKeysBlockedByOverlay()) {
+                        event.accepted = true
+                        return
+                    }
                     if (event.key === Qt.Key_Space && (event.modifiers & Qt.ControlModifier)) {
                         if (currentIndex >= 0 && currentIndex < model.count) {
                             root.controller.directoryModel.toggleSelected(currentIndex)
@@ -1440,9 +1447,6 @@ Pane {
                         event.accepted = true
                     } else if (event.key === Qt.Key_Backspace) {
                         root.controller.goUp()
-                        event.accepted = true
-                    } else if (event.key === Qt.Key_F2) {
-                        root.startRename()
                         event.accepted = true
                     } else if (event.key === Qt.Key_Escape) {
                         root.controller.directoryModel.clearSelection()

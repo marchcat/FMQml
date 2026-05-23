@@ -20,6 +20,8 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
+
     readonly property int itemCount: Array.isArray(paths) ? paths.length : 0
     readonly property int maxVisibleItems: 5
     readonly property bool hasMore: itemCount > maxVisibleItems

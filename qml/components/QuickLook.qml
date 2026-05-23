@@ -828,5 +828,5 @@ Popup {
         }
     }
 
-    onOpened: forceActiveFocus()
+    onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
 }

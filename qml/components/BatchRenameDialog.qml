@@ -251,6 +251,7 @@ Dialog {
     }
 
     onOpened: {
+        Qt.callLater(() => contentItem.forceActiveFocus())
         root.isApplied = false
         root.successCount = 0
         root.failCount = 0

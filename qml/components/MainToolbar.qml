@@ -498,13 +498,6 @@ ToolBar {
                         }
                     }
 
-                    Keys.onShortcutOverride: (event) => {
-                        if (event.matches(StandardKey.Paste) && workspaceController.hasClipboard) {
-                            workspaceController.pasteFromClipboard()
-                            event.accepted = true
-                        }
-                    }
-                    
                     Keys.onPressed: (event) => {
                         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
                             if (suggestionsPopup.visible) {
@@ -961,13 +954,6 @@ ToolBar {
                     background: null
                     verticalAlignment: TextInput.AlignVCenter
 
-                    Keys.onShortcutOverride: (event) => {
-                        if (event.matches(StandardKey.Paste) && workspaceController.hasClipboard) {
-                            workspaceController.pasteFromClipboard()
-                            event.accepted = true
-                        }
-                    }
-                    
                     Keys.onPressed: (event) => {
                         if (event.key === Qt.Key_Escape) {
                             text = ""

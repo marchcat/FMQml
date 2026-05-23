@@ -18,6 +18,8 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+    onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
+
     enter: Transition {
         NumberAnimation { property: "opacity"; from: 0.0; to: 1.0; duration: 150; easing.type: Easing.OutCubic }
         NumberAnimation { property: "scale"; from: 0.95; to: 1.0; duration: 150; easing.type: Easing.OutBack }
@@ -122,7 +124,7 @@ Popup {
         focus: true
 
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
+            if (event.key === Qt.Key_Escape || event.key === Qt.Key_Enter || event.key === Qt.Key_Return || event.key === Qt.Key_Space) {
                 root.close()
                 event.accepted = true
             }

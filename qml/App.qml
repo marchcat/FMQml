@@ -38,6 +38,18 @@ ApplicationWindow {
     property bool previewOnHover: false
     property bool previewPaneVisible: false
     readonly property bool sidebarFocused: sidebar && (sidebar.placesList.activeFocus || sidebar.foldersTree.activeFocus)
+    readonly property bool anyOverlayOpen: conflictDialog.opened || conflictDialog.visible
+                                           || helpDialog.opened || helpDialog.visible
+                                           || propertiesDialog.opened || propertiesDialog.visible
+                                           || quickLookPopup.opened || quickLookPopup.visible
+                                           || deleteConfirmDialog.opened || deleteConfirmDialog.visible
+                                           || batchRenameDialog.opened || batchRenameDialog.visible
+                                           || checksumDialog.opened || checksumDialog.visible
+    readonly property bool panelShortcutsEnabled: !root.anyOverlayOpen
+                                                  && !root.sidebarFocused
+                                                  && !mainToolbar.textEditingActive
+                                                  && !fileWorkspace.isRenaming
+    readonly property bool typeToSearchEnabled: root.panelShortcutsEnabled
 
     function previewTargetFor(controller) {
         if (!controller) {
@@ -134,16 +146,19 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F1"
+        enabled: !root.anyOverlayOpen
         onActivated: helpDialog.open()
     }
 
     Shortcut {
         sequence: "F3"
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.toggleSplit()
     }
 
     Shortcut {
         sequence: "F9"
+        enabled: !root.anyOverlayOpen && !mainToolbar.textEditingActive && !fileWorkspace.isRenaming
         onActivated: {
             if (sidebar.placesList.activeFocus || sidebar.foldersTree.activeFocus) {
                 workspaceController.focusActivePanel()
@@ -156,7 +171,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "F2"
         enabled: {
-            if (root.sidebarFocused) return false
+            if (!root.panelShortcutsEnabled) return false
             let activeCtrl = workspaceController.activePanel === 0 
                              ? workspaceController.leftPanel 
                              : workspaceController.rightPanel
@@ -170,16 +185,8 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Space"
-        enabled: !root.sidebarFocused && (!mainToolbar.textEditingActive || propertiesDialog.opened)
+        enabled: root.panelShortcutsEnabled
         onActivated: {
-            if (propertiesDialog.opened) {
-                propertiesDialog.close()
-                return
-            }
-            
-            // If we're editing text, don't trigger preview (redundant with 'enabled' but good for clarity)
-            if (mainToolbar.textEditingActive) return
-
             const controller = activePanelController()
             const targetPath = previewTargetFor(controller)
             if (targetPath.length > 0) {
@@ -215,11 +222,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Delete"
         enabled: {
-            if (root.sidebarFocused) return false
-            if (mainToolbar.textEditingActive
-                || propertiesDialog.opened
-                || conflictDialog.opened
-                || deleteConfirmDialog.opened
+            if (!root.panelShortcutsEnabled
                 || workspaceController.operationQueue.busy) {
                 return false
             }
@@ -242,11 +245,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Escape"
-        enabled: !root.sidebarFocused
-                 && !mainToolbar.textEditingActive
-                 && !propertiesDialog.opened
-                 && !conflictDialog.opened
-                 && !fileWorkspace.isRenaming
+        enabled: root.panelShortcutsEnabled
                  && ((workspaceController.activePanel === 0
                       && workspaceController.leftPanel.directoryModel.selectedCount > 0)
                      || (workspaceController.activePanel === 1
@@ -262,7 +261,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Tab"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             if (workspaceController.splitEnabled) {
                 workspaceController.activePanel = workspaceController.activePanel === 0 ? 1 : 0
@@ -272,7 +271,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Alt+Left"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.activePanel === 0
                      ? workspaceController.leftPanel.goBack()
                      : workspaceController.rightPanel.goBack()
@@ -280,7 +279,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Alt+Right"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.activePanel === 0
                      ? workspaceController.leftPanel.goForward()
                      : workspaceController.rightPanel.goForward()
@@ -288,7 +287,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Alt+Up"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.activePanel === 0
                      ? workspaceController.leftPanel.goUp()
                      : workspaceController.rightPanel.goUp()
@@ -296,43 +295,43 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+L"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: mainToolbar.focusPath()
     }
 
     Shortcut {
         sequence: "Ctrl+C"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.copyToClipboard()
     }
 
     Shortcut {
         sequence: "Ctrl+X"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.cutToClipboard()
     }
 
     Shortcut {
         sequence: "Ctrl+V"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.pasteFromClipboard()
     }
 
     Shortcut {
         sequence: "Ctrl+Z"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.undo()
     }
 
     Shortcut {
         sequence: "Ctrl+Y"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: workspaceController.redo()
     }
 
     Shortcut {
         sequence: "F5"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (workspaceController.splitEnabled && ctrl && ctrl.directoryModel.selectedCount > 0 && !workspaceController.operationQueue.busy) {
@@ -345,7 +344,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "F6"
-        enabled: !root.sidebarFocused && workspaceController.splitEnabled 
+        enabled: root.panelShortcutsEnabled && workspaceController.splitEnabled
                  && activePanelController() 
                  && activePanelController().directoryModel.selectedCount > 0
                  && !workspaceController.operationQueue.busy
@@ -356,7 +355,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+R"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl) ctrl.refresh()
@@ -365,7 +364,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+H"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl) {
@@ -378,7 +377,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+1"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl) ctrl.viewMode = 0
@@ -387,7 +386,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+2"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl) ctrl.viewMode = 1
@@ -396,7 +395,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+3"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl) ctrl.viewMode = 2
@@ -406,7 +405,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "Ctrl+Shift+N"
         enabled: {
-            if (root.sidebarFocused) return false
+            if (!root.panelShortcutsEnabled) return false
             const ctrl = activePanelController()
             return ctrl && ctrl.currentPath ? !ctrl.currentPath.toLowerCase().startsWith("archive://") : true
         }
@@ -419,7 +418,7 @@ ApplicationWindow {
     Shortcut {
         sequence: "F7"
         enabled: {
-            if (root.sidebarFocused) return false
+            if (!root.panelShortcutsEnabled) return false
             const ctrl = activePanelController()
             return ctrl && ctrl.currentPath ? !ctrl.currentPath.toLowerCase().startsWith("archive://") : true
         }
@@ -431,13 +430,13 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+F"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: mainToolbar.focusSearch()
     }
 
     Shortcut {
         sequence: "Ctrl+P"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const visible = !root.previewPaneVisible
             root.previewPaneVisible = visible
@@ -452,7 +451,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Ctrl+A"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: {
             const ctrl = activePanelController()
             if (ctrl && ctrl.directoryModel) {
@@ -463,7 +462,7 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Alt+D"
-        enabled: !root.sidebarFocused
+        enabled: root.panelShortcutsEnabled
         onActivated: mainToolbar.focusPath()
     }
 
@@ -479,8 +478,7 @@ ApplicationWindow {
                 if (event.key === Qt.Key_Space || event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
                     return;
 
-                // Check if we're already in a text field or if a modal is open
-                if (!conflictDialog.opened && !mainToolbar.activeFocus) {
+                if (root.typeToSearchEnabled) {
                      mainToolbar.focusSearch()
                 }
             }

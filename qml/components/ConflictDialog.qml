@@ -17,6 +17,8 @@ Popup {
     focus: true
     closePolicy: Popup.NoAutoClose
 
+    onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
+
     property string sourcePath: ""
     property string destinationPath: ""
     property real sourceSize: 0

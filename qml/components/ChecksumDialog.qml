@@ -109,6 +109,7 @@ Dialog {
     }
 
     onOpened: {
+        Qt.callLater(() => contentItem.forceActiveFocus())
         hash1_md5 = ""
         hash1_sha1 = ""
         hash1_sha256 = ""

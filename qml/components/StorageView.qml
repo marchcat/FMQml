@@ -1070,6 +1070,11 @@ Item {
     // ── Keyboard navigation ───────────────────────────────────────────────────
 
     Keys.onPressed: function(event) {
+        if (root.Window.window && root.Window.window.anyOverlayOpen) {
+            event.accepted = true
+            return
+        }
+
         let drives = getDriveIndexes()
         let folders = getFolderIndexes()
 
