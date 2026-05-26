@@ -8,22 +8,73 @@ Item {
     required property var workspaceController
     property var propertiesController
 
+    property alias leftPanelView: leftPanel
+    property alias rightPanelView: rightPanel
+    property bool liveResizeActive: false
+    property bool splitResizing: false
     readonly property bool isRenaming: leftPanel.isRenaming || rightPanel.isRenaming
+    property var pendingSplitState: null
+
+    signal panelVisualStateChanged()
+
+    function saveSplitState() {
+        return splitView.saveState()
+    }
+
+    function restoreSplitState(state) {
+        pendingSplitState = state
+        if (!state || state === null || state === undefined) {
+            return
+        }
+        restoreSplitStateLater.restart()
+    }
+
+    function splitEvenly() {
+        const half = Math.max(280, Math.floor(splitView.width / 2))
+        leftPanel.SplitView.preferredWidth = half
+        rightPanel.SplitView.preferredWidth = half
+    }
+
+    function collapseToActivePanel() {
+        expandSinglePanel()
+    }
+
+    function expandSinglePanel() {
+        leftPanel.SplitView.preferredWidth = Math.max(280, splitView.width)
+        rightPanel.SplitView.preferredWidth = 0
+    }
+
+    Timer {
+        id: restoreSplitStateLater
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (!root.pendingSplitState || root.pendingSplitState === null || root.pendingSplitState === undefined) {
+                return
+            }
+            splitView.restoreState(root.pendingSplitState)
+        }
+    }
 
     SplitView {
+        id: splitView
         anchors.fill: parent
         anchors.margins: 10
         orientation: Qt.Horizontal
 
         FilePanel {
             id: leftPanel
-            SplitView.preferredWidth: parent.width / (root.workspaceController.splitEnabled ? 2 : 1)
             SplitView.fillWidth: true
             SplitView.minimumWidth: 280
+            SplitView.preferredWidth: 0
             controller: root.workspaceController.leftPanel
             workspaceController: root.workspaceController
             propertiesController: root.propertiesController
+            liveResizeActive: root.liveResizeActive
             active: root.workspaceController.activePanel === 0
+            onGridIconSizeChanged: root.panelVisualStateChanged()
+            onBriefRowHeightChanged: root.panelVisualStateChanged()
+            onDetailsVisualStateChanged: root.panelVisualStateChanged()
             onActivated: {
                 root.workspaceController.activateLeft()
                 focusContent()
@@ -32,9 +83,10 @@ Item {
 
         FilePanel {
             id: rightPanel
-            SplitView.preferredWidth: root.workspaceController.splitEnabled ? parent.width / 2 : 0
             SplitView.fillWidth: root.workspaceController.splitEnabled
             SplitView.minimumWidth: root.workspaceController.splitEnabled ? 280 : 0
+            SplitView.maximumWidth: root.workspaceController.splitEnabled ? 16777215 : 0
+            SplitView.preferredWidth: 0
             visible: root.workspaceController.splitEnabled || width > 0
             opacity: root.workspaceController.splitEnabled ? 1 : 0
             
@@ -43,7 +95,11 @@ Item {
             controller: root.workspaceController.rightPanel
             workspaceController: root.workspaceController
             propertiesController: root.propertiesController
+            liveResizeActive: root.liveResizeActive
             active: root.workspaceController.activePanel === 1
+            onGridIconSizeChanged: root.panelVisualStateChanged()
+            onBriefRowHeightChanged: root.panelVisualStateChanged()
+            onDetailsVisualStateChanged: root.panelVisualStateChanged()
             onActivated: {
                 root.workspaceController.activateRight()
                 focusContent()
@@ -54,6 +110,10 @@ Item {
             implicitWidth: 8
             implicitHeight: 8
             color: "transparent"
+
+            SplitHandle.onPressedChanged: {
+                root.splitResizing = SplitHandle.pressed
+            }
             
             // Interaction overlay
             Rectangle {
@@ -110,6 +170,9 @@ Item {
             })
         }
         function onSplitEnabledChanged() {
+            if (root.pendingSplitState !== null && root.pendingSplitState !== undefined) {
+                restoreSplitStateLater.restart()
+            }
             Qt.callLater(() => {
                 if (root.workspaceController.activePanel === 0) {
                     leftPanel.focusContent()

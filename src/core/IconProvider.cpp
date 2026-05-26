@@ -5,9 +5,11 @@
 #include <QPainter>
 #include <QPixmap>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QSet>
 #include <QDebug>
 #include <QUrl>
+#include <QStringList>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -26,6 +28,12 @@ IconProvider::IconProvider()
 IconProvider::~IconProvider() = default;
 
 namespace {
+bool iconTimingEnabled()
+{
+    static const bool enabled = qEnvironmentVariableIsSet("FM_ICON_TIMING");
+    return enabled;
+}
+
 bool isPathSpecificIcon(const QFileInfo &fi)
 {
     // Only .exe and .lnk truly need per-file icons (they can have custom icons).
@@ -42,13 +50,31 @@ bool isPathSpecificIcon(const QFileInfo &fi)
 
 QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &requestedSize)
 {
+    QElapsedTimer totalTimer;
+    if (iconTimingEnabled()) {
+        totalTimer.start();
+    }
+
     QString path = QUrl::fromPercentEncoding(id.toUtf8());
     // QML image providers hand us a URL path; archive separators can be percent-encoded.
     
     bool forceDirectory = false;
-    if (path.endsWith(QStringLiteral("?directory=true"), Qt::CaseInsensitive)) {
-        forceDirectory = true;
-        path.chop(15); // Strip "?directory=true"
+    bool genericOnly = false;
+    const int queryStart = path.indexOf(QLatin1Char('?'));
+    if (queryStart >= 0) {
+        const QString query = path.mid(queryStart + 1);
+        path.truncate(queryStart);
+
+        const QStringList parts = query.split(QLatin1Char('&'), Qt::SkipEmptyParts);
+        for (const QString &part : parts) {
+            const QString key = part.section(QLatin1Char('='), 0, 0).toLower();
+            const QString value = part.section(QLatin1Char('='), 1).toLower();
+            if (key == QLatin1String("directory") && value == QLatin1String("true")) {
+                forceDirectory = true;
+            } else if (key == QLatin1String("generic") && value == QLatin1String("true")) {
+                genericOnly = true;
+            }
+        }
     }
 
     QSize targetSize = requestedSize.isValid() ? requestedSize : QSize(32, 32);
@@ -68,7 +94,7 @@ QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &r
         cacheKey = QStringLiteral("_dir_");
     } else if (archivePath) {
         cacheKey = QStringLiteral("_archive_.") + suffix;
-    } else if (isPathSpecificIcon(fi)) {
+    } else if (!genericOnly && isPathSpecificIcon(fi)) {
         cacheKey = path;
     } else if (suffix.isEmpty()) {
         cacheKey = QStringLiteral("_noext_");
@@ -80,11 +106,24 @@ QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &r
     {
         QMutexLocker locker(&m_mutex);
         if (m_cache.contains(cacheKey)) {
+            if (iconTimingEnabled()) {
+                qInfo().noquote()
+                    << "[IconProvider] hit"
+                    << "ms=" << totalTimer.elapsed()
+                    << "size=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height())
+                    << "key=" << cacheKey
+                    << "path=" << path;
+            }
             return *m_cache.object(cacheKey);
         }
     }
 
-    QImage icon = getIcon(path, targetSize, forceDirectory);
+    QElapsedTimer loadTimer;
+    if (iconTimingEnabled()) {
+        loadTimer.start();
+    }
+    QImage icon = getIcon(path, targetSize, forceDirectory, genericOnly);
+    const qint64 loadMs = iconTimingEnabled() ? loadTimer.elapsed() : 0;
     
     {
         QMutexLocker locker(&m_mutex);
@@ -92,11 +131,24 @@ QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &r
             m_cache.insert(cacheKey, new QImage(icon));
         }
     }
+
+    if (iconTimingEnabled()) {
+        qInfo().noquote()
+            << "[IconProvider] miss"
+            << "totalMs=" << totalTimer.elapsed()
+            << "loadMs=" << loadMs
+            << "size=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height())
+            << "generic=" << genericOnly
+            << "dir=" << forceDirectory
+            << "key=" << cacheKey
+            << "null=" << icon.isNull()
+            << "path=" << path;
+    }
     
     return icon;
 }
 
-QImage IconProvider::getIcon(const QString &path, const QSize &requestedSize, bool forceDirectory)
+QImage IconProvider::getIcon(const QString &path, const QSize &requestedSize, bool forceDirectory, bool genericOnly)
 {
 #ifdef Q_OS_WIN
     if (forceDirectory) {
@@ -114,12 +166,12 @@ QImage IconProvider::getIcon(const QString &path, const QSize &requestedSize, bo
         if (!suffix.isEmpty()) {
             const QString fakeName = QDir::toNativeSeparators(
                 QDir::temp().filePath(QStringLiteral("file.") + suffix));
-            return getWindowsIcon(fakeName, requestedSize, false);
+            return getWindowsIcon(fakeName, requestedSize, false, true);
         }
 
         return getGenericIcon(path, requestedSize, forceDirectory);
     }
-    return getWindowsIcon(path, requestedSize, forceDirectory);
+    return getWindowsIcon(path, requestedSize, forceDirectory, genericOnly);
 #else
     return getGenericIcon(path, requestedSize, forceDirectory);
 #endif
@@ -128,6 +180,11 @@ QImage IconProvider::getIcon(const QString &path, const QSize &requestedSize, bo
 #ifdef Q_OS_WIN
 QImage IconProvider::getWindowsStockFolderIcon(const QSize &requestedSize)
 {
+    QElapsedTimer timer;
+    if (iconTimingEnabled()) {
+        timer.start();
+    }
+
     SHSTOCKICONINFO sii;
     ZeroMemory(&sii, sizeof(sii));
     sii.cbSize = sizeof(sii);
@@ -142,16 +199,27 @@ QImage IconProvider::getWindowsStockFolderIcon(const QSize &requestedSize)
         QImage image = QImage::fromHICON(sii.hIcon);
         DestroyIcon(sii.hIcon);
         if (!image.isNull()) {
+            if (iconTimingEnabled()) {
+                qInfo().noquote()
+                    << "[IconProvider] shell-stock-folder"
+                    << "ms=" << timer.elapsed()
+                    << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height());
+            }
             return image.scaled(requestedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
     }
 
     const QString fakeFolder = QDir::toNativeSeparators(QDir::tempPath());
-    return getWindowsIcon(fakeFolder, requestedSize, true);
+    return getWindowsIcon(fakeFolder, requestedSize, true, true);
 }
 
-QImage IconProvider::getWindowsIcon(const QString &path, const QSize &requestedSize, bool forceDirectory)
+QImage IconProvider::getWindowsIcon(const QString &path, const QSize &requestedSize, bool forceDirectory, bool genericOnly)
 {
+    QElapsedTimer timer;
+    if (iconTimingEnabled()) {
+        timer.start();
+    }
+
     SHFILEINFO sfi;
     std::wstring wpath = QDir::toNativeSeparators(path).toStdWString();
     
@@ -161,7 +229,7 @@ QImage IconProvider::getWindowsIcon(const QString &path, const QSize &requestedS
         flags |= SHGFI_LARGEICON;
     }
 
-    const DWORD attr = forceDirectory || QFileInfo(path).isDir()
+    const DWORD attr = forceDirectory || (!genericOnly && QFileInfo(path).isDir())
         ? FILE_ATTRIBUTE_DIRECTORY
         : FILE_ATTRIBUTE_NORMAL;
 
@@ -169,8 +237,27 @@ QImage IconProvider::getWindowsIcon(const QString &path, const QSize &requestedS
         QImage image = QImage::fromHICON(sfi.hIcon);
         DestroyIcon(sfi.hIcon);
         if (!image.isNull()) {
+            if (iconTimingEnabled()) {
+                qInfo().noquote()
+                    << "[IconProvider] shell-file"
+                    << "ms=" << timer.elapsed()
+                    << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
+                    << "generic=" << genericOnly
+                    << "dir=" << forceDirectory
+                    << "path=" << path;
+            }
             return image.scaled(requestedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
+    }
+
+    if (iconTimingEnabled()) {
+        qInfo().noquote()
+            << "[IconProvider] shell-file-fallback"
+            << "ms=" << timer.elapsed()
+            << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
+            << "generic=" << genericOnly
+            << "dir=" << forceDirectory
+            << "path=" << path;
     }
 
     return getGenericIcon(path, requestedSize, forceDirectory);

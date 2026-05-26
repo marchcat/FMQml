@@ -33,6 +33,10 @@ qt_add_executable(fm
     src/models/PlacesModel.h
     src/controllers/FilePanelController.cpp
     src/controllers/FilePanelController.h
+    src/controllers/AdminController.cpp
+    src/controllers/AdminController.h
+    src/controllers/AppSettingsController.cpp
+    src/controllers/AppSettingsController.h
     src/controllers/WorkspaceController.cpp
     src/controllers/WorkspaceController.h
     src/core/OperationQueue.cpp
@@ -40,6 +44,8 @@ qt_add_executable(fm
     src/core/HistoryManager.cpp
     src/core/HistoryManager.h
     src/core/FileProvider.h
+    src/core/FileError.cpp
+    src/core/FileError.h
     src/core/LocalFileProvider.cpp
     src/core/LocalFileProvider.h
     src/core/ArchiveSupport.cpp
@@ -106,6 +112,7 @@ set(MY_QML_FILES
     qml/components/PathBar.qml
     qml/components/PremiumTextField.qml
     qml/components/PropertiesDialog.qml
+    qml/components/SettingsDialog.qml
     qml/components/DriveContextMenu.qml
     qml/components/DrivePropertiesHero.qml
     qml/components/PreviewPane.qml
@@ -147,6 +154,7 @@ set(MY_QML_FILES
     qml/components/preview/TextPreview.qml
     qml/components/preview/PreviewPropertiesList.qml
     qml/components/filepanel/FilePanelStatusBar.qml
+    qml/components/filepanel/FilePanelErrorBanner.qml
     qml/components/filepanel/FilePanelContextMenu.qml
     qml/components/filepanel/FilePanelEmptyMenu.qml
     qml/components/filepanel/FilePanelDropOverlay.qml
@@ -172,6 +180,7 @@ qt_add_qml_module(fm
     VERSION 1.0
     SOURCES
         src/core/OperationQueue.h
+        src/controllers/AppSettingsController.h
         src/controllers/FilePanelController.h
         src/controllers/WorkspaceController.h
         src/controllers/ThemeController.h
@@ -218,6 +227,13 @@ qt_add_qml_module(fm
         qml/assets/icons/sun.svg
         qml/assets/icons/terminal.svg
         qml/assets/icons/video.svg
+        qml/assets/filetypes/archive.svg
+        qml/assets/filetypes/document.svg
+        qml/assets/filetypes/executable.svg
+        qml/assets/filetypes/folder.svg
+        qml/assets/filetypes/image.svg
+        qml/assets/filetypes/music.svg
+        qml/assets/filetypes/video.svg
         qml/assets/lucide-toolbar/arrow-left.svg
         qml/assets/lucide-toolbar/arrow-right.svg
         qml/assets/lucide-toolbar/arrow-up.svg

@@ -42,10 +42,15 @@ public:
     bool renamePath(const QString &oldPath, const QString &newName) override;
     bool createFolder(const QString &parentPath, const QString &name, QString *createdPath = nullptr) override;
     bool createFile(const QString &parentPath, const QString &name, QString *createdPath = nullptr) override;
+    QString lastErrorString() const override;
+    void clearLastError() const override;
 
 private:
+    void setLastError(const QString &error) const;
+
     QFutureWatcher<void> m_watcher;
     QString m_currentPath;
     std::atomic<int> m_scanGeneration{0};
     bool m_showHidden = false;
+    mutable QString m_lastError;
 };

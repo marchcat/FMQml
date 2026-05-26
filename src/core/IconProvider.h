@@ -17,11 +17,11 @@ public:
     Flags flags() const override { return QQuickImageProvider::ForceAsynchronousImageLoading; }
 
 private:
-    QImage getIcon(const QString &path, const QSize &requestedSize, bool forceDirectory = false);
+    QImage getIcon(const QString &path, const QSize &requestedSize, bool forceDirectory = false, bool genericOnly = false);
     QImage getGenericIcon(const QString &path, const QSize &requestedSize, bool forceDirectory = false);
     
 #ifdef Q_OS_WIN
-    QImage getWindowsIcon(const QString &path, const QSize &requestedSize, bool forceDirectory = false);
+    QImage getWindowsIcon(const QString &path, const QSize &requestedSize, bool forceDirectory = false, bool genericOnly = false);
     QImage getWindowsStockFolderIcon(const QSize &requestedSize);
 #endif
 

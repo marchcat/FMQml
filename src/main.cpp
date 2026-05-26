@@ -25,7 +25,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    MainWindowSetup::configureMainWindow(mainWindow, services.theme());
+    MainWindowSetup::configureMainWindow(mainWindow, services.theme(), services.settings());
     splash.closeWhenReady(mainWindow);
 
     PlatformIntegration platform;
@@ -33,6 +33,6 @@ int main(int argc, char *argv[])
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &services, &AppServices::shutdown);
 
-    mainWindow->show();
+    MainWindowSetup::showMainWindow(mainWindow, services.settings());
     return app.exec();
 }

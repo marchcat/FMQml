@@ -22,6 +22,7 @@ class FilePanelController final : public QObject {
     Q_PROPERTY(QString hoveredPath READ hoveredPath WRITE setHoveredPath NOTIFY hoveredPathChanged)
     Q_PROPERTY(QString currentItemPath READ currentItemPath WRITE setCurrentItemPath NOTIFY currentItemPathChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
+    Q_PROPERTY(QVariantMap lastError READ lastError NOTIFY lastErrorChanged)
     Q_PROPERTY(bool scrolling READ scrolling WRITE setScrolling NOTIFY scrollingChanged)
     Q_PROPERTY(bool isDeviceRoot READ isDeviceRoot NOTIFY isDeviceRootChanged)
     Q_PROPERTY(ChecksumCalculator* checksumCalculator READ checksumCalculator CONSTANT)
@@ -45,6 +46,7 @@ public:
     QString currentItemPath() const;
     void setCurrentItemPath(const QString &path);
     QString statusMessage() const;
+    QVariantMap lastError() const;
     bool scrolling() const;
     void setScrolling(bool scrolling);
     Q_INVOKABLE QString fileNameForPath(const QString &path) const;
@@ -71,6 +73,7 @@ public:
     Q_INVOKABLE void goForward();
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void refresh();
+    Q_INVOKABLE void clearError();
     Q_INVOKABLE QStringList selectedPaths() const;
     Q_INVOKABLE QVariantMap storageInfoForPath(const QString &rootPath) const;
     Q_INVOKABLE void ejectDrive(const QString &rootPath);
@@ -106,6 +109,7 @@ signals:
     void pathNavigated(const QString &path);
     void contentsChanged(const QString &path);
     void statusMessageChanged();
+    void lastErrorChanged();
     void scrollingChanged();
     void ejectFinished(const QString &rootPath, bool success);
     void isoMountRequested(const QString &path);
@@ -116,6 +120,8 @@ private:
     bool openPathInternal(const QString &path, bool addToHistory, bool preserveScroll = false);
     void pushHistory(const QString &path);
     void setStatusMessage(const QString &message);
+    void setLastError(const QVariantMap &error);
+    void setOperationError(const QString &message, const QString &path, const QString &operation);
     QString fallbackPathForMissing(const QString &path) const;
     void recoverFromMissingPath(const QString &path, const QString &error);
 
@@ -124,6 +130,7 @@ private:
     QString m_hoveredPath;
     QString m_currentItemPath;
     QString m_statusMessage;
+    QVariantMap m_lastError;
     QStringList m_backStack;
     QStringList m_forwardStack;
     int m_viewMode = 0;

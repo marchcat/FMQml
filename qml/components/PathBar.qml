@@ -29,7 +29,7 @@ Control {
         if (lower === "desktop") return "../assets/icons/desktop.svg";
         if (lower === "downloads") return "../assets/icons/download.svg";
         if (lower === "documents") return "../assets/icons/document.svg";
-        if (lower === "pictures" || lower === "images") return "../assets/icons/image.svg";
+        if (lower === "pictures" || lower === "images") return "../assets/filetypes/image.svg";
         if (lower === "music") return "../assets/icons/music.svg";
         if (lower === "videos" || lower === "movies") return "../assets/icons/video.svg";
         

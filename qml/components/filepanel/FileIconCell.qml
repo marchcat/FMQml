@@ -6,24 +6,80 @@ Item {
     id: root
 
     property string iconSource: ""
+    property string path: ""
+    property string suffix: ""
+    property bool isDirectory: false
+    property bool useNativeIcons: true
     property string thumbnailSource: ""
     property bool showThumbnail: false
     property int iconSize: 16
     property real thumbCornerRadius: Math.max(2, iconSize / 8)
+    readonly property string bundledIconSource: root.iconSource.length > 0
+        ? root.iconSource
+        : root.bundledIconForSuffix(root.isDirectory, root.suffix)
+    readonly property string nativeIconSource: root.iconSourceFor(root.path, root.isDirectory, root.suffix, root.useNativeIcons)
+
+    function bundledIconForSuffix(isDirectory, suffix) {
+        if (isDirectory) {
+            return "../../assets/filetypes/folder.svg"
+        }
+
+        const s = String(suffix || "").toLowerCase()
+        if (["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg", "svgz", "avif", "heic", "tif", "tiff"].indexOf(s) >= 0) {
+            return "../../assets/filetypes/image.svg"
+        }
+        if (["mp3", "flac", "ogg", "m4a", "m4b", "wav", "wma", "aac", "opus"].indexOf(s) >= 0) {
+            return "../../assets/filetypes/music.svg"
+        }
+        if (["mp4", "avi", "mkv", "mov", "wmv", "webm", "flv", "m4v"].indexOf(s) >= 0) {
+            return "../../assets/filetypes/video.svg"
+        }
+        if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "cab", "iso"].indexOf(s) >= 0) {
+            return "../../assets/filetypes/archive.svg"
+        }
+        if (["exe", "bat", "cmd", "ps1", "com", "msi", "dll", "sys"].indexOf(s) >= 0) {
+            return "../../assets/filetypes/executable.svg"
+        }
+        return "../../assets/filetypes/document.svg"
+    }
+
+    function iconSourceFor(path, isDirectory, suffix, useNativeIcons) {
+        if (!useNativeIcons) {
+            return bundledIconForSuffix(isDirectory, suffix)
+        }
+        if (!path || String(path).length === 0) {
+            return bundledIconForSuffix(isDirectory, suffix)
+        }
+        return "image://icon/" + encodeURIComponent(path + (isDirectory ? "?directory=true" : ""))
+    }
 
     implicitWidth: iconSize
     implicitHeight: iconSize
 
     Image {
-        id: iconImg
+        id: fallbackIconImg
         anchors.fill: parent
-        source: root.iconSource
+        source: root.bundledIconSource
         sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
-        asynchronous: true
+        asynchronous: false
         cache: true
         smooth: true
         mipmap: false
         visible: !root.showThumbnail || thumbImg.status !== Image.Ready
+    }
+
+    Image {
+        id: nativeIconImg
+        anchors.fill: parent
+        source: root.nativeIconSource
+        sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
+        asynchronous: root.useNativeIcons
+        cache: true
+        smooth: true
+        mipmap: false
+        visible: root.useNativeIcons
+                 && (!root.showThumbnail || thumbImg.status !== Image.Ready)
+                 && status === Image.Ready
     }
 
     Image {

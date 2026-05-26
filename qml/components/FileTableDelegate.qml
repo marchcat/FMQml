@@ -28,6 +28,7 @@ Item {
     property bool currentItem: false
     property bool panelActive: true
     property bool scrolling: false
+    readonly property bool simplifiedForResize: root.panel && root.panel.simplifiedForResize
     z: root.isRenaming ? 100 : 0
 
     // Signals
@@ -164,7 +165,10 @@ Item {
             radius: 1.5
             color: Theme.accent
             
-            Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad } }
+            Behavior on width {
+                enabled: !root.simplifiedForResize
+                NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad }
+            }
         }
 
         // Zebra striping overlay
@@ -176,8 +180,14 @@ Item {
             visible: root.panel.showZebraStriping && (index % 2 === 1) && !isSelected && !root.currentItem && !(hover.hovered && !root.scrolling)
         }
 
-        Behavior on color { ColorAnimation { duration: Theme.motionFast } }
-        Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+        Behavior on color {
+            enabled: !root.simplifiedForResize
+            ColorAnimation { duration: Theme.motionFast }
+        }
+        Behavior on border.color {
+            enabled: !root.simplifiedForResize
+            ColorAnimation { duration: Theme.motionFast }
+        }
     }
 
     // Horizontal gridline
@@ -193,7 +203,7 @@ Item {
 
     HoverHandler {
         id: hover
-        enabled: true
+        enabled: !root.simplifiedForResize
         onHoveredChanged: {
             if (root.scrolling) return
             if (hovered) {
@@ -312,7 +322,10 @@ Item {
                 }
             }
 
-            Behavior on color { ColorAnimation { duration: 90 } }
+            Behavior on color {
+                enabled: !root.simplifiedForResize
+                ColorAnimation { duration: 90 }
+            }
         }
 
         // ── COLUMN: Name ──────────────────────────────────────────────────────
@@ -335,7 +348,10 @@ Item {
                     Layout.preferredWidth: 16
                     Layout.preferredHeight: 16
                     Layout.alignment: Qt.AlignVCenter
-                    iconSource: "image://icon/" + encodeURIComponent(root.path + (root.isDirectory ? "?directory=true" : ""))
+                    path: root.path
+                    isDirectory: root.isDirectory
+                    suffix: root.suffix
+                    useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
                     iconSize: 16
                 }
 

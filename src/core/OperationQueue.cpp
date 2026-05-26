@@ -2,6 +2,7 @@
 #include "FileProviderFactory.h"
 #include "ArchiveFileProvider.h"
 #include "ArchiveSupport.h"
+#include "FileError.h"
 
 #include <QtConcurrent>
 #include <QDir>
@@ -96,6 +97,60 @@ QString formatTime(qint64 seconds) {
     if (seconds < 60) return QString::number(seconds) + "s";
     if (seconds < 3600) return QString("%1m %2s").arg(seconds / 60).arg(seconds % 60);
     return QString("%1h %2m").arg(seconds / 3600).arg((seconds % 3600) / 60);
+}
+
+QString operationName(OperationQueue::Type type)
+{
+    switch (type) {
+    case OperationQueue::Type::Copy:
+        return QStringLiteral("copy");
+    case OperationQueue::Type::Move:
+        return QStringLiteral("move");
+    case OperationQueue::Type::Delete:
+        return QStringLiteral("delete");
+    case OperationQueue::Type::Extract:
+        return QStringLiteral("extract");
+    }
+    return QStringLiteral("operation");
+}
+
+QString primaryErrorPath(const OperationQueue::Request &request)
+{
+    switch (request.type) {
+    case OperationQueue::Type::Copy:
+    case OperationQueue::Type::Move:
+    case OperationQueue::Type::Extract:
+        return request.destination.isEmpty() ? request.sources.value(0) : request.destination;
+    case OperationQueue::Type::Delete:
+        return request.sources.value(0);
+    }
+    return request.sources.value(0);
+}
+
+QString providerFailureReason(FileProvider *provider, const QString &fallback)
+{
+    if (!provider) {
+        return fallback;
+    }
+    const QString detail = provider->lastErrorString().trimmed();
+    return detail.isEmpty() ? fallback : detail;
+}
+
+QString partialFailureSummary(int failedCount, int totalCount, const QString &firstError)
+{
+    if (failedCount <= 0) {
+        return {};
+    }
+    if (totalCount <= 1) {
+        return firstError;
+    }
+    if (firstError.trimmed().isEmpty()) {
+        return QStringLiteral("%1 of %2 items failed").arg(failedCount).arg(totalCount);
+    }
+    return QStringLiteral("%1 of %2 items failed. First error: %3")
+        .arg(failedCount)
+        .arg(totalCount)
+        .arg(firstError);
 }
 }
 
@@ -289,6 +344,11 @@ QString OperationQueue::error() const
     return m_error;
 }
 
+QVariantMap OperationQueue::lastError() const
+{
+    return m_lastError;
+}
+
 QString OperationQueue::statusMessage() const
 {
     return m_statusMessage;
@@ -383,6 +443,24 @@ void OperationQueue::cancel()
     m_condition.wakeAll();
 }
 
+void OperationQueue::clearError()
+{
+    setError({});
+    setLastError({});
+    if (!m_busy) {
+        setCurrentLabel({});
+    }
+}
+
+void OperationQueue::retryLastOperation()
+{
+    if (m_busy || !m_hasLastRequest) {
+        return;
+    }
+    clearError();
+    enqueue(m_lastRequest);
+}
+
 OperationQueue::ConflictResolution OperationQueue::waitForResolution(const QString &source, const QString &destination)
 {
     if (m_abort) {
@@ -432,6 +510,8 @@ void OperationQueue::runNext()
     }
 
     const Request request = m_pending.takeFirst();
+    m_lastRequest = request;
+    m_hasLastRequest = true;
     m_abort = false;
     setBusy(true);
     setProgress(0.0);
@@ -467,8 +547,15 @@ void OperationQueue::finishCurrent()
     const OperationResult result = m_watcher.future().result();
     const Request request = result.request;
     if (!result.error.isEmpty()) {
+        if (!result.aborted) {
+            setProgress(1.0);
+        }
         setError(result.error);
-        setCurrentLabel(QStringLiteral("Operation failed"));
+        const QString errorPath = result.errorPath.isEmpty() ? primaryErrorPath(request) : result.errorPath;
+        setLastError(FileError::classify(result.error, errorPath, operationName(request.type)));
+        setCurrentLabel(result.failedCount > 0 && result.succeededCount > 0
+                            ? QStringLiteral("Completed with errors")
+                            : QStringLiteral("Operation failed"));
     } else if (result.aborted) {
         setCurrentLabel(QStringLiteral("Cancelled"));
     } else {
@@ -517,7 +604,19 @@ void OperationQueue::setError(const QString &error)
         return;
     }
     m_error = error;
+    if (m_error.isEmpty()) {
+        setLastError({});
+    }
     emit errorChanged();
+}
+
+void OperationQueue::setLastError(const QVariantMap &error)
+{
+    if (m_lastError == error) {
+        return;
+    }
+    m_lastError = error;
+    emit lastErrorChanged();
 }
 
 void OperationQueue::setStatusMessage(const QString &msg)
@@ -628,6 +727,14 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         setCompletedItems(0);
     }, Qt::QueuedConnection);
 
+    auto recordFailure = [&result, totalFileCount](const QString &path, const QString &message) {
+        ++result.failedCount;
+        if (result.error.isEmpty()) {
+            result.error = message;
+            result.errorPath = path;
+        }
+    };
+
     if (request.type == Type::Copy || request.type == Type::Move) {
         for (const QString &source : request.sources) {
             FileProvider* srcProvider = getProviderForPath(source);
@@ -646,6 +753,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                 const QString message = QStringLiteral("Cannot %1 folder %2 into itself or one of its subfolders")
                     .arg(request.type == Type::Copy ? QStringLiteral("copy") : QStringLiteral("move"))
                     .arg(source);
+                result.failedCount = totalFileCount;
+                result.errorPath = source;
                 result.error = message;
                 return result;
             }
@@ -699,6 +808,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                                 setStatusMessage("Cannot replace the source archive. The item has been renamed.");
                             }, Qt::QueuedConnection);
                         } else if (!removePathIfExists(finalPath)) {
+                            result.failedCount = totalFileCount;
+                            result.errorPath = finalPath;
                             result.error = QStringLiteral("Cannot replace %1").arg(finalPath);
                             return result;
                         }
@@ -753,6 +864,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                 }
                 if (!error.contains(QStringLiteral("7-Zip"), Qt::CaseInsensitive)
                     && !error.contains(QStringLiteral("cached"), Qt::CaseInsensitive)) {
+                    result.failedCount = archiveSources.size();
+                    result.errorPath = archiveSources.value(0);
                     result.error = error.isEmpty()
                         ? QStringLiteral("Cannot extract selected archive items")
                         : error;
@@ -797,6 +910,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                         finalPath = uniqueDestinationPath(finalPath);
                     } else if (res == ConflictResolution::Replace) {
                         if (!removePathIfExists(finalPath)) {
+                            result.failedCount = totalFileCount;
+                            result.errorPath = finalPath;
                             result.error = QStringLiteral("Cannot replace %1").arg(finalPath);
                             return result;
                         }
@@ -808,6 +923,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
 
                 const QString tempPath = finalPath + QStringLiteral(".part");
                 if (pathExists(tempPath) && !removePathIfExists(tempPath)) {
+                    result.failedCount = totalFileCount;
+                    result.errorPath = tempPath;
                     result.error = QStringLiteral("Cannot replace temporary file %1").arg(tempPath);
                     return result;
                 }
@@ -855,6 +972,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                     result.aborted = true;
                     return result;
                 }
+                result.failedCount = batchSources.size();
+                result.errorPath = batchSources.value(0);
                 result.error = error.isEmpty() ? QStringLiteral("Cannot extract selected archive entries") : error;
                 return result;
             }
@@ -869,11 +988,15 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                 }
                 if (pathExists(batchFinalPaths.at(i)) && !removePathIfExists(batchFinalPaths.at(i))) {
                     removePathIfExists(batchTempPaths.at(i));
+                    result.failedCount = batchSources.size();
+                    result.errorPath = batchFinalPaths.at(i);
                     result.error = QStringLiteral("Cannot replace %1").arg(batchFinalPaths.at(i));
                     return result;
                 }
                 if (!destProvider->movePath(batchTempPaths.at(i), batchFinalPaths.at(i))) {
                     removePathIfExists(batchTempPaths.at(i));
+                    result.failedCount = batchSources.size();
+                    result.errorPath = batchFinalPaths.at(i);
                     result.error = QStringLiteral("Cannot finalize %1").arg(batchFinalPaths.at(i));
                     return result;
                 }
@@ -898,6 +1021,7 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         const QString sourceName = sourceInfo ? sourceInfo->name : srcProvider->fileName(source);
         FileProvider* destProvider = getProviderForPath(request.destination);
         const QString destinationPath = request.destination.isEmpty() ? QString() : destProvider->childPath(request.destination, sourceName);
+        const int failureCountBefore = result.failedCount;
 
         try {
             if (request.type == Type::Copy) {
@@ -909,16 +1033,21 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
             } else if (request.type == Type::Delete) {
                 QMetaObject::invokeMethod(this, [this, name = sourceName, i]() {
                     setCurrentLabel(name);
-                    setCompletedItems(i + 1);
                 }, Qt::QueuedConnection);
 
                 if (isRealDirectory(source)) {
                     if (!removePathIfExists(source)) {
-                        throw std::runtime_error(QStringLiteral("Cannot delete folder %1").arg(source).toStdString());
+                        const QString message = providerFailureReason(
+                            srcProvider,
+                            QStringLiteral("Cannot delete folder: it may be in use or protected"));
+                        throw std::runtime_error(message.toStdString());
                     }
                 } else {
                     if (!removePathIfExists(source)) {
-                        throw std::runtime_error(QStringLiteral("Cannot delete file %1").arg(source).toStdString());
+                        const QString message = providerFailureReason(
+                            srcProvider,
+                            QStringLiteral("Cannot delete file: it may be in use or protected"));
+                        throw std::runtime_error(message.toStdString());
                     }
                 }
 
@@ -929,13 +1058,22 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
                 }, Qt::QueuedConnection);
             }
         } catch (const std::exception &exception) {
-            result.error = QString::fromUtf8(exception.what());
-            return result;
+            recordFailure(source, QString::fromUtf8(exception.what()));
+        }
+
+        QMetaObject::invokeMethod(this, [this, i]() {
+            setCompletedItems(i + 1);
+        }, Qt::QueuedConnection);
+
+        if (result.failedCount == failureCountBefore) {
+            ++result.succeededCount;
         }
     }
 
     if (m_abort) {
         result.aborted = true;
+    } else if (result.failedCount > 0) {
+        result.error = partialFailureSummary(result.failedCount, totalFileCount, result.error);
     }
     return result;
 }
@@ -1241,11 +1379,15 @@ void OperationQueue::copyPath(const QString &sourcePath, const QString &destinat
         }
 
         if (!ensureParentDirectory(targetPath)) {
-            throw std::runtime_error(QStringLiteral("Cannot create parent directory for %1").arg(targetPath).toStdString());
+            throw std::runtime_error(providerFailureReason(
+                destProvider,
+                QStringLiteral("Cannot create parent directory for %1").arg(targetPath)).toStdString());
         }
         const QString tempPath = targetPath + QStringLiteral(".part");
         if (pathExists(tempPath) && !removePathIfExists(tempPath)) {
-            throw std::runtime_error(QStringLiteral("Cannot replace temporary file %1").arg(tempPath).toStdString());
+            throw std::runtime_error(providerFailureReason(
+                destProvider,
+                QStringLiteral("Cannot replace temporary file %1").arg(tempPath)).toStdString());
         }
 
         const qint64 fileSize = sourceInfo ? sourceInfo->size : 0;
@@ -1306,12 +1448,16 @@ void OperationQueue::copyPath(const QString &sourcePath, const QString &destinat
             if (m_abort) {
                 return;
             }
-            throw std::runtime_error(QStringLiteral("Cannot read %1").arg(frame.sourcePath).toStdString());
+            throw std::runtime_error(providerFailureReason(
+                srcProvider,
+                QStringLiteral("Cannot read %1").arg(frame.sourcePath)).toStdString());
         }
 
         std::unique_ptr<QIODevice> destination = destProvider->openWrite(tempPath, true);
         if (!destination) {
-            throw std::runtime_error(QStringLiteral("Cannot write %1").arg(targetPath).toStdString());
+            throw std::runtime_error(providerFailureReason(
+                destProvider,
+                QStringLiteral("Cannot write %1").arg(targetPath)).toStdString());
         }
 
         if (fileSize <= SmallFileLimit) {
@@ -1449,7 +1595,10 @@ void OperationQueue::movePath(const QString &sourcePath, const QString &destinat
     if (m_abort) return;
 
     if (!removeSourcePath(sourcePath)) {
-        throw std::runtime_error(QStringLiteral("Cannot remove %1").arg(sourcePath).toStdString());
+        const QString message = providerFailureReason(
+            srcProvider,
+            QStringLiteral("Cannot remove source: it may be in use or protected"));
+        throw std::runtime_error(message.toStdString());
     }
 }
 
@@ -1467,6 +1616,7 @@ bool OperationQueue::isRealDirectory(const QString &path) const
 bool OperationQueue::removePathIfExists(const QString &path) const
 {
     if (!pathExists(path)) {
+        getProviderForPath(path)->clearLastError();
         return true;
     }
     return getProviderForPath(path)->removePath(path);

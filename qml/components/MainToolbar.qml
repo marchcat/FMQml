@@ -113,6 +113,7 @@ ToolBar {
             id: toolbarActions
             controller: root.activeController
             workspaceController: root.workspaceController
+            appRoot: root.appRoot
             previewVisible: root.previewVisible
             onPreviewToggleRequested: (visible) => root.previewToggleRequested(visible)
             onHelpRequested: root.appRoot ? root.appRoot.openHelpDialog() : undefined

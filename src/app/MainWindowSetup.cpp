@@ -1,5 +1,6 @@
 #include "MainWindowSetup.h"
 
+#include "../controllers/AppSettingsController.h"
 #include "../controllers/ThemeController.h"
 
 #include <QApplication>
@@ -20,6 +21,11 @@ QString appIconPath()
 {
     return QString::fromLatin1(AppIconPath);
 }
+
+bool shouldStartMaximized(AppSettingsController *settings)
+{
+    return settings && settings->workspaceState().value(QStringLiteral("windowMaximized"), false).toBool();
+}
 }
 
 void MainWindowSetup::configureProcessIdentity()
@@ -38,7 +44,7 @@ void MainWindowSetup::configureApplication(QApplication &app)
     QQuickStyle::setStyle(QStringLiteral("Basic"));
 }
 
-void MainWindowSetup::configureMainWindow(QQuickWindow *window, ThemeController *theme)
+void MainWindowSetup::configureMainWindow(QQuickWindow *window, ThemeController *theme, AppSettingsController *settings)
 {
     if (!window || !theme) {
         return;
@@ -54,10 +60,41 @@ void MainWindowSetup::configureMainWindow(QQuickWindow *window, ThemeController 
         }
     });
 
-    const QSize targetSize(1120, 720);
-    const QRect screenRect = QGuiApplication::primaryScreen()
-        ? QGuiApplication::primaryScreen()->availableGeometry()
-        : QRect(0, 0, targetSize.width(), targetSize.height());
-    const QPoint targetTopLeft = screenRect.center() - QPoint(targetSize.width() / 2, targetSize.height() / 2);
-    window->setGeometry(QRect(targetTopLeft, targetSize));
+    const QVariantMap state = settings ? settings->workspaceState() : QVariantMap();
+    const QVariantMap geometry = settings
+        ? settings->sanitizedWindowGeometry(state, 1120, 720)
+        : QVariantMap();
+
+    if (geometry.value(QStringLiteral("valid")).toBool()) {
+        window->setGeometry(QRect(
+            geometry.value(QStringLiteral("x")).toInt(),
+            geometry.value(QStringLiteral("y")).toInt(),
+            geometry.value(QStringLiteral("width")).toInt(),
+            geometry.value(QStringLiteral("height")).toInt()));
+    } else {
+        const QSize targetSize(1120, 720);
+        const QRect screenRect = QGuiApplication::primaryScreen()
+            ? QGuiApplication::primaryScreen()->availableGeometry()
+            : QRect(0, 0, targetSize.width(), targetSize.height());
+        const QPoint targetTopLeft = screenRect.center() - QPoint(targetSize.width() / 2, targetSize.height() / 2);
+        window->setGeometry(QRect(targetTopLeft, targetSize));
+    }
+
+    if (state.value(QStringLiteral("windowMaximized"), false).toBool()) {
+        window->setWindowStates(window->windowStates() | Qt::WindowMaximized);
+    }
+}
+
+void MainWindowSetup::showMainWindow(QQuickWindow *window, AppSettingsController *settings)
+{
+    if (!window) {
+        return;
+    }
+
+    if (shouldStartMaximized(settings)) {
+        window->showMaximized();
+        return;
+    }
+
+    window->show();
 }

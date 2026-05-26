@@ -7,9 +7,11 @@ Item {
     anchors.fill: parent
 
     property var commandPaletteCommands: []
+    property var appRoot: null
 
     readonly property bool workspaceOverlayOpen: conflictDialog.opened || conflictDialog.visible
                                                  || helpDialog.opened || helpDialog.visible
+                                                 || settingsDialog.opened || settingsDialog.visible
                                                  || propertiesDialog.opened || propertiesDialog.visible
                                                  || isoMountDialog.opened || isoMountDialog.visible
                                                  || deleteConfirmDialog.opened || deleteConfirmDialog.visible
@@ -32,6 +34,10 @@ Item {
 
     function openHelpDialog() {
         helpDialog.open()
+    }
+
+    function openSettingsDialog() {
+        settingsDialog.open()
     }
 
     function showBatchRename(paths) {
@@ -59,6 +65,11 @@ Item {
 
     HelpDialog {
         id: helpDialog
+    }
+
+    SettingsDialog {
+        id: settingsDialog
+        appRoot: root.appRoot
     }
 
     PropertiesDialog {

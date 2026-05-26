@@ -19,6 +19,7 @@ Item {
     required property bool isHidden
     required property bool isArchiveFile
     required property bool isIsoImageFile
+    required property string suffix
     required property string sizeText
     required property string modifiedText
     property bool currentItem: false
@@ -188,7 +189,10 @@ Item {
         FileIconCell {
             Layout.preferredWidth: 16
             Layout.preferredHeight: 16
-            iconSource: "image://icon/" + encodeURIComponent(root.path + (root.isDirectory ? "?directory=true" : ""))
+            path: root.path
+            isDirectory: root.isDirectory
+            suffix: root.suffix
+            useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
             iconSize: 16
         }
 

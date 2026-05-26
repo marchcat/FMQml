@@ -8,6 +8,7 @@ Rectangle {
 
     required property var controller
     required property var panel
+    readonly property bool simplifiedForResize: panel && panel.simplifiedForResize
 
     height: 32
     color: Theme.panelSurfaceSoft
@@ -329,17 +330,20 @@ Rectangle {
             anchors.rightMargin: hcol.resizable ? 8 : 0
             color: clickMa.pressed
                 ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.14)
-                : (clickMa.containsMouse
+                : (!headerRoot.simplifiedForResize && clickMa.containsMouse
                     ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.07)
                     : "transparent")
-            Behavior on color { ColorAnimation { duration: 80 } }
+            Behavior on color {
+                enabled: !headerRoot.simplifiedForResize
+                ColorAnimation { duration: 80 }
+            }
         }
 
         MouseArea {
             id: clickMa
             anchors.fill: parent
             anchors.rightMargin: hcol.resizable ? 8 : 0
-            hoverEnabled: true
+            hoverEnabled: !headerRoot.simplifiedForResize
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             onClicked: (mouse) => {
                 if (mouse.button === Qt.RightButton) {
@@ -370,16 +374,23 @@ Rectangle {
                 Layout.fillWidth: true
                 horizontalAlignment: hcol.alignCenter ? Text.AlignHCenter : (hcol.alignRight ? Text.AlignRight : Text.AlignLeft)
                 elide: Text.ElideRight
-                Behavior on color { ColorAnimation { duration: 100 } }
+                Behavior on color {
+                    enabled: !headerRoot.simplifiedForResize
+                    ColorAnimation { duration: 100 }
+                }
             }
 
             Canvas {
                 id: sortChevron
                 Layout.preferredWidth: 8
                 Layout.preferredHeight: 8
+                visible: !headerRoot.simplifiedForResize
                 opacity: hcol.active ? 1.0 : 0.0
                 
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on opacity {
+                    enabled: !headerRoot.simplifiedForResize
+                    NumberAnimation { duration: 150 }
+                }
                 
                 onPaint: {
                     var ctx = getContext("2d");
@@ -432,6 +443,7 @@ Rectangle {
 
             HoverHandler {
                 id: resizerHover
+                enabled: !headerRoot.simplifiedForResize
                 cursorShape: Qt.SizeHorCursor
             }
 
@@ -468,8 +480,14 @@ Rectangle {
                 color: resizerHover.hovered || dragHandler.active
                        ? Theme.accent : Theme.panelBorder
                 opacity: resizerHover.hovered || dragHandler.active ? 0.85 : (headerRoot.panel.showGridlines ? 0.55 : 0.35)
-                Behavior on color   { ColorAnimation { duration: 100 } }
-                Behavior on opacity { NumberAnimation { duration: 100 } }
+                Behavior on color {
+                    enabled: !headerRoot.simplifiedForResize
+                    ColorAnimation { duration: 100 }
+                }
+                Behavior on opacity {
+                    enabled: !headerRoot.simplifiedForResize
+                    NumberAnimation { duration: 100 }
+                }
             }
         }
     }

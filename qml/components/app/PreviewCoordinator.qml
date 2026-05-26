@@ -11,7 +11,7 @@ Item {
     property var propertiesController
 
     property string pendingPreviewPath: ""
-    property int hoverPreviewDelayMs: 250
+    property bool previewOpenSyncPending: false
 
     function activePanelController() {
         if (!root.workspaceController) {
@@ -53,11 +53,6 @@ Item {
             return ""
         }
 
-        const appRoot = app()
-        if (appRoot && appRoot.previewOnHover && controller.hoveredPath && controller.hoveredPath.length > 0) {
-            return controller.hoveredPath
-        }
-
         const selected = selectedPathsFor(controller)
         if (selected.length > 0) {
             return selected[0]
@@ -96,23 +91,12 @@ Item {
     }
 
     Timer {
-        id: hoverPreviewTimer
-        interval: root.hoverPreviewDelayMs
+        id: previewOpenSyncTimer
+        interval: 0
         repeat: false
         onTriggered: {
-            const appRoot = app()
-            const quickLookController = quickLook()
-            if (!appRoot || !quickLookController) {
-                return
-            }
-            if (!appRoot.previewPaneVisible) {
-                return
-            }
-            if (activePanelScrolling()) {
-                hoverPreviewTimer.restart()
-                return
-            }
-            quickLookController.preview(root.pendingPreviewPath)
+            root.previewOpenSyncPending = false
+            root.syncPreviewFromActivePanel(true)
         }
     }
 
@@ -137,7 +121,6 @@ Item {
 
         if (immediate === true) {
             previewSyncTimer.stop()
-            hoverPreviewTimer.stop()
             root.pendingPreviewPath = targetPath
             quickLookController.preview(targetPath)
             return
@@ -145,30 +128,6 @@ Item {
 
         root.pendingPreviewPath = targetPath
         previewSyncTimer.restart()
-    }
-
-    function scheduleHoverPreview(path) {
-        const appRoot = app()
-        if (!appRoot || !quickLook()) {
-            return
-        }
-
-        if (!appRoot.previewPaneVisible) {
-            return
-        }
-
-        if (activePanelScrolling()) {
-            root.pendingPreviewPath = path
-            return
-        }
-
-        if (root.hoverPreviewDelayMs <= 0) {
-            hoverPreviewTimer.stop()
-            return
-        }
-
-        root.pendingPreviewPath = path
-        hoverPreviewTimer.restart()
     }
 
     function setPreviewPaneVisible(visible) {
@@ -185,8 +144,11 @@ Item {
 
         quickLookController.visible = visible
         if (visible) {
-            syncPreviewFromActivePanel(true)
+            root.previewOpenSyncPending = true
+            previewOpenSyncTimer.restart()
         } else {
+            root.previewOpenSyncPending = false
+            previewOpenSyncTimer.stop()
             quickLookController.preview("")
         }
     }
@@ -198,7 +160,8 @@ Item {
 
     function clearPreviewTimers() {
         previewSyncTimer.stop()
-        hoverPreviewTimer.stop()
+        previewOpenSyncTimer.stop()
+        root.previewOpenSyncPending = false
     }
 
     Connections {
@@ -236,16 +199,6 @@ Item {
 
     Connections {
         target: root.workspaceController ? root.workspaceController.leftPanel : null
-        function onHoveredPathChanged() {
-            const appRoot = app()
-            if (appRoot && appRoot.previewPaneVisible && root.workspaceController.activePanel === 0 && appRoot.previewOnHover) {
-                if (root.workspaceController.leftPanel.hoveredPath.length > 0) {
-                    scheduleHoverPreview(root.workspaceController.leftPanel.hoveredPath)
-                } else {
-                    hoverPreviewTimer.stop()
-                }
-            }
-        }
         function onCurrentPathChanged() {
             const appRoot = app()
             if (appRoot && appRoot.previewPaneVisible && root.workspaceController.activePanel === 0) {
@@ -273,16 +226,6 @@ Item {
 
     Connections {
         target: root.workspaceController ? root.workspaceController.rightPanel : null
-        function onHoveredPathChanged() {
-            const appRoot = app()
-            if (appRoot && appRoot.previewPaneVisible && root.workspaceController.activePanel === 1 && appRoot.previewOnHover) {
-                if (root.workspaceController.rightPanel.hoveredPath.length > 0) {
-                    scheduleHoverPreview(root.workspaceController.rightPanel.hoveredPath)
-                } else {
-                    hoverPreviewTimer.stop()
-                }
-            }
-        }
         function onCurrentPathChanged() {
             const appRoot = app()
             if (appRoot && appRoot.previewPaneVisible && root.workspaceController.activePanel === 1) {

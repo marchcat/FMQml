@@ -58,6 +58,29 @@ WorkspaceController::WorkspaceController(QObject *parent)
 
     connect(&m_operationQueue, &OperationQueue::operationFinished, this,
         [this](auto type, const auto &sources, const auto &destination) {
+            if (!m_operationQueue.error().isEmpty()) {
+                const auto refreshIfShowing = [this](const QString &path) {
+                    if (path.isEmpty()) {
+                        return;
+                    }
+                    if (m_leftPanel.directoryModel()->currentPath() == path) {
+                        m_leftPanel.refresh();
+                    }
+                    if (m_rightPanel.directoryModel()->currentPath() == path) {
+                        m_rightPanel.refresh();
+                    }
+                    m_treeModel.refreshPath(path);
+                };
+
+                for (const QString &source : sources) {
+                    refreshIfShowing(m_leftPanel.parentPathForPath(source));
+                }
+                if (!destination.isEmpty()) {
+                    refreshIfShowing(destination);
+                }
+                return;
+            }
+
             const auto tryUpdatePanel = [](FilePanelController *panel, const QString &sourcePath, const QString &destPath, bool removeSource) {
                 if (panel->currentPath().isEmpty()) {
                     return false;

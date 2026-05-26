@@ -9,6 +9,7 @@ RowLayout {
 
     property var controller
     property var workspaceController
+    property var appRoot
     property bool previewVisible: false
 
     signal previewToggleRequested(bool visible)
@@ -127,7 +128,9 @@ RowLayout {
             isHighlighted: root.workspaceController && root.workspaceController.splitEnabled
             enabled: root.workspaceController !== null && root.workspaceController !== undefined
             onClicked: {
-                if (root.workspaceController) {
+                if (root.appRoot) {
+                    root.appRoot.toggleSplitView()
+                } else if (root.workspaceController) {
                     root.workspaceController.toggleSplit()
                 }
             }

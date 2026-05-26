@@ -14,6 +14,11 @@ Pane {
     property alias foldersTree: foldersTree
     property bool lastFocusedTree: false
     property bool trapTabNavigation: false
+    property bool liveResizeActive: false
+    readonly property bool simplifyVisualsForPerformance: typeof appSettings !== "undefined" && appSettings
+                                                          ? appSettings.simplifyVisualsForPerformance
+                                                          : true
+    readonly property bool simplifiedForResize: root.liveResizeActive && root.simplifyVisualsForPerformance
 
     function focusSidebar(trapTab) {
         trapTabNavigation = trapTab === true
@@ -396,7 +401,10 @@ Pane {
                     }
                     border.width: parent.isCurrent || parent.isActive || thisPcMouse.containsMouse ? (parent.isCurrent ? 2 : 1) : 0
 
-                    Behavior on color { ColorAnimation { duration: Theme.motionFast } }
+                    Behavior on color {
+                        enabled: !root.simplifiedForResize
+                        ColorAnimation { duration: Theme.motionFast }
+                    }
 
                     // Active indicator bar
                     Rectangle {
@@ -426,7 +434,7 @@ Pane {
                             asynchronous: true
                             cache: true
                             opacity: thisPcBg.parent.isActive || thisPcMouse.containsMouse ? 1 : 0.86
-                            layer.enabled: true
+                            layer.enabled: !root.simplifiedForResize
                             layer.effect: MultiEffect {
                                 colorization: 1.0
                                 colorizationColor: root.iconToneFor("computer", thisPcBg.parent.isActive, thisPcMouse.containsMouse)
@@ -447,7 +455,7 @@ Pane {
                     MouseArea {
                         id: thisPcMouse
                         anchors.fill: parent
-                        hoverEnabled: true
+                        hoverEnabled: !root.simplifiedForResize
                         acceptedButtons: Qt.LeftButton
                         cursorShape: Qt.PointingHandCursor
                         onClicked: function(mouse) {
@@ -493,7 +501,7 @@ Pane {
                         asynchronous: true
                         cache: true
                         opacity: isActive || placeMouse.containsMouse ? 1 : 0.86
-                        layer.enabled: true
+                        layer.enabled: !root.simplifiedForResize
                         layer.effect: MultiEffect {
                             colorization: 1.0
                             colorizationColor: root.iconToneFor(model.icon, isActive, placeMouse.containsMouse)
@@ -550,6 +558,7 @@ Pane {
                     }
 
                     Behavior on color {
+                        enabled: !root.simplifiedForResize
                         ColorAnimation { duration: Theme.motionFast }
                     }
                 }
@@ -557,7 +566,7 @@ Pane {
                 MouseArea {
                     id: placeMouse
                     anchors.fill: parent
-                    hoverEnabled: true
+                    hoverEnabled: !root.simplifiedForResize
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.PointingHandCursor
                     z: 10
@@ -790,10 +799,14 @@ Pane {
                         radius: 1.5
                         color: isActive ? Theme.accent : Theme.withAlpha(Theme.accent, 0.55)
                         
-                        Behavior on width { NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad } }
+                        Behavior on width {
+                            enabled: !root.simplifiedForResize
+                            NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad }
+                        }
                     }
 
                     Behavior on color {
+                        enabled: !root.simplifiedForResize
                         ColorAnimation { duration: Theme.motionFast }
                     }
                 }
@@ -804,7 +817,7 @@ Pane {
                     MouseArea {
                         id: rowMouse
                         anchors.fill: parent
-                        hoverEnabled: true
+                        hoverEnabled: !root.simplifiedForResize
                         cursorShape: Qt.PointingHandCursor
                         z: 1
                         onClicked: function(mouse) {
@@ -817,7 +830,7 @@ Pane {
 
                     Rectangle {
                         id: depthGuide
-                        visible: folderDelegate.isTreeNode && folderDelegate.depth > 0
+                        visible: folderDelegate.isTreeNode && folderDelegate.depth > 0 && !root.simplifiedForResize
                         x: folderDelegate.baseIndent + (folderDelegate.depth * folderDelegate.indentStep) - 8
                         y: 4
                         width: 1
@@ -841,14 +854,17 @@ Pane {
                             anchors.centerIn: parent
                             width: 12
                             height: 12
+                            visible: !root.simplifiedForResize
                             rotation: folderDelegate.expanded ? 90 : 0
                             opacity: folderDelegate.hasChildren ? 1 : 0.35
                             
                             Behavior on rotation {
+                                enabled: !root.simplifiedForResize
                                 NumberAnimation { duration: Theme.motionFast; easing.type: Easing.OutQuad }
                             }
 
                             Behavior on opacity {
+                                enabled: !root.simplifiedForResize
                                 NumberAnimation { duration: Theme.motionFast }
                             }
                             
@@ -870,16 +886,33 @@ Pane {
                             
                             Connections {
                                 target: folderDelegate
-                                function onIsActiveChanged() { chevronCanvas.requestPaint(); }
+                                function onIsActiveChanged() {
+                                    if (!root.simplifiedForResize) chevronCanvas.requestPaint();
+                                }
                             }
                             Connections {
                                 target: rowMouse
-                                function onContainsMouseChanged() { chevronCanvas.requestPaint(); }
+                                function onContainsMouseChanged() {
+                                    if (!root.simplifiedForResize) chevronCanvas.requestPaint();
+                                }
                             }
                             Connections {
                                 target: themeController
-                                function onThemeChanged() { chevronCanvas.requestPaint(); }
+                                function onThemeChanged() {
+                                    if (!root.simplifiedForResize) chevronCanvas.requestPaint();
+                                }
                             }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            visible: root.simplifiedForResize
+                            text: folderDelegate.expanded ? ">" : ">"
+                            rotation: folderDelegate.expanded ? 90 : 0
+                            color: folderDelegate.isActive ? Theme.textPrimary : Theme.textSecondary
+                            font.pixelSize: 11
+                            font.bold: true
+                            opacity: folderDelegate.hasChildren ? 0.85 : 0.35
                         }
 
                         MouseArea {
@@ -919,7 +952,7 @@ Pane {
                                 asynchronous: true
                                 cache: true
                                 opacity: folderDelegate.isActive || rowMouse.containsMouse ? 1 : 0.84
-                                layer.enabled: true
+                                layer.enabled: !root.simplifiedForResize
                                 layer.effect: MultiEffect {
                                     colorization: 1.0
                                     colorizationColor: root.iconToneFor(model.icon, folderDelegate.isActive, rowMouse.containsMouse)

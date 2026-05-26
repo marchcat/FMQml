@@ -77,6 +77,8 @@ public:
     virtual bool renamePath(const QString &oldPath, const QString &newName) = 0;
     virtual bool createFolder(const QString &parentPath, const QString &name, QString *createdPath = nullptr) = 0;
     virtual bool createFile(const QString &parentPath, const QString &name, QString *createdPath = nullptr) = 0;
+    virtual QString lastErrorString() const { return {}; }
+    virtual void clearLastError() const {}
 
 signals:
     void started();

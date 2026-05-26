@@ -2,6 +2,8 @@
 
 #include <QObject>
 
+#include "../controllers/AdminController.h"
+#include "../controllers/AppSettingsController.h"
 #include "../controllers/PropertiesController.h"
 #include "../controllers/QuickLookController.h"
 #include "../controllers/ThemeController.h"
@@ -19,14 +21,20 @@ public:
     QuickLookController *quickLook();
     PropertiesController *properties();
     SystemInfoProvider *systemInfo();
+    AppSettingsController *settings();
+    AdminController *admin();
 
 public slots:
     void shutdown();
 
 private:
+    void restoreInitialWorkspaceState();
+
     WorkspaceController m_workspace;
     ThemeController m_theme;
     QuickLookController m_quickLook;
     PropertiesController m_properties;
     SystemInfoProvider m_systemInfo;
+    AppSettingsController m_settings;
+    AdminController m_admin;
 };

@@ -1,6 +1,7 @@
 #include "DirectoryModel.h"
 
 #include "../core/ArchiveSupport.h"
+#include "../core/FileError.h"
 #include "../core/FileProviderFactory.h"
 #include "../core/IsoSupport.h"
 #include "../core/LocalFileProvider.h"
@@ -190,6 +191,11 @@ QString DirectoryModel::error() const
     return m_error;
 }
 
+QVariantMap DirectoryModel::lastError() const
+{
+    return m_lastError;
+}
+
 int DirectoryModel::count() const
 {
     return m_filteredIndices.size();
@@ -336,6 +342,7 @@ void DirectoryModel::onScannerStarted()
 
     setLoading(true);
     setError({});
+    setLastError({});
     emit countChanged();
     emit selectionChanged();
 }
@@ -554,6 +561,7 @@ void DirectoryModel::finalizeScannerFinished(const QString &path, bool success, 
             emit selectionChanged();
         }
         setError(error);
+        setLastError(FileError::classify(error, path, QStringLiteral("open")));
         emit directoryUnavailable(path, error);
     }
     m_previousPath.clear();
@@ -627,6 +635,12 @@ void DirectoryModel::refresh()
         m_provider->setShowHidden(m_showHidden);
         m_provider->scan(m_currentPath);
     }
+}
+
+void DirectoryModel::clearError()
+{
+    setError({});
+    setLastError({});
 }
 
 void DirectoryModel::noteLocalMutation()
@@ -1086,6 +1100,15 @@ void DirectoryModel::setError(const QString &error)
     emit errorChanged();
 }
 
+void DirectoryModel::setLastError(const QVariantMap &error)
+{
+    if (m_lastError == error) {
+        return;
+    }
+    m_lastError = error;
+    emit lastErrorChanged();
+}
+
 DirectoryModel::SortRole DirectoryModel::sortRole() const
 {
     return m_sortRole;
@@ -1181,10 +1204,10 @@ void DirectoryModel::sortModel()
         return;
     }
 
-    beginResetModel();
+    emit layoutAboutToBeChanged();
     std::stable_sort(m_filteredIndices.begin(), m_filteredIndices.end(),
         [this](int aIdx, int bIdx) {
             return compareEntries(m_entries.at(aIdx), m_entries.at(bIdx));
         });
-    endResetModel();
+    emit layoutChanged();
 }

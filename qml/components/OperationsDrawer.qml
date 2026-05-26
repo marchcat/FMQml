@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Window
 import FM
 import "../style"
 
@@ -11,6 +12,20 @@ Item {
     implicitWidth: 360
     implicitHeight: mainContainer.height
 
+    readonly property var operationErrorInfo: workspaceController.operationQueue.lastError || ({})
+    readonly property bool hasOperationError: workspaceController.operationQueue.error.length > 0
+    readonly property string operationErrorTitle: operationErrorInfo.title || "Operation failed"
+    readonly property string operationErrorMessage: operationErrorInfo.message || workspaceController.operationQueue.error
+    readonly property string operationErrorPath: operationErrorInfo.path || ""
+    readonly property var operationErrorActions: operationErrorInfo.actions || []
+    readonly property bool canRetry: operationErrorActions.indexOf("retry") >= 0
+    readonly property bool canRefresh: operationErrorActions.indexOf("refresh") >= 0
+    readonly property bool canCopyPath: operationErrorActions.indexOf("copyPath") >= 0 && operationErrorPath.length > 0
+    readonly property bool canRestartAsAdmin: operationErrorInfo.code === "accessDenied"
+                                              && operationErrorActions.indexOf("restartAsAdmin") >= 0
+                                              && typeof adminController !== "undefined"
+                                              && adminController
+                                              && !adminController.isElevated
     property bool active: workspaceController.operationQueue.busy || workspaceController.operationQueue.error.length > 0
 
     visible: opacity > 0
@@ -26,7 +41,7 @@ Item {
         height: content.implicitHeight + 28
         radius: 18
         color: Theme.panelSurfaceStrong
-        border.color: workspaceController.operationQueue.error.length > 0
+        border.color: root.hasOperationError
                       ? Theme.withAlpha(Theme.danger, 0.25)
                       : Theme.panelBorder
         border.width: 1
@@ -46,7 +61,7 @@ Item {
             anchors.bottom: parent.bottom
             width: 6
             radius: 3
-            color: workspaceController.operationQueue.error.length > 0 ? Theme.danger : Theme.accent
+            color: root.hasOperationError ? Theme.danger : Theme.accent
         }
 
         ColumnLayout {
@@ -63,17 +78,17 @@ Item {
                         width: 40
                         height: 40
                         radius: 12
-                        color: workspaceController.operationQueue.error.length > 0
+                        color: root.hasOperationError
                                ? Theme.withAlpha(Theme.danger, 0.14)
                                : Theme.withAlpha(Theme.accent, 0.14)
-                        border.color: workspaceController.operationQueue.error.length > 0
+                        border.color: root.hasOperationError
                                       ? Theme.withAlpha(Theme.danger, 0.26)
                                       : Theme.withAlpha(Theme.accent, 0.26)
                         border.width: 1
 
                     Image {
                         anchors.centerIn: parent
-                        source: workspaceController.operationQueue.error.length > 0
+                        source: root.hasOperationError
                                 ? "../assets/icons/info.svg"
                                 : "../assets/icons/refresh.svg"
                         sourceSize: Qt.size(20, 20)
@@ -81,13 +96,13 @@ Item {
                         RotationAnimation on rotation {
                             from: 0; to: 360; duration: 1800
                             loops: Animation.Infinite
-                            running: workspaceController.operationQueue.busy && workspaceController.operationQueue.error.length === 0
+                            running: workspaceController.operationQueue.busy && !root.hasOperationError
                         }
 
                         layer.enabled: true
                         layer.effect: MultiEffect {
                             colorization: 1.0
-                            colorizationColor: workspaceController.operationQueue.error.length > 0 ? Theme.danger : Theme.accent
+                            colorizationColor: root.hasOperationError ? Theme.danger : Theme.accent
                         }
                     }
                 }
@@ -97,10 +112,10 @@ Item {
                     Layout.fillWidth: true
 
                     Label {
-                        text: workspaceController.operationQueue.error.length > 0 ? "Operation failed" : "Operations"
+                        text: root.hasOperationError ? root.operationErrorTitle : "Operations"
                         font.bold: true
                         font.pixelSize: 15
-                        color: workspaceController.operationQueue.error.length > 0 ? Theme.danger : Theme.textPrimary
+                        color: root.hasOperationError ? Theme.danger : Theme.textPrimary
                     }
 
                     RowLayout {
@@ -190,7 +205,7 @@ Item {
                             width: pBar.visualPosition * parent.width
                             height: parent.height
                             radius: 5
-                            color: workspaceController.operationQueue.error.length > 0 ? Theme.danger : Theme.accent
+                            color: root.hasOperationError ? Theme.danger : Theme.accent
 
                             Rectangle {
                                 anchors.right: parent.right
@@ -256,11 +271,11 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: msgLabel.implicitHeight + 24
-                color: workspaceController.operationQueue.error.length > 0
+                color: root.hasOperationError
                        ? Theme.withAlpha(Theme.danger, 0.06)
                        : Theme.panelSurfaceSoft
                 radius: 14
-                border.color: workspaceController.operationQueue.error.length > 0
+                border.color: root.hasOperationError
                               ? Theme.withAlpha(Theme.danger, 0.2)
                               : Theme.panelBorder
                 border.width: 1
@@ -269,10 +284,9 @@ Item {
                     id: msgLabel
                     anchors.fill: parent
                     anchors.margins: 10
-                    text: workspaceController.operationQueue.error.length > 0
-                          ? workspaceController.operationQueue.error
-                          : (workspaceController.operationQueue.currentLabel || "Initializing...")
-                    color: workspaceController.operationQueue.error.length > 0 ? Theme.danger : Theme.textPrimary
+                    text: root.hasOperationError ? root.operationErrorMessage
+                                                  : (workspaceController.operationQueue.currentLabel || "Initializing...")
+                    color: root.hasOperationError ? Theme.danger : Theme.textPrimary
                     font.pixelSize: 11
                     font.family: "Segoe UI Semibold, Arial"
                     wrapMode: Text.Wrap
@@ -287,18 +301,151 @@ Item {
                 Layout.fillWidth: true
                 spacing: 8
 
+                Label {
+                    visible: root.hasOperationError && root.operationErrorPath.length > 0
+                    Layout.fillWidth: true
+                    text: root.operationErrorPath
+                    color: Theme.textSecondary
+                    font.pixelSize: 10
+                    elide: Text.ElideMiddle
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Button {
+                    id: retryBtn
+                    visible: root.hasOperationError && root.canRetry
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    text: "Retry"
+
+                    background: Rectangle {
+                        radius: 9
+                        color: retryBtn.pressed
+                               ? Theme.withAlpha(Theme.accent, 0.14)
+                               : (retryBtn.hovered ? Theme.withAlpha(Theme.accent, 0.08) : "transparent")
+                        border.color: Theme.withAlpha(Theme.accent, 0.25)
+                        border.width: 1
+                    }
+
+                    contentItem: Label {
+                        text: retryBtn.text
+                        color: Theme.accent
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    onClicked: {
+                        workspaceController.operationQueue.retryLastOperation()
+                    }
+                }
+
+                Button {
+                    id: refreshBtn
+                    visible: root.hasOperationError && root.canRefresh
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    text: "Refresh"
+
+                    background: Rectangle {
+                        radius: 9
+                        color: refreshBtn.pressed
+                               ? Theme.withAlpha(Theme.accent, 0.14)
+                               : (refreshBtn.hovered ? Theme.withAlpha(Theme.accent, 0.08) : "transparent")
+                        border.color: Theme.withAlpha(Theme.accent, 0.25)
+                        border.width: 1
+                    }
+
+                    contentItem: Label {
+                        text: refreshBtn.text
+                        color: Theme.accent
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    onClicked: {
+                        const window = root.Window.window
+                        workspaceController.operationQueue.clearError()
+                        if (window && window.refreshActivePanel) {
+                            window.refreshActivePanel()
+                        }
+                    }
+                }
+
+                Button {
+                    id: copyPathBtn
+                    visible: root.hasOperationError && root.canCopyPath
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    text: "Copy path"
+
+                    background: Rectangle {
+                        radius: 9
+                        color: copyPathBtn.pressed
+                               ? Theme.withAlpha(Theme.accent, 0.14)
+                               : (copyPathBtn.hovered ? Theme.withAlpha(Theme.accent, 0.08) : "transparent")
+                        border.color: Theme.withAlpha(Theme.accent, 0.25)
+                        border.width: 1
+                    }
+
+                    contentItem: Label {
+                        text: copyPathBtn.text
+                        color: Theme.accent
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    onClicked: {
+                        workspaceController.copyTextToClipboard(root.operationErrorPath)
+                    }
+                }
+
+                Button {
+                    id: adminBtn
+                    visible: root.hasOperationError && root.canRestartAsAdmin
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 34
+                    text: "Run as admin"
+
+                    background: Rectangle {
+                        radius: 9
+                        color: adminBtn.pressed
+                               ? Theme.withAlpha(Theme.warning, 0.16)
+                               : (adminBtn.hovered ? Theme.withAlpha(Theme.warning, 0.10) : "transparent")
+                        border.color: Theme.withAlpha(Theme.warning, 0.28)
+                        border.width: 1
+                    }
+
+                    contentItem: Label {
+                        text: adminBtn.text
+                        color: Theme.warning
+                        font.bold: true
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
+                    onClicked: {
+                        const window = root.Window.window
+                        if (window && window.relaunchAsAdmin) {
+                            window.relaunchAsAdmin()
+                        }
+                    }
+                }
+
                 Button {
                     id: cancelBtn
                     Layout.fillWidth: true
                     Layout.preferredHeight: 34
-                    text: workspaceController.operationQueue.error.length > 0 ? "Dismiss" : "Cancel operation"
+                    text: root.hasOperationError ? "Dismiss" : "Cancel operation"
 
                     background: Rectangle {
                         radius: 9
                         color: cancelBtn.pressed
                                ? Theme.withAlpha(Theme.danger, 0.14)
                                : (cancelBtn.hovered ? Theme.withAlpha(Theme.danger, 0.08) : "transparent")
-                        border.color: workspaceController.operationQueue.error.length > 0
+                        border.color: root.hasOperationError
                                       ? Theme.panelBorder
                                       : Theme.withAlpha(Theme.danger, 0.3)
                         border.width: 1
@@ -306,15 +453,15 @@ Item {
 
                     contentItem: Label {
                         text: cancelBtn.text
-                        color: workspaceController.operationQueue.error.length > 0 ? Theme.textPrimary : Theme.danger
+                        color: root.hasOperationError ? Theme.textPrimary : Theme.danger
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
 
                     onClicked: {
-                        if (workspaceController.operationQueue.error.length > 0) {
-                            workspaceController.operationQueue.error = ""
+                        if (root.hasOperationError) {
+                            workspaceController.operationQueue.clearError()
                         } else {
                             workspaceController.operationQueue.cancel()
                         }

@@ -21,6 +21,7 @@
 #include "../core/MetadataExtractor.h"
 #include "../core/DriveUtils.h"
 #include "../core/FileProviderFactory.h"
+#include "../core/FileError.h"
 
 
 FilePanelController::FilePanelController(QObject *parent)
@@ -178,6 +179,11 @@ QString FilePanelController::statusMessage() const
     return m_statusMessage;
 }
 
+QVariantMap FilePanelController::lastError() const
+{
+    return m_lastError;
+}
+
 bool FilePanelController::scrolling() const
 {
     return m_scrolling;
@@ -214,6 +220,21 @@ void FilePanelController::setStatusMessage(const QString &message)
 {
     m_statusMessage = message;
     emit statusMessageChanged();
+}
+
+void FilePanelController::setLastError(const QVariantMap &error)
+{
+    if (m_lastError == error) {
+        return;
+    }
+    m_lastError = error;
+    emit lastErrorChanged();
+}
+
+void FilePanelController::setOperationError(const QString &message, const QString &path, const QString &operation)
+{
+    setStatusMessage(message);
+    setLastError(FileError::classify(message, path, operation));
 }
 
 bool FilePanelController::openPath(const QString &path)
@@ -399,7 +420,9 @@ bool FilePanelController::renamePath(const QString &oldPath, const QString &newN
         return false;
     }
     if (ArchiveSupport::isArchivePath(oldPath)) {
-        setStatusMessage(QStringLiteral("Archive contents are read-only"));
+        setOperationError(QStringLiteral("Archive contents are read-only"),
+                          oldPath,
+                          QStringLiteral("rename"));
         return false;
     }
     if (oldPath.isEmpty()) {
@@ -407,6 +430,7 @@ bool FilePanelController::renamePath(const QString &oldPath, const QString &newN
     }
 
     if (m_fileProvider->renamePath(oldPath, newName)) {
+        setLastError({});
         const QString trimmedName = newName.trimmed();
         const QString newPath = m_fileProvider->childPath(m_fileProvider->parentPath(oldPath), trimmedName);
         if (!m_directoryModel.renamePath(oldPath, newPath)) {
@@ -419,6 +443,12 @@ bool FilePanelController::renamePath(const QString &oldPath, const QString &newN
         return true;
     }
 
+    const QString renameMessage = m_fileProvider->lastErrorString().isEmpty()
+        ? QStringLiteral("Cannot rename %1").arg(QDir::toNativeSeparators(oldPath))
+        : m_fileProvider->lastErrorString();
+    setOperationError(renameMessage,
+                      oldPath,
+                      QStringLiteral("rename"));
     return false;
 }
 
@@ -516,11 +546,14 @@ bool FilePanelController::createFolder(const QString &name)
         return false;
     }
     if (ArchiveSupport::isArchivePath(currentPath())) {
-        setStatusMessage(QStringLiteral("Archive contents are read-only"));
+        setOperationError(QStringLiteral("Archive contents are read-only"),
+                          currentPath(),
+                          QStringLiteral("createFolder"));
         return false;
     }
     QString path;
     if (m_fileProvider->createFolder(currentPath(), name, &path)) {
+        setLastError({});
         if (!m_directoryModel.insertPath(path)) {
             refresh();
         } else {
@@ -531,6 +564,12 @@ bool FilePanelController::createFolder(const QString &name)
         emit contentsChanged(currentPath());
         return true;
     }
+    const QString folderMessage = m_fileProvider->lastErrorString().isEmpty()
+        ? QStringLiteral("Cannot create folder in %1").arg(QDir::toNativeSeparators(currentPath()))
+        : m_fileProvider->lastErrorString();
+    setOperationError(folderMessage,
+                      currentPath(),
+                      QStringLiteral("createFolder"));
     return false;
 }
 
@@ -540,11 +579,14 @@ bool FilePanelController::createFile(const QString &name)
         return false;
     }
     if (ArchiveSupport::isArchivePath(currentPath())) {
-        setStatusMessage(QStringLiteral("Archive contents are read-only"));
+        setOperationError(QStringLiteral("Archive contents are read-only"),
+                          currentPath(),
+                          QStringLiteral("createFile"));
         return false;
     }
     QString path;
     if (m_fileProvider->createFile(currentPath(), name, &path)) {
+        setLastError({});
         if (!m_directoryModel.insertPath(path)) {
             refresh();
         } else {
@@ -555,6 +597,12 @@ bool FilePanelController::createFile(const QString &name)
         emit contentsChanged(currentPath());
         return true;
     }
+    const QString fileMessage = m_fileProvider->lastErrorString().isEmpty()
+        ? QStringLiteral("Cannot create file in %1").arg(QDir::toNativeSeparators(currentPath()))
+        : m_fileProvider->lastErrorString();
+    setOperationError(fileMessage,
+                      currentPath(),
+                      QStringLiteral("createFile"));
     return false;
 }
 
@@ -757,9 +805,16 @@ void FilePanelController::fetchMetadataAsync(const QString &path)
 
 void FilePanelController::refresh()
 {
-    setStatusMessage({});
+    clearError();
     m_directoryModel.refresh();
     emit contentsChanged(currentPath());
+}
+
+void FilePanelController::clearError()
+{
+    setStatusMessage({});
+    setLastError({});
+    m_directoryModel.clearError();
 }
 
 QStringList FilePanelController::selectedPaths() const
@@ -884,6 +939,7 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
     if (targetIsDeviceRoot) {
         m_directoryModel.setFilterText({});
         setStatusMessage({});
+        setLastError({});
         if (addToHistory && !oldPath.isEmpty()) {
             pushHistory(oldPath);
             m_forwardStack.clear();
@@ -898,6 +954,7 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
     if (m_directoryModel.openPath(newPath)) {
         m_directoryModel.setFilterText({});
         setStatusMessage({});
+        setLastError({});
         if (addToHistory && !oldPath.isEmpty()) {
             pushHistory(oldPath);
             m_forwardStack.clear();

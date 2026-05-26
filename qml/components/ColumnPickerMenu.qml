@@ -199,7 +199,7 @@ Popup {
 
                 ColumnRow {
                     label: "Resolution"
-                    iconSource: "../assets/icons/image.svg"
+                    iconSource: "../assets/filetypes/image.svg"
                     iconColor: "#ec4899"
                     sortRole: -1
                     checked: root.panel.colShowResolution

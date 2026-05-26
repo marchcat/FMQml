@@ -32,6 +32,7 @@ QtObject {
     property var showActiveChecksums
     property var quickLookActiveTarget
     property var openHelpDialog
+    property var openSettingsDialog
 
     function isReadOnlyContainerPath(path) {
         if (!path) return false
@@ -334,6 +335,15 @@ QtObject {
             keywords: ["preview", "quicklook", "inspect"],
             enabled: function() { return root.workspaceCommandsEnabled },
             run: function() { if (root.quickLookActiveTarget) root.quickLookActiveTarget() }
+        },
+        {
+            id: "settings.open",
+            title: "Open settings",
+            subtitle: "Adjust workspace and persistence options",
+            shortcut: "",
+            keywords: ["settings", "preferences", "workspace", "persistence"],
+            enabled: function() { return root.workspaceCommandsEnabled },
+            run: function() { if (root.openSettingsDialog) root.openSettingsDialog() }
         },
         {
             id: "help.shortcuts",

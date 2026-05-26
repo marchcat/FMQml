@@ -13,6 +13,11 @@ Rectangle {
     property string closeIconSource: ""
     property color closeIconTint: Theme.textSecondary
     property color closeIconTintHover: Theme.textPrimary
+    property bool liveResizeActive: false
+    readonly property bool simplifyVisualsForPerformance: typeof appSettings !== "undefined" && appSettings
+                                                          ? appSettings.simplifyVisualsForPerformance
+                                                          : true
+    readonly property bool simplifiedForResize: root.liveResizeActive && root.simplifyVisualsForPerformance
 
     signal closeRequested()
 
@@ -81,7 +86,7 @@ Rectangle {
                 sourceSize: Qt.size(18, 18)
                 opacity: closeBtn.hovered ? 1.0 : 0.72
                 smooth: true
-                layer.enabled: true
+                layer.enabled: !root.simplifiedForResize
                 layer.effect: MultiEffect {
                     colorization: 1.0
                     colorizationColor: closeBtn.hovered ? root.closeIconTintHover : root.closeIconTint

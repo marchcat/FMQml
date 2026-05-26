@@ -4,6 +4,7 @@
 #include <QDateTime>
 #include <QObject>
 #include <QStringList>
+#include <QVariantMap>
 #include <QMutex>
 #include <QWaitCondition>
 #include <QtQml>
@@ -23,6 +24,7 @@ class OperationQueue : public QObject {
     Q_PROPERTY(double progress READ progress NOTIFY progressChanged)
     Q_PROPERTY(QString currentLabel READ currentLabel NOTIFY currentLabelChanged)
     Q_PROPERTY(QString error READ error WRITE setError NOTIFY errorChanged)
+    Q_PROPERTY(QVariantMap lastError READ lastError NOTIFY lastErrorChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusMessageChanged)
     Q_PROPERTY(int completedItems READ completedItems NOTIFY progressChanged)
     Q_PROPERTY(int totalItems READ totalItems NOTIFY progressChanged)
@@ -55,6 +57,9 @@ public:
     struct OperationResult {
         Request request;
         QString error;
+        QString errorPath;
+        int failedCount = 0;
+        int succeededCount = 0;
         bool aborted = false;
     };
 
@@ -74,6 +79,7 @@ public:
     double progress() const;
     QString currentLabel() const;
     QString error() const;
+    QVariantMap lastError() const;
     QString statusMessage() const;
     QString speedText() const;
     QString remainingTimeText() const;
@@ -85,6 +91,8 @@ public:
 
     Q_INVOKABLE void resolveConflict(ConflictResolution resolution, bool applyToAll);
     Q_INVOKABLE void cancel();
+    Q_INVOKABLE void clearError();
+    Q_INVOKABLE void retryLastOperation();
 
     void setStatusMessage(const QString &msg);
     
@@ -102,6 +110,7 @@ signals:
     void progressChanged();
     void currentLabelChanged();
     void errorChanged();
+    void lastErrorChanged();
     void statusMessageChanged();
     void speedChanged();
     void operationFinished(OperationQueue::Type type, const QStringList &sources, const QString &destination);
@@ -123,6 +132,7 @@ private:
 
     void setCurrentLabel(const QString &label);
     void setError(const QString &error);
+    void setLastError(const QVariantMap &error);
     void setCompletedItems(int completed);
     void setTotalItems(int total);
 
@@ -146,6 +156,8 @@ private:
     ConflictResolution waitForResolution(const QString &source, const QString &destination);
 
     QList<Request> m_pending;
+    Request m_lastRequest;
+    bool m_hasLastRequest = false;
     QFutureWatcher<OperationResult> m_watcher;
     std::atomic<bool> m_abort = false;
     bool m_busy = false;
@@ -154,6 +166,7 @@ private:
     int m_totalItems = 0;
     QString m_currentLabel;
     QString m_error;
+    QVariantMap m_lastError;
     QString m_statusMessage;
     QString m_speedText;
     QString m_remainingTimeText;

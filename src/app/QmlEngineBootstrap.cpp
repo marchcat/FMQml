@@ -18,6 +18,8 @@ QmlEngineBootstrap::QmlEngineBootstrap(AppServices *services)
     m_engine.rootContext()->setContextProperty(QStringLiteral("quickLookController"), services->quickLook());
     m_engine.rootContext()->setContextProperty(QStringLiteral("propertiesController"), services->properties());
     m_engine.rootContext()->setContextProperty(QStringLiteral("systemInfoProvider"), services->systemInfo());
+    m_engine.rootContext()->setContextProperty(QStringLiteral("appSettings"), services->settings());
+    m_engine.rootContext()->setContextProperty(QStringLiteral("adminController"), services->admin());
 
     QObject::connect(
         &m_engine,

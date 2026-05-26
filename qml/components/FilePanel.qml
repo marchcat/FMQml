@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Window
 import FM
 import "../style"
 import "common"
@@ -13,6 +14,8 @@ Pane {
     required property var workspaceController
     property var propertiesController
     property bool active: false
+    property bool liveResizeActive: false
+    signal detailsVisualStateChanged()
     readonly property bool showActiveHighlight: root.active && root.workspaceController.splitEnabled
     readonly property int viewMode: root.controller.viewMode
     property int gridIconSize: 48
@@ -25,6 +28,9 @@ Pane {
     readonly property int briefRowMinHeight: 22
     readonly property int briefRowMaxHeight: 64
     readonly property bool statusRailVisible: root.statusMessage.length > 0 || root.showLoadingRail
+    readonly property int errorBannerFooterInset: (root.viewMode === 1 || root.viewMode === 2) ? 54 : 0
+    readonly property bool useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
+    readonly property bool showThumbnails: typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true
     readonly property real horizontalScrollX: horizontalFlick ? horizontalFlick.contentX : 0
     readonly property bool horizontalScrollActive: root.viewMode === 0 && horizontalFlick && horizontalFlick.contentWidth > horizontalFlick.width
     property bool showLoadingRail: false
@@ -33,6 +39,11 @@ Pane {
         ? root.workspaceController.isInsideManagedIsoMount(root.controller.currentPath)
         : false
     readonly property bool isCurrentPathReadOnlyContainer: root.isCurrentPathArchive || root.isCurrentPathManagedIsoMount
+    readonly property var panelErrorInfo: root.controller.lastError
+        && root.controller.lastError.code
+        && root.controller.lastError.code !== "none"
+            ? root.controller.lastError
+            : (root.controller.directoryModel.lastError || ({}))
 
     onIsCurrentPathArchiveChanged: {
         if (root.controller.directoryModel.loading) {
@@ -52,6 +63,11 @@ Pane {
     property bool pendingScrollRestoreEnabled: false
     property string targetSelectPath: ""
     property bool disableSelectionOnCurrentIndexChanged: false
+    property bool pendingAutoNameColumnWidthUpdate: false
+    readonly property bool simplifyVisualsForPerformance: typeof appSettings !== "undefined" && appSettings
+                                                          ? appSettings.simplifyVisualsForPerformance
+                                                          : true
+    readonly property bool simplifiedForResize: root.liveResizeActive && root.simplifyVisualsForPerformance
     focus: root.active
     property bool showZebraStriping: true
     property bool showGridlines: true
@@ -141,7 +157,56 @@ Pane {
         updateNameColumnWidth()
     }
 
-    function updateNameColumnWidth() {
+    function boolValue(value, fallback) {
+        return value === undefined || value === null ? fallback : !!value
+    }
+
+    function detailsVisualState() {
+        return {
+            colShowSize: colShowSize,
+            colShowType: colShowType,
+            colShowDate: colShowDate,
+            colShowDateCreated: colShowDateCreated,
+            colShowExtension: colShowExtension,
+            colShowAttributes: colShowAttributes,
+            colShowResolution: colShowResolution,
+            colShowDuration: colShowDuration,
+            colShowArtist: colShowArtist,
+            colShowAlbum: colShowAlbum,
+            colShowBitrate: colShowBitrate,
+            showZebraStriping: showZebraStriping,
+            showGridlines: showGridlines
+        }
+    }
+
+    function restoreDetailsVisualState(state) {
+        if (!state) {
+            return
+        }
+
+        colShowSize = boolValue(state.colShowSize, true)
+        colShowType = boolValue(state.colShowType, true)
+        colShowDate = boolValue(state.colShowDate, true)
+        colShowDateCreated = boolValue(state.colShowDateCreated, false)
+        colShowExtension = boolValue(state.colShowExtension, false)
+        colShowAttributes = boolValue(state.colShowAttributes, false)
+        colShowResolution = boolValue(state.colShowResolution, false)
+        colShowDuration = boolValue(state.colShowDuration, false)
+        colShowArtist = boolValue(state.colShowArtist, false)
+        colShowAlbum = boolValue(state.colShowAlbum, false)
+        colShowBitrate = boolValue(state.colShowBitrate, false)
+        showZebraStriping = boolValue(state.showZebraStriping, true)
+        showGridlines = boolValue(state.showGridlines, true)
+        updateNameColumnWidth()
+    }
+
+    function updateNameColumnWidth(force) {
+        if (force !== true && root.simplifiedForResize && !nameColumnManuallyResized) {
+            root.pendingAutoNameColumnWidthUpdate = true
+            return
+        }
+
+        root.pendingAutoNameColumnWidthUpdate = false
         if (nameColumnManuallyResized) {
             colWidthName = Math.max(180, preferredColWidthName)
         } else {
@@ -150,19 +215,33 @@ Pane {
         }
     }
 
+    onLiveResizeActiveChanged: {
+        if (!root.simplifiedForResize && pendingAutoNameColumnWidthUpdate) {
+            updateNameColumnWidth(true)
+        }
+    }
+
+    onSimplifyVisualsForPerformanceChanged: {
+        if (!root.simplifiedForResize && pendingAutoNameColumnWidthUpdate) {
+            updateNameColumnWidth(true)
+        }
+    }
+
     onPreferredColWidthNameChanged: updateNameColumnWidth()
     onNameColumnManuallyResizedChanged: updateNameColumnWidth()
-    onColShowSizeChanged: updateNameColumnWidth()
-    onColShowTypeChanged: updateNameColumnWidth()
-    onColShowDateChanged: updateNameColumnWidth()
-    onColShowDateCreatedChanged: updateNameColumnWidth()
-    onColShowExtensionChanged: updateNameColumnWidth()
-    onColShowAttributesChanged: updateNameColumnWidth()
-    onColShowResolutionChanged: updateNameColumnWidth()
-    onColShowDurationChanged: updateNameColumnWidth()
-    onColShowArtistChanged: updateNameColumnWidth()
-    onColShowAlbumChanged: updateNameColumnWidth()
-    onColShowBitrateChanged: updateNameColumnWidth()
+    onColShowSizeChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowTypeChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowDateChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowDateCreatedChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowExtensionChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowAttributesChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowResolutionChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowDurationChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowArtistChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowAlbumChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onColShowBitrateChanged: { updateNameColumnWidth(); detailsVisualStateChanged() }
+    onShowZebraStripingChanged: detailsVisualStateChanged()
+    onShowGridlinesChanged: detailsVisualStateChanged()
     onViewModeChanged: updateNameColumnWidth()
 
     Component.onCompleted: {
@@ -344,6 +423,37 @@ Pane {
         return gridView
     }
 
+    function bundledIconForSuffix(isDirectory, suffix) {
+        if (isDirectory) {
+            return "../assets/filetypes/folder.svg"
+        }
+
+        const s = String(suffix || "").toLowerCase()
+        if (["jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "svg", "svgz", "avif", "heic", "tif", "tiff"].indexOf(s) >= 0) {
+            return "../assets/filetypes/image.svg"
+        }
+        if (["mp3", "flac", "ogg", "m4a", "m4b", "wav", "wma", "aac", "opus"].indexOf(s) >= 0) {
+            return "../assets/filetypes/music.svg"
+        }
+        if (["mp4", "avi", "mkv", "mov", "wmv", "webm", "flv", "m4v"].indexOf(s) >= 0) {
+            return "../assets/filetypes/video.svg"
+        }
+        if (["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "cab", "iso"].indexOf(s) >= 0) {
+            return "../assets/filetypes/archive.svg"
+        }
+        if (["exe", "bat", "cmd", "ps1", "com", "msi", "dll", "sys"].indexOf(s) >= 0) {
+            return "../assets/filetypes/executable.svg"
+        }
+        return "../assets/filetypes/document.svg"
+    }
+
+    function panelIconSource(path, isDirectory, suffix) {
+        if (!root.useNativeIcons) {
+            return bundledIconForSuffix(isDirectory, suffix)
+        }
+        return "image://icon/" + encodeURIComponent(path + (isDirectory ? "?directory=true" : ""))
+    }
+
     function setViewCurrentIndexWithoutSelection(view, index) {
         root.disableSelectionOnCurrentIndexChanged = true
         view.currentIndex = index
@@ -506,7 +616,7 @@ Pane {
     background: Item {
         id: backgroundWrapper
         
-        layer.enabled: root.showActiveHighlight
+        layer.enabled: root.showActiveHighlight && !root.simplifiedForResize
         layer.effect: MultiEffect {
             shadowEnabled: true
             shadowColor: Theme.activeGlow
@@ -1254,6 +1364,12 @@ Pane {
                     property bool isRenaming: false
                     property bool currentItem: GridView.isCurrentItem
                     property bool panelActive: root.active
+                    readonly property bool canLoadThumbnail: root.useNativeIcons
+                                                              && root.showThumbnails
+                                                              && !isDirectory
+                                                              && hasThumbnail
+                    property bool thumbnailLoadEnabled: false
+                    readonly property bool thumbnailRequestActive: thumbnailLoadEnabled && canLoadThumbnail
                     property real visualOffsetY: 0
 
                     opacity: isHidden ? 0.55 : 1.0
@@ -1261,6 +1377,7 @@ Pane {
                     onPathChanged: {
                         isRenaming = false
                         visualOffsetY = 0
+                        queueThumbnailLoad()
                         Qt.callLater(() => {
                             if (hoverGrid) {
                                 hoverGrid.enabled = false
@@ -1270,6 +1387,7 @@ Pane {
                     }
 
                     Component.onCompleted: {
+                        queueThumbnailLoad()
                         Qt.callLater(() => {
                             if (hoverGrid) {
                                 hoverGrid.enabled = false
@@ -1281,6 +1399,7 @@ Pane {
                     GridView.onPooled: {
                         isRenaming = false
                         visualOffsetY = 0
+                        thumbnailLoadEnabled = false
                         if (root.controller.hoveredPath === path) {
                             root.controller.hoveredPath = ""
                         }
@@ -1289,6 +1408,7 @@ Pane {
                     GridView.onReused: {
                         isRenaming = false
                         visualOffsetY = 0
+                        queueThumbnailLoad()
                         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
                         Qt.callLater(() => {
                             if (hoverGrid) {
@@ -1300,6 +1420,22 @@ Pane {
 
                     function startRename() {
                         isRenaming = true
+                    }
+
+                    function queueThumbnailLoad() {
+                        thumbnailLoadEnabled = false
+                        if (canLoadThumbnail) {
+                            thumbnailDelayTimer.restart()
+                        } else {
+                            thumbnailDelayTimer.stop()
+                        }
+                    }
+
+                    Timer {
+                        id: thumbnailDelayTimer
+                        interval: 100 + (Math.max(0, index) % 16) * 28
+                        repeat: false
+                        onTriggered: gridDelegate.thumbnailLoadEnabled = gridDelegate.canLoadThumbnail
                     }
 
                     Rectangle {
@@ -1345,6 +1481,17 @@ Pane {
                                     }
                                 })
                             }
+                        }
+                    }
+
+                    Connections {
+                        target: typeof appSettings !== "undefined" ? appSettings : null
+                        ignoreUnknownSignals: true
+                        function onUseNativeIconsChanged() {
+                            gridDelegate.queueThumbnailLoad()
+                        }
+                        function onShowThumbnailsChanged() {
+                            gridDelegate.queueThumbnailLoad()
                         }
                     }
 
@@ -1463,24 +1610,41 @@ Pane {
                         Layout.preferredHeight: root.gridIconSize
 
                         Image {
+                            id: gridFallbackIcon
                             anchors.centerIn: parent
                             width: Math.max(28, Math.round(root.gridIconSize * 0.8))
                             height: width
-                            source: isImage ? "../assets/icons/image.svg" : "image://icon/" + encodeURIComponent(path) + (isDirectory ? "?directory=true" : "")
+                            source: root.bundledIconForSuffix(isDirectory, suffix)
                             sourceSize: Qt.size(width, height)
-                            visible: !isImage && (thumbnail.status !== Image.Ready || !hasThumbnail)
+                            visible: !gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready
                             opacity: isImage ? 0.72 : 1.0
                             smooth: true
                             mipmap: false
+                            asynchronous: false
+                        }
+
+                        Image {
+                            anchors.centerIn: parent
+                            width: gridFallbackIcon.width
+                            height: gridFallbackIcon.height
+                            source: root.useNativeIcons ? root.panelIconSource(path, isDirectory, suffix) : ""
+                            sourceSize: Qt.size(width, height)
+                            visible: root.useNativeIcons
+                                     && (!gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready)
+                                     && status === Image.Ready
+                            opacity: isImage ? 0.72 : 1.0
+                            smooth: true
+                            mipmap: false
+                            asynchronous: true
                         }
 
                         Image {
                             anchors.centerIn: parent
                             width: Math.round(root.gridIconSize * 0.9)
                             height: width
-                            source: "../assets/icons/image.svg"
+                            source: "../assets/filetypes/image.svg"
                             sourceSize: Qt.size(width, height)
-                            visible: isImage && (thumbnail.status !== Image.Ready)
+                            visible: gridDelegate.thumbnailRequestActive && isImage && (thumbnail.status !== Image.Ready)
                             opacity: 0.74
                             smooth: true
                             mipmap: false
@@ -1489,14 +1653,14 @@ Pane {
                         Rectangle {
                             anchors.fill: parent
                             radius: 10
-                            visible: !isDirectory && hasThumbnail && thumbnail.status !== Image.Ready
+                            visible: gridDelegate.thumbnailRequestActive && thumbnail.status !== Image.Ready
                             color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, themeController.isDark ? 0.18 : 0.12)
                         }
 
                         Image {
                             id: thumbnail
                             anchors.fill: parent
-                            source: !isDirectory && hasThumbnail ? "image://thumbnail/" + encodeURIComponent(path) : ""
+                            source: gridDelegate.thumbnailRequestActive ? "image://thumbnail/" + encodeURIComponent(path) : ""
                             sourceSize: Qt.size(Math.min(192, root.gridIconSize * 2), Math.min(192, root.gridIconSize * 2))
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
@@ -1729,6 +1893,37 @@ Pane {
             }
 
             // ── Modern Integrated Status Bar ────────────────────────────────
+            FilePanelErrorBanner {
+                id: errorBanner
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                anchors.bottomMargin: (root.showLoadingRail || root.statusMessage.length > 0
+                                       ? statusRail.height + 10
+                                       : 12) + root.errorBannerFooterInset
+                z: 18
+                errorInfo: root.panelErrorInfo
+                onRetryRequested: root.controller.directoryModel.refresh()
+                onRefreshRequested: root.controller.directoryModel.refresh()
+                onAdminRequested: {
+                    const window = root.Window.window
+                    if (window && window.relaunchAsAdmin) {
+                        window.relaunchAsAdmin()
+                    }
+                }
+                onCopyPathRequested: {
+                    const path = errorInfo && errorInfo.path ? String(errorInfo.path) : ""
+                    if (path.length > 0 && root.workspaceController) {
+                        root.workspaceController.copyTextToClipboard(path)
+                        root.statusMessage = "Path copied"
+                        statusTimer.restart()
+                    }
+                }
+                onDismissRequested: root.controller.clearError()
+            }
+
             FilePanelStatusBar {
                 id: statusRail
                 anchors.left: parent.left
@@ -1736,7 +1931,7 @@ Pane {
                 anchors.bottom: parent.bottom
                 active: root.active
                 showLoadingRail: root.showLoadingRail
-                statusMessage: root.statusMessage
+                statusMessage: errorBanner.visible ? "" : root.statusMessage
                 isCurrentPathArchive: root.isCurrentPathArchive
                 loadingFolderNameProvider: root.loadingFolderName
             }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Window
 import FM
 import "components"
 import "style"
@@ -26,8 +27,17 @@ ApplicationWindow {
             : workspaceController.rightPanel
     }
 
-    property bool previewOnHover: false
     property bool previewPaneVisible: false
+    property bool workspaceStateRestored: false
+    property bool workspaceStateSavePaused: false
+    property bool mainSplitResizing: false
+    property bool previewPaneTransitionActive: false
+    property real sidebarStoredWidth: 200
+    property real previewPaneStoredWidth: 340
+    property real sidebarPreferredWidth: 200
+    property real previewPanePreferredWidth: 0
+    property var previewPanePendingWorkspaceSplitState: null
+    readonly property bool anyLiveResize: root.mainSplitResizing || fileWorkspace.splitResizing
     readonly property var workspaceService: workspaceController
     readonly property var quickLookService: quickLookController
     readonly property var propertiesService: propertiesController
@@ -54,7 +64,117 @@ ApplicationWindow {
     readonly property bool typeToSearchEnabled: root.fileViewShortcutsEnabled
 
     function toggleSplitView() {
-        workspaceController.toggleSplit()
+        if (workspaceController.splitEnabled) {
+            workspaceController.toggleSplit()
+            Qt.callLater(() => fileWorkspace.expandSinglePanel())
+        } else {
+            workspaceController.toggleSplit()
+            Qt.callLater(() => fileWorkspace.splitEvenly())
+        }
+    }
+
+    function scheduleWorkspaceStateSave() {
+        if (root.workspaceStateRestored && !root.workspaceStateSavePaused) {
+            workspaceStateSaveTimer.restart()
+        }
+    }
+
+    function saveWorkspaceStateNow(includePanelLayout) {
+        if (!appSettings || !root.workspaceStateRestored || root.workspaceStateSavePaused) {
+            return
+        }
+
+        const activeCtrl = activePanelController()
+        const state = {
+            windowX: root.x,
+            windowY: root.y,
+            windowWidth: root.width,
+            windowHeight: root.height,
+            windowMaximized: root.visibility === Window.Maximized,
+            splitEnabled: workspaceController.splitEnabled,
+            activePanel: workspaceController.activePanel,
+            previewPaneVisible: root.previewPaneVisible,
+            leftPath: workspaceController.leftPanel.currentPath,
+            rightPath: workspaceController.rightPanel.currentPath,
+            leftViewMode: workspaceController.leftPanel.viewMode,
+            rightViewMode: workspaceController.rightPanel.viewMode,
+            leftGridIconSize: fileWorkspace.leftPanelView.gridIconSize,
+            rightGridIconSize: fileWorkspace.rightPanelView.gridIconSize,
+            leftBriefRowHeight: fileWorkspace.leftPanelView.briefRowHeight,
+            rightBriefRowHeight: fileWorkspace.rightPanelView.briefRowHeight,
+            leftDetailsVisualState: fileWorkspace.leftPanelView.detailsVisualState(),
+            rightDetailsVisualState: fileWorkspace.rightPanelView.detailsVisualState(),
+            leftSortRole: workspaceController.leftPanel.directoryModel.sortRole,
+            rightSortRole: workspaceController.rightPanel.directoryModel.sortRole,
+            leftSortOrder: workspaceController.leftPanel.directoryModel.sortOrder,
+            rightSortOrder: workspaceController.rightPanel.directoryModel.sortOrder,
+            showHidden: activeCtrl ? activeCtrl.directoryModel.showHidden
+                                   : workspaceController.leftPanel.directoryModel.showHidden
+        }
+
+        if (includePanelLayout) {
+            state.sidebarWidth = Math.round(Math.max(140, root.sidebarStoredWidth))
+            state.previewPaneWidth = Math.round(Math.max(280, root.previewPaneStoredWidth))
+            state.fileWorkspaceSplitState = fileWorkspace.saveSplitState()
+        }
+
+        appSettings.saveWorkspaceState(state)
+    }
+
+    function restoreWorkspaceState() {
+        if (!appSettings) {
+            root.workspaceStateRestored = true
+            return
+        }
+
+        const state = appSettings.workspaceState()
+        root.sidebarStoredWidth = state.sidebarWidth
+        root.previewPaneStoredWidth = state.previewPaneWidth
+        root.sidebarPreferredWidth = root.sidebarStoredWidth
+        root.previewPanePreferredWidth = 0
+        fileWorkspace.leftPanelView.gridIconSize = state.leftGridIconSize
+        fileWorkspace.rightPanelView.gridIconSize = state.rightGridIconSize
+        fileWorkspace.leftPanelView.briefRowHeight = state.leftBriefRowHeight
+        fileWorkspace.rightPanelView.briefRowHeight = state.rightBriefRowHeight
+        fileWorkspace.leftPanelView.restoreDetailsVisualState(state.leftDetailsVisualState)
+        fileWorkspace.rightPanelView.restoreDetailsVisualState(state.rightDetailsVisualState)
+        previewCoordinator.setPreviewPaneVisible(!!state.previewPaneVisible)
+        fileWorkspace.restoreSplitState(state.fileWorkspaceSplitState)
+
+        Qt.callLater(() => {
+            root.workspaceStateSavePaused = false
+            root.workspaceStateRestored = true
+            root.applyPreviewPaneWidth()
+        })
+    }
+
+    function applyPreviewPaneWidth() {
+        if (!previewPane) {
+            return
+        }
+        root.previewPanePreferredWidth = root.previewPaneVisible
+            ? Math.max(280, root.previewPaneStoredWidth)
+            : 0
+    }
+
+    function beginPreviewPaneTransition() {
+        if (workspaceController.splitEnabled) {
+            root.previewPanePendingWorkspaceSplitState = fileWorkspace.saveSplitState()
+        } else {
+            root.previewPanePendingWorkspaceSplitState = null
+        }
+        root.previewPaneTransitionActive = true
+        previewPaneTransitionTimer.restart()
+    }
+
+    function finishPreviewPaneTransition() {
+        if (root.previewPanePendingWorkspaceSplitState !== null
+                && root.previewPanePendingWorkspaceSplitState !== undefined
+                && workspaceController.splitEnabled) {
+            fileWorkspace.restoreSplitState(root.previewPanePendingWorkspaceSplitState)
+        }
+        root.previewPanePendingWorkspaceSplitState = null
+        root.previewPaneTransitionActive = false
     }
 
     function openCommandPalette() {
@@ -93,6 +213,8 @@ ApplicationWindow {
         const ctrl = activePanelController()
         if (ctrl) {
             const newValue = !ctrl.directoryModel.showHidden
+            workspaceController.leftPanel.directoryModel.showHidden = newValue
+            workspaceController.rightPanel.directoryModel.showHidden = newValue
             ctrl.directoryModel.showHidden = newValue
             workspaceController.treeModel.showHidden = newValue
         }
@@ -213,6 +335,18 @@ ApplicationWindow {
         workspaceOverlays.openHelpDialog()
     }
 
+    function openSettingsDialog() {
+        workspaceOverlays.openSettingsDialog()
+    }
+
+    function resetSavedWorkspaceState() {
+        if (appSettings) {
+            workspaceStateSaveTimer.stop()
+            appSettings.resetWorkspaceState()
+            root.workspaceStateSavePaused = true
+        }
+    }
+
     function previewTargetFor(controller) {
         return previewCoordinator.previewTargetFor(controller)
     }
@@ -221,12 +355,24 @@ ApplicationWindow {
         previewCoordinator.syncPreviewFromActivePanel(immediate)
     }
 
-    function scheduleHoverPreview(path) {
-        previewCoordinator.scheduleHoverPreview(path)
+    function togglePreviewPane() {
+        root.setPreviewPaneVisible(!root.previewPaneVisible)
     }
 
-    function togglePreviewPane() {
-        previewCoordinator.togglePreviewPane()
+    function setPreviewPaneVisible(visible) {
+        if (root.previewPaneVisible === visible) {
+            return
+        }
+        beginPreviewPaneTransition()
+        previewCoordinator.setPreviewPaneVisible(visible)
+    }
+
+    function relaunchAsAdmin() {
+        if (typeof adminController === "undefined" || !adminController) {
+            return false
+        }
+        saveWorkspaceStateNow(true)
+        return adminController.relaunchAsAdmin()
     }
 
     AppShortcuts {
@@ -239,6 +385,40 @@ ApplicationWindow {
         mainToolbar: mainToolbar
         fileWorkspace: fileWorkspace
         quickLookPopup: quickLookPopup
+    }
+
+    Timer {
+        id: workspaceStateSaveTimer
+        interval: 350
+        repeat: false
+        onTriggered: root.saveWorkspaceStateNow(false)
+    }
+
+    Timer {
+        id: sidebarWidthCommitTimer
+        interval: 140
+        repeat: false
+        onTriggered: {
+            root.sidebarPreferredWidth = Math.max(140, Math.min(300, root.sidebarStoredWidth))
+        }
+    }
+
+    Timer {
+        id: previewPaneWidthCommitTimer
+        interval: 140
+        repeat: false
+        onTriggered: {
+            if (root.previewPaneVisible) {
+                root.previewPanePreferredWidth = Math.max(280, root.previewPaneStoredWidth)
+            }
+        }
+    }
+
+    Timer {
+        id: previewPaneTransitionTimer
+        interval: 180
+        repeat: false
+        onTriggered: root.finishPreviewPaneTransition()
     }
 
 
@@ -259,42 +439,72 @@ ApplicationWindow {
             }
         }
 
-        MainToolbar {
+            MainToolbar {
             id: mainToolbar
             Layout.fillWidth: true
             appRoot: root
             workspaceController: root.workspaceService
             previewVisible: root.previewPaneVisible
             onPreviewToggleRequested: (visible) => {
-                previewCoordinator.setPreviewPaneVisible(visible)
+                root.setPreviewPaneVisible(visible)
             }
         }
 
         SplitView {
+            id: mainSplitView
             Layout.fillWidth: true
             Layout.fillHeight: true
             orientation: Qt.Horizontal
 
             Sidebar {
                 id: sidebar
-                SplitView.preferredWidth: 200
+                SplitView.preferredWidth: root.sidebarPreferredWidth
                 SplitView.minimumWidth: 140
                 SplitView.maximumWidth: 300
+                liveResizeActive: root.anyLiveResize
+                onWidthChanged: {
+                    if (width >= 140) {
+                        root.sidebarStoredWidth = width
+                        if (Math.abs(root.sidebarPreferredWidth - width) > 0.5) {
+                            sidebarWidthCommitTimer.restart()
+                        }
+                    }
+                }
             }
 
             FileWorkspace {
                 id: fileWorkspace
                 SplitView.fillWidth: true
+                liveResizeActive: root.anyLiveResize
                 workspaceController: root.workspaceService
                 propertiesController: root.propertiesService
+                onPanelVisualStateChanged: root.scheduleWorkspaceStateSave()
             }
 
             PreviewPane {
-                SplitView.preferredWidth: root.previewPaneVisible ? 340 : 0
+                id: previewPane
+                SplitView.preferredWidth: root.previewPanePreferredWidth
                 SplitView.minimumWidth: root.previewPaneVisible ? 280 : 0
                 SplitView.fillWidth: false
+                liveResizeActive: root.anyLiveResize || root.previewPaneTransitionActive
                 visible: root.previewPaneVisible || width > 0
                 opacity: root.previewPaneVisible ? 1.0 : 0.0
+                onWidthChanged: {
+                    if (root.previewPaneVisible && width >= 280) {
+                        root.previewPaneStoredWidth = width
+                        if (Math.abs(root.previewPanePreferredWidth - width) > 0.5) {
+                            previewPaneWidthCommitTimer.restart()
+                        }
+                    }
+                }
+
+                Behavior on SplitView.preferredWidth {
+                    enabled: root.workspaceStateRestored
+                    NumberAnimation {
+                        duration: 120
+                        easing.type: Easing.OutQuad
+                    }
+                }
 
                 Behavior on opacity { NumberAnimation { duration: Theme.motionNormal } }
             }
@@ -302,6 +512,10 @@ ApplicationWindow {
             handle: Rectangle {
                 implicitWidth: 1
                 color: Theme.border
+
+                SplitHandle.onPressedChanged: {
+                    root.mainSplitResizing = SplitHandle.pressed
+                }
             }
         }
     }
@@ -340,10 +554,12 @@ ApplicationWindow {
         showActiveChecksums: root.showActiveChecksums
         quickLookActiveTarget: root.quickLookActiveTarget
         openHelpDialog: root.openHelpDialog
+        openSettingsDialog: root.openSettingsDialog
     }
 
     WorkspaceOverlays {
         id: workspaceOverlays
+        appRoot: root
         commandPaletteCommands: commandRegistry.commands
     }
 
@@ -356,6 +572,47 @@ ApplicationWindow {
         propertiesController: root.propertiesService
     }
 
+    Connections {
+        target: root
+        function onXChanged() { root.scheduleWorkspaceStateSave() }
+        function onYChanged() { root.scheduleWorkspaceStateSave() }
+        function onWidthChanged() { root.scheduleWorkspaceStateSave() }
+        function onHeightChanged() { root.scheduleWorkspaceStateSave() }
+        function onVisibilityChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
+    Connections {
+        target: root.workspaceService
+        function onSplitEnabledChanged() { root.scheduleWorkspaceStateSave() }
+        function onActivePanelChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
+    Connections {
+        target: root.workspaceService.leftPanel
+        function onCurrentPathChanged() { root.scheduleWorkspaceStateSave() }
+        function onViewModeChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
+    Connections {
+        target: root.workspaceService.rightPanel
+        function onCurrentPathChanged() { root.scheduleWorkspaceStateSave() }
+        function onViewModeChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
+    Connections {
+        target: root.workspaceService.leftPanel.directoryModel
+        function onShowHiddenChanged() { root.scheduleWorkspaceStateSave() }
+        function onSortRoleChanged() { root.scheduleWorkspaceStateSave() }
+        function onSortOrderChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
+    Connections {
+        target: root.workspaceService.rightPanel.directoryModel
+        function onShowHiddenChanged() { root.scheduleWorkspaceStateSave() }
+        function onSortRoleChanged() { root.scheduleWorkspaceStateSave() }
+        function onSortOrderChanged() { root.scheduleWorkspaceStateSave() }
+    }
+
     function showBatchRename(paths) {
         workspaceOverlays.showBatchRename(paths)
     }
@@ -363,5 +620,15 @@ ApplicationWindow {
     function showChecksums(paths) {
         workspaceOverlays.showChecksums(paths)
     }
-}
 
+    onPreviewPaneVisibleChanged: {
+        applyPreviewPaneWidth()
+        scheduleWorkspaceStateSave()
+    }
+    onClosing: {
+        workspaceStateSaveTimer.stop()
+        saveWorkspaceStateNow(true)
+    }
+
+    Component.onCompleted: restoreWorkspaceState()
+}

@@ -7,6 +7,7 @@ Item {
     id: root
 
     property string path: ""
+    property string absolutePath: ""
     property string name: ""
     property string mimeName: ""
     property string extension: ""
@@ -17,6 +18,7 @@ Item {
     property bool symlink: false
     property string permissionsText: ""
     property var extraProperties: []
+    property string statusNote: ""
 
     clip: true
 
@@ -78,6 +80,16 @@ Item {
                         text: root.sizeText + "  |  " + root.modifiedText
                         font.pixelSize: 11
                         color: Theme.textSecondary
+                        Layout.fillWidth: true
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        visible: root.statusNote.length > 0
+                        text: root.statusNote
+                        font.pixelSize: 10
+                        color: Theme.textSecondary
+                        opacity: 0.82
                         Layout.fillWidth: true
                         elide: Text.ElideRight
                     }
@@ -157,7 +169,7 @@ Item {
                 ]
 
                 if (root.showPathTags) {
-                    props.push({ label: "Location", value: root.path })
+                    props.push({ label: "Location", value: root.absolutePath.length > 0 ? root.absolutePath : root.path })
                 }
 
                 if (root.sizeText.length > 0) {

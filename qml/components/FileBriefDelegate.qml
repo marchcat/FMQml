@@ -41,6 +41,11 @@ Item {
     readonly property int   iconSize: Math.max(16, Math.min(48, Math.round(16 * scaleFactor)))
     readonly property int   fontSize: Math.max(11, Math.min(16, Math.round(12 * (1.0 + (scaleFactor - 1.0) * 0.5))))
     readonly property bool  canShowThumbnail: !isDirectory && hasThumbnail
+    readonly property bool  thumbnailEligible: root.canShowThumbnail
+                                           && (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
+                                           && (typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true)
+    property bool thumbnailLoadEnabled: false
+    readonly property bool thumbnailRequestActive: root.thumbnailLoadEnabled && root.thumbnailEligible
 
     // ── Opacity for hidden files ───────────────────────────────────────────────
     opacity: isHidden ? 0.55 : 1.0
@@ -62,6 +67,7 @@ Item {
     onPathChanged: {
         isRenaming = false
         visualOffsetX = 0
+        queueThumbnailLoad()
         Qt.callLater(() => {
             if (hover) {
                 hover.enabled = false
@@ -71,6 +77,7 @@ Item {
     }
 
     Component.onCompleted: {
+        queueThumbnailLoad()
         Qt.callLater(() => {
             if (hover) {
                 hover.enabled = false
@@ -82,6 +89,7 @@ Item {
     GridView.onPooled: {
         isRenaming = false
         visualOffsetX = 0
+        thumbnailLoadEnabled = false
         if (root.controller.hoveredPath === root.path) {
             root.controller.hoveredPath = ""
         }
@@ -90,6 +98,7 @@ Item {
     GridView.onReused: {
         isRenaming = false
         visualOffsetX = 0
+        queueThumbnailLoad()
         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
         Qt.callLater(() => {
             if (hover) {
@@ -101,6 +110,22 @@ Item {
 
     function startRename() {
         root.isRenaming = true
+    }
+
+    function queueThumbnailLoad() {
+        root.thumbnailLoadEnabled = false
+        if (root.thumbnailEligible) {
+            thumbnailDelayTimer.restart()
+        } else {
+            thumbnailDelayTimer.stop()
+        }
+    }
+
+    Timer {
+        id: thumbnailDelayTimer
+        interval: 90 + (Math.max(0, root.index) % 12) * 24
+        repeat: false
+        onTriggered: root.thumbnailLoadEnabled = root.thumbnailEligible
     }
 
     // ── Background ─────────────────────────────────────────────────────────────
@@ -145,6 +170,17 @@ Item {
                     }
                 }
             })
+        }
+    }
+
+    Connections {
+        target: typeof appSettings !== "undefined" ? appSettings : null
+        ignoreUnknownSignals: true
+        function onUseNativeIconsChanged() {
+            root.queueThumbnailLoad()
+        }
+        function onShowThumbnailsChanged() {
+            root.queueThumbnailLoad()
         }
     }
 
@@ -224,9 +260,14 @@ Item {
 
             FileIconCell {
                 anchors.fill: parent
-                iconSource: "image://icon/" + encodeURIComponent(root.path + (root.isDirectory ? "?directory=true" : ""))
-                thumbnailSource: root.canShowThumbnail ? "image://thumbnail/" + encodeURIComponent(root.path) : ""
-                showThumbnail: root.canShowThumbnail
+                path: root.path
+                isDirectory: root.isDirectory
+                suffix: root.suffix
+                useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
+                thumbnailSource: root.thumbnailRequestActive
+                                 ? "image://thumbnail/" + encodeURIComponent(root.path)
+                                 : ""
+                showThumbnail: root.thumbnailRequestActive
                 iconSize: root.iconSize
             }
         }

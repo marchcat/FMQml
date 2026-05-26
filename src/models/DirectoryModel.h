@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QTimer>
 #include <QFileSystemWatcher>
+#include <QVariantMap>
 #include <memory>
 
 #include "../core/FileProvider.h"
@@ -19,6 +20,7 @@ class DirectoryModel : public QAbstractListModel {
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool showHidden READ showHidden WRITE setShowHidden NOTIFY showHiddenChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    Q_PROPERTY(QVariantMap lastError READ lastError NOTIFY lastErrorChanged)
     Q_PROPERTY(int count READ count NOTIFY countChanged)
     Q_PROPERTY(int selectedCount READ selectedCount NOTIFY selectionChanged)
     Q_PROPERTY(QString filterText READ filterText WRITE setFilterText NOTIFY filterTextChanged)
@@ -67,6 +69,7 @@ public:
     QString currentPath() const;
     bool loading() const;
     QString error() const;
+    QVariantMap lastError() const;
     int count() const;
     int selectedCount() const;
     QString filterText() const;
@@ -83,6 +86,7 @@ public:
 
     Q_INVOKABLE bool openPath(const QString &path);
     Q_INVOKABLE void refresh();
+    Q_INVOKABLE void clearError();
     void noteLocalMutation();
     bool insertPath(const QString &path);
     bool removePath(const QString &path);
@@ -103,6 +107,7 @@ signals:
     void loadingChanged();
     void showHiddenChanged();
     void errorChanged();
+    void lastErrorChanged();
     void directoryUnavailable(const QString &path, const QString &error);
     void countChanged();
     void selectionChanged();
@@ -124,6 +129,7 @@ private:
     void replaceProvider(std::unique_ptr<FileProvider> provider);
     void setLoading(bool loading);
     void setError(const QString &error);
+    void setLastError(const QVariantMap &error);
     void applyFilter();
     void applyFilterInternal(bool keepSelection);
     void sortModel();
@@ -145,6 +151,7 @@ private:
     QTimer m_debounceTimer;
     QElapsedTimer m_localMutationThrottle;
     QString m_error;
+    QVariantMap m_lastError;
     QString m_filterText;
     QString m_previousPath;
     SortRole m_sortRole = SortByName;
