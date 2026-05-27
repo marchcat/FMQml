@@ -6,6 +6,14 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
+if(WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+
+set(CMAKE_UNITY_BUILD ON)
+
+set(CMAKE_UNITY_BUILD_BATCH_SIZE 8)
+
 find_package(Qt6 6.7 REQUIRED COMPONENTS Core Gui Widgets Qml Quick QuickControls2 Concurrent Svg QuickEffects QuickDialogs2)
 
 qt_standard_project_setup(REQUIRES 6.7)
@@ -84,6 +92,21 @@ qt_add_executable(fm
     src/core/DriveUtils.h
     src/core/SystemInfoProvider.cpp
     src/core/SystemInfoProvider.h
+)
+
+target_precompile_headers(fm PRIVATE
+    <QObject>
+    <QString>
+    <QVariant>
+    <QVector>
+    <QList>
+    <QMap>
+    <QSharedPointer>
+    <QDebug>
+    <memory>
+    <vector>
+    <string>
+    <filesystem>
 )
 
 set_source_files_properties(qml/style/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)

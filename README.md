@@ -77,26 +77,36 @@ disabled or fall back to simpler behavior.
 Configure the project:
 
 ```powershell
-cmake -S . -B build -DCMAKE_PREFIX_PATH="C:/Qt/6.11.1/msvc2022_64"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DQT_ENABLE_QML_DEBUG=OFF -DCMAKE_PREFIX_PATH="C:/Qt/6.11.1/msvc2022_64"
 ```
+
+`CMAKE_BUILD_TYPE=Release` applies to single-config generators such as Ninja.
+If you are using a multi-config generator like Visual Studio or Qt Creator's
+MSVC setup, that flag is ignored and the active config is selected at build
+time.
 
 Build:
 
 ```powershell
-cmake --build build --config Debug --target fm
+cmake --build build --config Release --target fm
 ```
+
+For adequate rendering speed, it is strongly recommended to use a Release
+configuration and explicitly disable QML debugging and profiling. Debug or
+instrumented builds keep extra runtime overhead enabled and will render
+noticeably slower.
 
 Run:
 
 ```powershell
-.\build\Debug\fm.exe
+.\build\Release\fm.exe
 ```
 
 If you are using a generated Qt Creator build directory, the executable path may
 look different, for example:
 
 ```powershell
-.\build\6_11_1_MS-Debug\fm.exe
+.\build\6_11_1_MS-Release\fm.exe
 ```
 
 For MSVC command-line builds, run the commands from a Visual Studio Developer
