@@ -1519,46 +1519,53 @@ Pane {
                         z: 20
                         anchors.top: parent.top
                         anchors.topMargin: root.gridIconSize + 18
-                        width: Math.min(Math.max(parent.width + 72, 220), Math.max(parent.width, gridView.width - 24))
-                        height: Math.min(74, Math.max(52, parent.height - root.gridIconSize - 34))
+                        width: Math.max(136, parent.width - 8)
+                        height: 38
                         x: Math.round((parent.width - width) / 2)
                         active: isRenaming
                         visible: isRenaming
-                        sourceComponent: TextArea {
+                        sourceComponent: TextField {
                             id: gridRenameInput
                             text: name
-                            horizontalAlignment: Text.AlignLeft
+                            horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
-                            font.pixelSize: 14
+                            font.pixelSize: 12
                             color: Theme.textPrimary
                             selectByMouse: true
-                            leftPadding: 12
-                            rightPadding: 12
-                            topPadding: 6
-                            bottomPadding: 6
+                            leftPadding: 10
+                            rightPadding: 10
+                            topPadding: 4
+                            bottomPadding: 4
                             selectionColor: Theme.withAlpha(Theme.focusRing, themeController.isDark ? 0.38 : 0.24)
                             selectedTextColor: Theme.textPrimary
-                            wrapMode: TextEdit.Wrap
                             clip: true
+
+                            opacity: 0
+                            scale: 0.97
+                            Behavior on opacity { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
+                            Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutQuad } }
+
                             background: Rectangle {
-                                color: Theme.panelSurfaceStrong
-                                radius: Theme.radiusSm
-                                border.color: Theme.focusRing
-                                border.width: 1.5
+                                color: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.92 : 0.96)
+                                radius: 10
+                                border.color: gridRenameInput.activeFocus
+                                              ? Theme.withAlpha(Theme.focusRing, 0.9)
+                                              : Theme.withAlpha(Theme.panelBorder, 0.7)
+                                border.width: gridRenameInput.activeFocus ? 1.25 : 1
 
                                 layer.enabled: true
                                 layer.effect: MultiEffect {
                                     shadowEnabled: true
-                                    shadowColor: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.35 : 0.20)
-                                    shadowBlur: 12
-                                    shadowVerticalOffset: 2
+                                    shadowColor: Theme.withAlpha(Theme.shadow, themeController.isDark ? 0.22 : 0.12)
+                                    shadowBlur: 8
+                                    shadowVerticalOffset: 1
                                 }
                             }
 
                             function commitRename() {
                                 if (index >= 0) {
                                     const idx = index
-                                    const txt = text.replace(/[\r\n]+/g, " ").trim()
+                                    const txt = text.trim()
                                     const ctrl = root.controller
                                     Qt.callLater(function() {
                                         if (ctrl.rename(idx, txt)) {
@@ -1588,6 +1595,8 @@ Pane {
                             onActiveFocusChanged: if (!activeFocus) isRenaming = false
                             
                             Component.onCompleted: {
+                                opacity = 1.0
+                                scale = 1.0
                                 forceActiveFocus()
                                 let lastDot = name.lastIndexOf(".")
                                 if (!isDirectory && lastDot > 0) {

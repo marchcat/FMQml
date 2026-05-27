@@ -207,7 +207,7 @@ Item {
             placeholderTextColor: Theme.withAlpha(Theme.textSecondary, 0.72)
             color: Theme.textPrimary
             selectionColor: Theme.withAlpha(Theme.categoryInfo, 0.30)
-            selectedTextColor: Theme.accentText
+            selectedTextColor: Theme.textPrimary
             cursorDelegate: Rectangle {
                 width: 2
                 radius: 1
