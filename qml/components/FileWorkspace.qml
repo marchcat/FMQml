@@ -107,8 +107,8 @@ Item {
         }
 
         handle: Rectangle {
-            implicitWidth: 8
-            implicitHeight: 8
+            implicitWidth: 12
+            implicitHeight: 12
             color: "transparent"
 
             SplitHandle.onPressedChanged: {
@@ -121,19 +121,19 @@ Item {
                 anchors.leftMargin: 2
                 anchors.rightMargin: 2
                 color: Theme.accent
-                opacity: SplitHandle.pressed ? 0.12 : (SplitHandle.hovered ? 0.06 : 0)
-                radius: 4
+                opacity: SplitHandle.pressed ? 0.16 : (SplitHandle.hovered ? 0.08 : 0)
+                radius: 5
                 Behavior on opacity { NumberAnimation { duration: 150 } }
             }
 
             // The actual divider line
             Rectangle {
                 anchors.centerIn: parent
-                width: (SplitHandle.hovered || SplitHandle.pressed) ? 2 : 1
-                height: parent.height - 12
-                radius: 1
+                width: (SplitHandle.hovered || SplitHandle.pressed) ? 3 : 2
+                height: parent.height - 18
+                radius: width / 2
                 color: (SplitHandle.hovered || SplitHandle.pressed) ? Theme.accent : Theme.border
-                opacity: (SplitHandle.hovered || SplitHandle.pressed) ? 1.0 : 0.4
+                opacity: SplitHandle.pressed ? 1.0 : (SplitHandle.hovered ? 0.9 : 0.58)
                 
                 Behavior on width { NumberAnimation { duration: 100 } }
                 Behavior on color { ColorAnimation { duration: 150 } }

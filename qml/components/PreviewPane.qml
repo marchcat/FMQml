@@ -65,6 +65,23 @@ Pane {
         return quickLookController.type.length > 0 ? quickLookController.type.toUpperCase() + " Preview" : "Preview"
     }
 
+    function lightweightProperties() {
+        const props = [
+            { label: "Name", value: root.displayTitle() },
+            { label: "Type", value: root.displaySubtitle() }
+        ]
+
+        if (quickLookController.sizeText.length > 0) {
+            props.push({ label: "Size", value: quickLookController.sizeText })
+        }
+
+        if (quickLookController.modifiedText.length > 0) {
+            props.push({ label: "Modified", value: quickLookController.modifiedText })
+        }
+
+        return props
+    }
+
     padding: 0
     clip: true
 
@@ -131,172 +148,115 @@ Pane {
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 14
-                    spacing: 10
+                    spacing: 12
 
                     Rectangle {
                         Layout.fillWidth: true
-                        implicitHeight: 34
-                        radius: 10
-                        color: themeController.isDark
-                               ? Qt.rgba(1, 1, 1, 0.045)
-                               : Qt.rgba(0, 0, 0, 0.03)
+                        Layout.preferredHeight: 224
+                        radius: 16
+                        color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
                         border.color: Theme.border
                         border.width: 1
+                        clip: true
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 12
+                        Rectangle {
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            anchors.topMargin: 12
                             anchors.rightMargin: 12
-                            spacing: 8
+                            width: statusLabel.implicitWidth + 18
+                            height: 26
+                            radius: 13
+                            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.10)
+                            border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.32 : 0.22)
+                            border.width: 1
+
+                            Label {
+                                id: statusLabel
+                                anchors.centerIn: parent
+                                text: "Resizing"
+                                font.pixelSize: 10
+                                font.bold: true
+                                color: Theme.accent
+                            }
+                        }
+
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            width: Math.min(parent.width - 32, 260)
+                            spacing: 12
 
                             Rectangle {
-                                width: 8
-                                height: 8
-                                radius: 4
-                                color: Theme.accent
-                                opacity: 0.9
+                                Layout.alignment: Qt.AlignHCenter
+                                width: 84
+                                height: 84
+                                radius: 18
+                                color: themeController.isDark ? Theme.withAlpha(Theme.textPrimary, 0.05)
+                                                              : Theme.withAlpha(Theme.textPrimary, 0.03)
+                                border.color: Theme.border
+                                border.width: 1
+
+                                Image {
+                                    anchors.centerIn: parent
+                                    source: root.displayIconSource()
+                                    sourceSize: Qt.size(42, 42)
+                                    smooth: true
+                                    mipmap: false
+                                    asynchronous: true
+                                    opacity: 0.9
+                                }
                             }
 
                             Label {
                                 Layout.fillWidth: true
-                                text: "Preview paused while resizing"
-                                font.pixelSize: 11
+                                text: root.displayTitle()
                                 font.bold: true
-                                color: Theme.textSecondary
+                                font.pixelSize: 14
+                                color: Theme.textPrimary
+                                horizontalAlignment: Text.AlignHCenter
+                                elide: Text.ElideMiddle
+                            }
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.displaySubtitle()
+                                font.pixelSize: 11
+                                color: Theme.accent
+                                horizontalAlignment: Text.AlignHCenter
                                 elide: Text.ElideRight
                             }
-                        }
-                    }
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 112
-                        radius: 14
-                        color: themeController.isDark
-                               ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.10)
-                               : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
-                        border.color: Theme.border
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 14
-                            spacing: 12
-
-                            Image {
-                                source: root.displayIconSource()
-                                sourceSize: Qt.size(40, 40)
-                                Layout.preferredWidth: 40
-                                Layout.preferredHeight: 40
-                                smooth: true
-                                mipmap: false
-                                asynchronous: true
-                                opacity: 0.92
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
+                            Rectangle {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.topMargin: 2
+                                width: pausedLabel.implicitWidth + 22
+                                height: 28
+                                radius: 14
+                                color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.035) : Qt.rgba(0, 0, 0, 0.025)
+                                border.color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.55 : 0.38)
+                                border.width: 1
 
                                 Label {
-                                    text: root.displayTitle()
-                                    font.pixelSize: 14
-                                    font.bold: true
-                                    color: Theme.textPrimary
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideMiddle
-                                }
-
-                                Label {
-                                    text: root.displaySubtitle()
-                                    font.pixelSize: 11
-                                    color: Theme.textSecondary
-                                }
-
-                                Label {
-                                    text: ((quickLookController.sizeText.length > 0 ? quickLookController.sizeText : "")
-                                           + (quickLookController.sizeText.length > 0 && quickLookController.modifiedText.length > 0 ? "  |  " : "")
-                                           + (quickLookController.modifiedText.length > 0 ? quickLookController.modifiedText : ""))
-                                    visible: text.length > 0
-                                    font.pixelSize: 11
-                                    color: Theme.textSecondary
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
-                                }
-
-                                Label {
-                                    text: "Heavy preview content will resume after drag"
+                                    id: pausedLabel
+                                    anchors.centerIn: parent
+                                    text: "Preview resumes after drag"
                                     font.pixelSize: 10
                                     color: Theme.textSecondary
-                                    opacity: 0.82
-                                    Layout.fillWidth: true
-                                    elide: Text.ElideRight
                                 }
                             }
                         }
                     }
 
-                    ScrollView {
+                    PreviewPropertiesList {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        clip: true
-
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 10
-
-                            function addRow(label, value) {
-                                if (!value || String(value).length === 0) {
-                                    return ""
-                                }
-                                return label + "\n" + String(value)
-                            }
-
-                            Repeater {
-                                model: [
-                                    { label: "Location", value: quickLookController.absolutePath.length > 0 ? quickLookController.absolutePath : quickLookController.path },
-                                    { label: "Size", value: quickLookController.sizeText },
-                                    { label: "Modified", value: quickLookController.modifiedText },
-                                    { label: "Access", value: quickLookController.permissionsText },
-                                    { label: "Attributes", value: quickLookController.attributesText },
-                                    { label: "Symlink", value: quickLookController.symlink ? "Yes" : "" }
-                                ]
-
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    visible: modelData.value && String(modelData.value).length > 0
-                                    Layout.fillWidth: true
-                                    implicitHeight: visible ? 54 : 0
-                                    radius: 10
-                                    color: Theme.panelSurfaceSoft
-                                    border.color: Theme.border
-                                    border.width: 1
-
-                                    Column {
-                                        anchors.fill: parent
-                                        anchors.margins: 12
-                                        spacing: 4
-
-                                        Label {
-                                            text: parent.parent.modelData.label
-                                            font.pixelSize: 10
-                                            font.bold: true
-                                            color: Theme.textSecondary
-                                        }
-
-                                        Label {
-                                            text: String(parent.parent.modelData.value)
-                                            font.pixelSize: 12
-                                            color: Theme.textPrimary
-                                            width: parent.width
-                                            wrapMode: Text.Wrap
-                                            maximumLineCount: 2
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        title: "Details"
+                        properties: root.lightweightProperties()
+                        rowRadius: 10
+                        rowPadding: 12
+                        labelPixelSize: 10
+                        valuePixelSize: 12
+                        rowSpacing: 8
                     }
                 }
             }

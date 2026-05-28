@@ -644,11 +644,46 @@ ApplicationWindow {
             }
 
             handle: Rectangle {
-                implicitWidth: 1
-                color: Theme.border
+                implicitWidth: 12
+                color: "transparent"
 
                 SplitHandle.onPressedChanged: {
                     root.mainSplitResizing = SplitHandle.pressed
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                    radius: 5
+                    color: Theme.accent
+                    opacity: SplitHandle.pressed ? 0.16 : (SplitHandle.hovered ? 0.08 : 0)
+
+                    Behavior on opacity {
+                        NumberAnimation {
+                            duration: 120
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: (SplitHandle.hovered || SplitHandle.pressed) ? 3 : 2
+                    height: parent.height - 18
+                    radius: width / 2
+                    color: (SplitHandle.hovered || SplitHandle.pressed) ? Theme.accent : Theme.border
+                    opacity: SplitHandle.pressed ? 1.0 : (SplitHandle.hovered ? 0.9 : 0.58)
+
+                    Behavior on width {
+                        NumberAnimation {
+                            duration: 100
+                            easing.type: Easing.OutQuad
+                        }
+                    }
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
                 }
             }
         }

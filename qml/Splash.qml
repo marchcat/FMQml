@@ -186,7 +186,7 @@ Window {
                         }
 
                         Text {
-                            text: themeController.customThemeLoaded ? "Loaded from JSON" : themeController.schemeName
+                            text: themeController.schemeName
                             color: Theme.textPrimary
                             font.family: Theme.fontFamily
                             font.pixelSize: 14
