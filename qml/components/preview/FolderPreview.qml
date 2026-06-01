@@ -6,22 +6,19 @@ import "../../style"
 Item {
     id: root
 
-    property string iconSource: "qrc:/qt/qml/FM/qml/assets/icons/document.svg"
-    property string title: "File"
-    property string typeText: "Unsupported File"
+    property string iconSource: "qrc:/qt/qml/FM/qml/assets/icons/folder.svg"
+    property string title: "Folder"
     property string sizeText: ""
     property string modifiedText: ""
     property string locationText: ""
-    property string extension: ""
     property bool compact: false
-    property color accentColor: Theme.accent
+    property color accentColor: Theme.secondaryAccent
+    property color iconAccentColor: Theme.accent
 
-    readonly property string formatText: extension.length > 0 ? extension.toUpperCase() : "FILE"
     readonly property string metaText: {
-        if (sizeText.length > 0 && modifiedText.length > 0) return sizeText + "  |  " + modifiedText
-        if (sizeText.length > 0) return sizeText
         if (modifiedText.length > 0) return modifiedText
-        return "Preview unavailable"
+        if (sizeText.length > 0) return sizeText
+        return "Folder"
     }
 
     clip: true
@@ -44,36 +41,16 @@ Item {
                 Layout.preferredWidth: root.compact ? 58 : 112
                 Layout.preferredHeight: width
                 radius: Theme.radiusSm
-                color: Theme.withAlpha(Theme.bg, themeController.isDark ? 0.30 : 0.46)
-                border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.38 : 0.28)
+                color: Theme.withAlpha(root.iconAccentColor, themeController.isDark ? 0.16 : 0.12)
+                border.color: Theme.withAlpha(root.iconAccentColor, themeController.isDark ? 0.42 : 0.30)
                 border.width: 1
 
                 Image {
                     anchors.centerIn: parent
                     source: root.iconSource
-                    sourceSize: Qt.size(root.compact ? 34 : 66, root.compact ? 34 : 66)
-                    opacity: 0.92
+                    sourceSize: Qt.size(root.compact ? 36 : 70, root.compact ? 36 : 70)
+                    opacity: 0.94
                     smooth: true
-                }
-
-                Rectangle {
-                    anchors.right: parent.right
-                    anchors.bottom: parent.bottom
-                    anchors.margins: root.compact ? 5 : 7
-                    width: formatLabel.implicitWidth + 12
-                    height: root.compact ? 18 : 20
-                    radius: Theme.radiusSm
-                    color: Theme.withAlpha(Theme.bg, themeController.isDark ? 0.72 : 0.82)
-
-                    Label {
-                        id: formatLabel
-                        anchors.centerIn: parent
-                        text: root.formatText
-                        font.pixelSize: root.compact ? 8 : 9
-                        font.bold: true
-                        color: Theme.textSecondary
-                        elide: Text.ElideRight
-                    }
                 }
             }
 
@@ -83,7 +60,7 @@ Item {
 
                 Label {
                     Layout.fillWidth: true
-                    text: root.title.length > 0 ? root.title : "File"
+                    text: root.title.length > 0 ? root.title : "Folder"
                     font.pixelSize: root.compact ? 14 : 23
                     font.bold: true
                     color: Theme.textPrimary
@@ -92,7 +69,7 @@ Item {
 
                 Label {
                     Layout.fillWidth: true
-                    text: root.typeText.length > 0 ? root.typeText : "Unsupported File"
+                    text: "Folder"
                     font.pixelSize: root.compact ? 11 : 13
                     color: Theme.textSecondary
                     elide: Text.ElideRight
@@ -121,17 +98,17 @@ Item {
                     Layout.preferredWidth: statusLabel.implicitWidth + 18
                     Layout.preferredHeight: root.compact ? 22 : 24
                     radius: Theme.radiusSm
-                    color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.13 : 0.10)
-                    border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.32 : 0.24)
+                    color: Theme.withAlpha(root.iconAccentColor, themeController.isDark ? 0.13 : 0.10)
+                    border.color: Theme.withAlpha(root.iconAccentColor, themeController.isDark ? 0.32 : 0.24)
                     border.width: 1
 
                     Label {
                         id: statusLabel
                         anchors.centerIn: parent
-                        text: "Preview unavailable"
+                        text: "Folder information"
                         font.pixelSize: root.compact ? 9 : 10
                         font.bold: true
-                        color: root.accentColor
+                        color: root.iconAccentColor
                     }
                 }
             }

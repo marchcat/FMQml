@@ -65,10 +65,40 @@ Pane {
         if (panel) panel.openPath(path)
     }
 
+    function previewPath(path) {
+        if (!path || typeof quickLookController === "undefined" || !quickLookController) return
+        quickLookController.preview(path)
+    }
+
+    function previewCurrentPlace() {
+        if (!placesList.activeFocus) return
+
+        if (placesList.currentIndex === -1) {
+            root.previewPath("devices://")
+            return
+        }
+
+        if (placesList.currentIndex < 0 || placesList.currentIndex >= placesList.count) return
+
+        const modelIndex = workspaceController.placesModel.index(placesList.currentIndex, 0)
+        const path = workspaceController.placesModel.data(modelIndex, Qt.UserRole + 2 /* PathRole */)
+        root.previewPath(path)
+    }
+
+    function previewCurrentFolderTreeItem() {
+        if (!foldersTree.activeFocus || !foldersTree.selectionModel) return
+
+        const idx = foldersTree.selectionModel.currentIndex
+        if (idx === undefined || idx === null || !idx.valid) return
+
+        root.previewPath(workspaceController.treeModel.pathForIndex(idx))
+    }
+
     function selectPlace(index) {
         root.trapTabNavigation = false
         placesList.forceActiveFocus()
         placesList.currentIndex = index
+        root.previewCurrentPlace()
     }
 
     function openSelectedPlace() {
@@ -320,8 +350,11 @@ Pane {
                     } else {
                         placesList.currentIndex = 0
                     }
+                    root.previewCurrentPlace()
                 }
             }
+
+            onCurrentIndexChanged: root.previewCurrentPlace()
 
             Keys.onTabPressed: function(event) {
                 if (root.trapTabNavigation) {
@@ -656,6 +689,14 @@ Pane {
                             }
                         }
                     }
+                    root.previewCurrentFolderTreeItem()
+                }
+            }
+
+            Connections {
+                target: foldersTree.selectionModel
+                function onCurrentChanged(current, previous) {
+                    root.previewCurrentFolderTreeItem()
                 }
             }
 

@@ -10,8 +10,10 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QImageReader>
+#include <QImage>
+#include <QPixelFormat>
+#include <QUrl>
 #include <QtConcurrent/QtConcurrentRun>
-#include <QBuffer>
 #include <memory>
 #include <utility>
 #include "../core/ArchiveFileProvider.h"
@@ -23,11 +25,15 @@
 #include <QStorageInfo>
 #include <QDir>
 
-
 namespace {
 struct PreviewData {
     QString content;
     int lines = 0;
+    bool truncated = false;
+    bool fullTextAvailable = false;
+    bool chunked = false;
+    int chunkIndex = 0;
+    int chunkCount = 0;
 };
 
 struct DevicesPreviewData {
@@ -52,7 +58,20 @@ QVariant prop(const QString &label, const QString &value)
     return QVariant::fromValue(m);
 }
 
+QString propertyValue(const QVariantList &properties, const QString &label)
+{
+    for (const QVariant &property : properties) {
+        const QVariantMap map = property.toMap();
+        if (map.value(QStringLiteral("label")).toString() == label) {
+            return map.value(QStringLiteral("value")).toString();
+        }
+    }
+    return {};
+}
+
 static constexpr qint64 kTextPreviewLimit = 8192;
+static constexpr qint64 kTextFullLoadLimit = 1024 * 1024;
+static constexpr qint64 kTextChunkSize = 384 * 1024;
 static constexpr qint64 kArchivePreviewExtractLimit = 1024 * 1024;
 
 bool isImageSuffix(const QString &suffix)
@@ -79,6 +98,7 @@ bool isTextSuffix(const QString &suffix)
         QStringLiteral("md"),
         QStringLiteral("json"),
         QStringLiteral("xml"),
+        QStringLiteral("fb2"),
         QStringLiteral("csv"),
         QStringLiteral("ini"),
         QStringLiteral("conf"),
@@ -104,6 +124,32 @@ bool isTextSuffix(const QString &suffix)
     };
     return textSuffixes.contains(suffix.toLower());
 }
+
+QString imageFormatName(QImage::Format format)
+{
+    switch (format) {
+    case QImage::Format_Invalid: return {};
+    case QImage::Format_Indexed8: return QStringLiteral("Indexed8");
+    case QImage::Format_RGB32: return QStringLiteral("RGB32");
+    case QImage::Format_ARGB32: return QStringLiteral("ARGB32");
+    case QImage::Format_ARGB32_Premultiplied: return QStringLiteral("ARGB32 Premultiplied");
+    case QImage::Format_RGB16: return QStringLiteral("RGB16");
+    case QImage::Format_RGB888: return QStringLiteral("RGB888");
+    case QImage::Format_RGBX8888: return QStringLiteral("RGBX8888");
+    case QImage::Format_RGBA8888: return QStringLiteral("RGBA8888");
+    case QImage::Format_RGBA8888_Premultiplied: return QStringLiteral("RGBA8888 Premultiplied");
+    case QImage::Format_Alpha8: return QStringLiteral("Alpha8");
+    case QImage::Format_Grayscale8: return QStringLiteral("Grayscale8");
+    case QImage::Format_RGBX64: return QStringLiteral("RGBX64");
+    case QImage::Format_RGBA64: return QStringLiteral("RGBA64");
+    case QImage::Format_RGBA64_Premultiplied: return QStringLiteral("RGBA64 Premultiplied");
+    case QImage::Format_Grayscale16: return QStringLiteral("Grayscale16");
+    case QImage::Format_BGR888: return QStringLiteral("BGR888");
+    case QImage::Format_CMYK8888: return QStringLiteral("CMYK8888");
+    default: return QStringLiteral("Format %1").arg(static_cast<int>(format));
+    }
+}
+
 }
 
 QuickLookController::QuickLookController(QObject *parent)
@@ -136,9 +182,32 @@ QString QuickLookController::canonicalPath() const { return m_canonicalPath; }
 QString QuickLookController::permissionsText() const { return m_permissionsText; }
 QString QuickLookController::attributesText() const { return m_attributesText; }
 int QuickLookController::lines() const { return m_lines; }
+bool QuickLookController::textTruncated() const { return m_textTruncated; }
+bool QuickLookController::fullTextAvailable() const { return m_fullTextAvailable; }
+bool QuickLookController::textChunked() const { return m_textChunked; }
+int QuickLookController::textChunkIndex() const { return m_textChunkIndex; }
+int QuickLookController::textChunkCount() const { return m_textChunkCount; }
 bool QuickLookController::loading() const { return m_loading; }
 bool QuickLookController::visible() const { return m_visible; }
 QVariantList QuickLookController::extraProperties() const { return m_extraProperties; }
+QString QuickLookController::audioTitle() const { return m_audioTitle; }
+QString QuickLookController::audioArtist() const { return m_audioArtist; }
+QString QuickLookController::audioAlbum() const { return m_audioAlbum; }
+QString QuickLookController::audioYear() const { return m_audioYear; }
+QString QuickLookController::audioTrack() const { return m_audioTrack; }
+QString QuickLookController::audioGenre() const { return m_audioGenre; }
+QString QuickLookController::audioComment() const { return m_audioComment; }
+QString QuickLookController::audioDuration() const { return m_audioDuration; }
+QString QuickLookController::audioBitrate() const { return m_audioBitrate; }
+QString QuickLookController::audioSampleRate() const { return m_audioSampleRate; }
+QString QuickLookController::audioChannels() const { return m_audioChannels; }
+QString QuickLookController::mediaSourceUrl() const
+{
+    if (m_path.isEmpty() || ArchiveSupport::isArchivePath(m_path)) {
+        return {};
+    }
+    return QUrl::fromLocalFile(m_path).toString(QUrl::FullyEncoded);
+}
 bool QuickLookController::hasPdfSupport() const
 {
 #ifdef HAS_QT_PDF
@@ -148,12 +217,419 @@ bool QuickLookController::hasPdfSupport() const
 #endif
 }
 
+bool QuickLookController::hasMultimediaSupport() const
+{
+#ifdef HAS_QT_MULTIMEDIA
+    return true;
+#else
+    return false;
+#endif
+}
+
 int QuickLookController::imageWidth() const { return m_imageWidth; }
 int QuickLookController::imageHeight() const { return m_imageHeight; }
+QString QuickLookController::imageFormatText() const { return m_imageFormatText; }
+QString QuickLookController::imageColorDepthText() const { return m_imageColorDepthText; }
+QString QuickLookController::imageAlphaChannelText() const { return m_imageAlphaChannelText; }
+QString QuickLookController::imageDpiText() const { return m_imageDpiText; }
+QString QuickLookController::imageColorSpaceText() const { return m_imageColorSpaceText; }
+QString QuickLookController::imagePixelFormatText() const { return m_imagePixelFormatText; }
+
+void QuickLookController::resetAudioProperties()
+{
+    m_audioTitle.clear();
+    m_audioArtist.clear();
+    m_audioAlbum.clear();
+    m_audioYear.clear();
+    m_audioTrack.clear();
+    m_audioGenre.clear();
+    m_audioComment.clear();
+    m_audioDuration.clear();
+    m_audioBitrate.clear();
+    m_audioSampleRate.clear();
+    m_audioChannels.clear();
+}
+
+void QuickLookController::syncAudioProperties(const QVariantList &properties)
+{
+    m_audioTitle = propertyValue(properties, QStringLiteral("Title"));
+    m_audioArtist = propertyValue(properties, QStringLiteral("Artist"));
+    m_audioAlbum = propertyValue(properties, QStringLiteral("Album"));
+    m_audioYear = propertyValue(properties, QStringLiteral("Year"));
+    m_audioTrack = propertyValue(properties, QStringLiteral("Track"));
+    m_audioGenre = propertyValue(properties, QStringLiteral("Genre"));
+    m_audioComment = propertyValue(properties, QStringLiteral("Comment"));
+    m_audioDuration = propertyValue(properties, QStringLiteral("Duration"));
+    m_audioBitrate = propertyValue(properties, QStringLiteral("Bitrate"));
+    m_audioSampleRate = propertyValue(properties, QStringLiteral("Sample Rate"));
+    m_audioChannels = propertyValue(properties, QStringLiteral("Channels"));
+}
+
+void QuickLookController::resetImageInfo()
+{
+    m_imageWidth = 0;
+    m_imageHeight = 0;
+    m_imageFormatText.clear();
+    m_imageColorDepthText.clear();
+    m_imageAlphaChannelText.clear();
+    m_imageDpiText.clear();
+    m_imageColorSpaceText.clear();
+    m_imagePixelFormatText.clear();
+}
+
+void QuickLookController::syncImageInfo(const QString &path)
+{
+    resetImageInfo();
+
+    QImageReader reader(path);
+    reader.setAutoTransform(false);
+
+    const QByteArray format = reader.format();
+    if (!format.isEmpty()) {
+        m_imageFormatText = QString::fromLatin1(format).toUpper();
+    }
+
+    const QSize size = reader.size();
+    if (size.isValid()) {
+        m_imageWidth = size.width();
+        m_imageHeight = size.height();
+    }
+
+    QImage::Format imageFormat = reader.imageFormat();
+    if (imageFormat != QImage::Format_Invalid) {
+        m_imagePixelFormatText = imageFormatName(imageFormat);
+        const QPixelFormat pixelFormat = QImage::toPixelFormat(imageFormat);
+        const int depth = pixelFormat.bitsPerPixel();
+        if (depth > 0) {
+            m_imageColorDepthText = QStringLiteral("%1 bit").arg(depth);
+            m_imageAlphaChannelText = pixelFormat.alphaUsage() == QPixelFormat::UsesAlpha
+                ? QStringLiteral("Yes")
+                : QStringLiteral("No");
+        }
+    }
+}
+
+void QuickLookController::syncImageProperties(const QVariantList &properties)
+{
+    const QString format = propertyValue(properties, QStringLiteral("Format"));
+    const QString colorDepth = propertyValue(properties, QStringLiteral("Color Depth"));
+    const QString alpha = propertyValue(properties, QStringLiteral("Alpha Channel"));
+    const QString dpi = propertyValue(properties, QStringLiteral("DPI"));
+    const QString colorSpace = propertyValue(properties, QStringLiteral("Color Space"));
+    const QString pixelFormat = propertyValue(properties, QStringLiteral("Pixel Format"));
+
+    if (!format.isEmpty()) {
+        m_imageFormatText = format;
+    }
+    if (!colorDepth.isEmpty()) {
+        m_imageColorDepthText = colorDepth;
+    }
+    if (!alpha.isEmpty()) {
+        m_imageAlphaChannelText = alpha;
+    }
+    m_imageDpiText = dpi;
+    m_imageColorSpaceText = colorSpace;
+    if (!pixelFormat.isEmpty()) {
+        m_imagePixelFormatText = pixelFormat;
+    }
+}
+
+bool QuickLookController::imageMetadataRequested() const
+{
+    return m_previewPaneImageMetadataRequested || m_quickLookImageMetadataRequested;
+}
+
+void QuickLookController::setImageMetadataRequested(const QString &scope, bool requested)
+{
+    bool changed = false;
+    if (scope == QStringLiteral("quicklook")) {
+        changed = m_quickLookImageMetadataRequested != requested;
+        m_quickLookImageMetadataRequested = requested;
+    } else {
+        changed = m_previewPaneImageMetadataRequested != requested;
+        m_previewPaneImageMetadataRequested = requested;
+    }
+
+    if (changed && requested && imageMetadataRequested()) {
+        requestImageMetadata();
+    }
+}
+
+void QuickLookController::requestImageMetadata()
+{
+    if (!imageMetadataRequested()
+        || m_imageMetadataLoading
+        || m_type != QStringLiteral("image")
+        || m_path.isEmpty()
+        || ArchiveSupport::isArchivePath(m_path)
+        || m_imageMetadataLoadedPath == m_path) {
+        return;
+    }
+
+    const QString path = m_path;
+    const int myGen = m_previewGeneration.load();
+    m_imageMetadataLoading = true;
+
+    syncImageInfo(path);
+    emit imageSizeChanged();
+    emit imageInfoChanged();
+
+    QPointer<QuickLookController> self(this);
+    (void)QtConcurrent::run([self, path, myGen]() {
+        QVariantList props = MetadataExtractor::extract(path);
+        if (!self) return;
+        QMetaObject::invokeMethod(self.data(), [self, path, myGen, props = std::move(props)]() mutable {
+            if (!self || myGen != self->m_previewGeneration.load()) {
+                return;
+            }
+            self->m_imageMetadataLoading = false;
+            self->m_imageMetadataLoadedPath = path;
+            self->m_extraProperties = props;
+            self->syncImageProperties(props);
+            emit self->extraPropertiesChanged();
+            emit self->imageInfoChanged();
+        });
+    });
+}
 
 void QuickLookController::preview(const QString &path)
 {
     previewPath(path, false);
+}
+
+void QuickLookController::loadFullText()
+{
+    if (m_path.isEmpty() || m_type != QStringLiteral("text") || !m_textTruncated || !m_fullTextAvailable) {
+        return;
+    }
+
+    QFileInfo info(m_path);
+    if (info.exists() && info.size() > kTextFullLoadLimit) {
+        loadTextChunk(0);
+        return;
+    }
+
+    const QString path = m_path;
+    const int myGen = ++m_previewGeneration;
+    if (!m_loading) {
+        m_loading = true;
+        emit loadingChanged();
+    }
+
+    QPointer<QuickLookController> self(this);
+    (void)QtConcurrent::run([self, path, myGen]() {
+        PreviewData data;
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const qint64 fileSize = file.size();
+            const qint64 bytesToRead = fileSize >= 0 ? qMin(fileSize, kTextFullLoadLimit) : kTextFullLoadLimit;
+            QByteArray raw = file.read(bytesToRead);
+            data.content = QString::fromUtf8(raw);
+            data.lines = data.content.isEmpty() ? 0 : data.content.count('\n') + 1;
+            data.truncated = fileSize > kTextFullLoadLimit;
+            data.fullTextAvailable = false;
+            data.chunked = false;
+            if (data.truncated) {
+                if (!data.content.isEmpty() && !data.content.endsWith('\n')) {
+                    data.content.append('\n');
+                }
+                data.content.append(QStringLiteral("...\nFile is too large to load fully in QuickLook."));
+                data.lines = data.content.count('\n') + 1;
+            }
+        } else {
+            data.content = QStringLiteral("Cannot read file.");
+            data.lines = 0;
+            data.truncated = false;
+            data.fullTextAvailable = false;
+        }
+
+        if (!self) {
+            return;
+        }
+
+        QMetaObject::invokeMethod(self.data(), [self, myGen, previewData = std::move(data)]() mutable {
+            if (!self || myGen != self->m_previewGeneration.load()) {
+                return;
+            }
+            self->m_content = std::move(previewData.content);
+            self->m_lines = previewData.lines;
+            self->m_textTruncated = previewData.truncated;
+            self->m_fullTextAvailable = previewData.fullTextAvailable;
+            self->m_textChunked = previewData.chunked;
+            self->m_textChunkIndex = previewData.chunkIndex;
+            self->m_textChunkCount = previewData.chunkCount;
+            if (self->m_loading) {
+                self->m_loading = false;
+                emit self->loadingChanged();
+            }
+            emit self->linesChanged();
+            emit self->textStateChanged();
+            emit self->contentChanged();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void QuickLookController::loadTextChunk(int chunkIndex)
+{
+    if (m_path.isEmpty() || m_type != QStringLiteral("text") || !m_fullTextAvailable) {
+        return;
+    }
+
+    const QString path = m_path;
+    const int myGen = ++m_previewGeneration;
+    if (!m_loading) {
+        m_loading = true;
+        emit loadingChanged();
+    }
+
+    QPointer<QuickLookController> self(this);
+    (void)QtConcurrent::run([self, path, chunkIndex, myGen]() {
+        PreviewData data;
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const qint64 fileSize = file.size();
+            const int chunkCount = fileSize > 0
+                ? static_cast<int>((fileSize + kTextChunkSize - 1) / kTextChunkSize)
+                : 1;
+            const int clampedIndex = qBound(0, chunkIndex, qMax(0, chunkCount - 1));
+            file.seek(static_cast<qint64>(clampedIndex) * kTextChunkSize);
+            QByteArray raw = file.read(kTextChunkSize);
+            data.content = QString::fromUtf8(raw);
+            data.lines = data.content.isEmpty() ? 0 : data.content.count('\n') + 1;
+            data.truncated = chunkCount > 1;
+            data.fullTextAvailable = true;
+            data.chunked = chunkCount > 1;
+            data.chunkIndex = clampedIndex;
+            data.chunkCount = chunkCount;
+        } else {
+            data.content = QStringLiteral("Cannot read file.");
+            data.lines = 0;
+            data.truncated = false;
+            data.fullTextAvailable = false;
+        }
+
+        if (!self) {
+            return;
+        }
+
+        QMetaObject::invokeMethod(self.data(), [self, myGen, previewData = std::move(data)]() mutable {
+            if (!self || myGen != self->m_previewGeneration.load()) {
+                return;
+            }
+            self->m_content = std::move(previewData.content);
+            self->m_lines = previewData.lines;
+            self->m_textTruncated = previewData.truncated;
+            self->m_fullTextAvailable = previewData.fullTextAvailable;
+            self->m_textChunked = previewData.chunked;
+            self->m_textChunkIndex = previewData.chunkIndex;
+            self->m_textChunkCount = previewData.chunkCount;
+            if (self->m_loading) {
+                self->m_loading = false;
+                emit self->loadingChanged();
+            }
+            emit self->linesChanged();
+            emit self->textStateChanged();
+            emit self->contentChanged();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void QuickLookController::previewSelection(const QStringList &paths)
+{
+    if (paths.size() <= 1) {
+        previewPath(paths.isEmpty() ? QString() : paths.first(), false);
+        return;
+    }
+
+    ++m_previewGeneration;
+    QLocale loc;
+    qint64 totalSize = 0;
+    int files = 0;
+    int folders = 0;
+    int other = 0;
+
+    for (const QString &path : paths) {
+        const QFileInfo info(path);
+        if (info.isDir()) {
+            ++folders;
+        } else if (info.isFile()) {
+            ++files;
+            totalSize += info.size();
+        } else {
+            ++other;
+        }
+    }
+
+    m_path = QStringLiteral("selection://");
+    m_content.clear();
+    m_type = QStringLiteral("info");
+    m_extension.clear();
+    m_name = QStringLiteral("%1 items selected").arg(paths.size());
+    m_sizeText = files > 0 ? loc.formattedDataSize(totalSize, 1, QLocale::DataSizeTraditionalFormat) : QString();
+    m_modifiedText = QStringLiteral("Multiple selection");
+    m_mimeName = QStringLiteral("selection");
+    m_directory = false;
+    m_hidden = false;
+    m_symlink = false;
+    m_readable = true;
+    m_writable = false;
+    m_executable = false;
+    m_absolutePath.clear();
+    m_parentPath.clear();
+    m_canonicalPath.clear();
+    m_permissionsText.clear();
+    m_attributesText.clear();
+    m_lines = 0;
+    m_textTruncated = false;
+    m_fullTextAvailable = false;
+    m_textChunked = false;
+    m_textChunkIndex = 0;
+    m_textChunkCount = 0;
+    m_loading = false;
+    resetImageInfo();
+    resetAudioProperties();
+
+    m_extraProperties.clear();
+    m_extraProperties.append(prop(QStringLiteral("Selected"), QStringLiteral("%1 items").arg(paths.size())));
+    if (files > 0) {
+        m_extraProperties.append(prop(QStringLiteral("Files"), QString::number(files)));
+    }
+    if (folders > 0) {
+        m_extraProperties.append(prop(QStringLiteral("Folders"), QString::number(folders)));
+    }
+    if (other > 0) {
+        m_extraProperties.append(prop(QStringLiteral("Other"), QString::number(other)));
+    }
+    if (files > 0) {
+        m_extraProperties.append(prop(QStringLiteral("File Size Total"), m_sizeText));
+    }
+
+    emit extensionChanged();
+    emit nameChanged();
+    emit sizeTextChanged();
+    emit modifiedTextChanged();
+    emit mimeNameChanged();
+    emit directoryChanged();
+    emit hiddenChanged();
+    emit symlinkChanged();
+    emit readableChanged();
+    emit writableChanged();
+    emit executableChanged();
+    emit absolutePathChanged();
+    emit parentPathChanged();
+    emit canonicalPathChanged();
+    emit permissionsTextChanged();
+    emit attributesTextChanged();
+    emit linesChanged();
+    emit textStateChanged();
+    emit loadingChanged();
+    emit typeChanged();
+    emit pathChanged();
+    emit contentChanged();
+    emit extraPropertiesChanged();
+    emit audioPropertiesChanged();
+    emit imageSizeChanged();
+    emit imageInfoChanged();
 }
 
 void QuickLookController::refresh()
@@ -193,10 +669,20 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
         m_permissionsText.clear();
         m_attributesText.clear();
         m_lines = 0;
-        m_imageWidth = 0;
-        m_imageHeight = 0;
+        m_textTruncated = false;
+        m_fullTextAvailable = false;
+        m_textChunked = false;
+        m_textChunkIndex = 0;
+        m_textChunkCount = 0;
+        resetImageInfo();
         m_extraProperties.clear();
-        if (!m_loading) {
+        resetAudioProperties();
+        if (favoritesRoot) {
+            if (m_loading) {
+                m_loading = false;
+                emit loadingChanged();
+            }
+        } else if (!m_loading) {
             m_loading = true;
             emit loadingChanged();
         }
@@ -218,11 +704,18 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
         emit permissionsTextChanged();
         emit attributesTextChanged();
         emit linesChanged();
+        emit textStateChanged();
         emit typeChanged();
         emit pathChanged();
         emit contentChanged();
         emit extraPropertiesChanged();
+        emit audioPropertiesChanged();
         emit imageSizeChanged();
+        emit imageInfoChanged();
+
+        if (favoritesRoot) {
+            return;
+        }
 
         QPointer<QuickLookController> self(this);
         (void)QtConcurrent::run([self, myGen]() {
@@ -281,8 +774,9 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
     }
 
     const int myGen = ++m_previewGeneration;
-    m_imageWidth = 0;
-    m_imageHeight = 0;
+    resetImageInfo();
+    m_imageMetadataLoading = false;
+    m_imageMetadataLoadedPath.clear();
     m_path = path;
     const bool archivePath = ArchiveSupport::isArchivePath(path);
     QLocale loc;
@@ -373,7 +867,15 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
         : db.mimeTypeForFile(path);
     m_mimeName = mime.name();
     m_extraProperties.clear();
+    resetAudioProperties();
+    m_textTruncated = false;
+    m_fullTextAvailable = false;
+    m_textChunked = false;
+    m_textChunkIndex = 0;
+    m_textChunkCount = 0;
     emit extraPropertiesChanged();
+    emit audioPropertiesChanged();
+    emit textStateChanged();
 
     QPointer<QuickLookController> self(this);
     QByteArray archiveBytes;
@@ -397,26 +899,28 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
         const bool isDir = info.isDir();
         if (archivePath) {
             // Archive previews must not synchronously rescan or extract while browsing.
-        } else if (isDir) {
-            if (!m_loading) {
-                m_loading = true;
-                emit loadingChanged();
-            }
         }
-        if (!archivePath) {
-            (void)QtConcurrent::run([self, path, myGen, isDir]() {
+        const bool isImageMetadataFile = mime.name().startsWith("image/")
+            && mime.name() != QStringLiteral("image/svg+xml")
+            && displaySuffix != QStringLiteral("svg")
+            && displaySuffix != QStringLiteral("svgz");
+        if (!archivePath && !isDir && !isImageMetadataFile) {
+            (void)QtConcurrent::run([self, path, myGen]() {
                 QVariantList props = MetadataExtractor::extract(path);
                 if (!self) return;
-                QMetaObject::invokeMethod(self.data(), [self, myGen, props = std::move(props), isDir]() {
+                QMetaObject::invokeMethod(self.data(), [self, myGen, props = std::move(props)]() {
                     if (!self || myGen != self->m_previewGeneration.load()) {
                         return;
                     }
                     self->m_extraProperties = props;
-                    emit self->extraPropertiesChanged();
-                    if (isDir && self->m_loading) {
-                        self->m_loading = false;
-                        emit self->loadingChanged();
+                    if (self->m_type == QStringLiteral("audio")) {
+                        self->syncAudioProperties(props);
+                        emit self->audioPropertiesChanged();
+                    } else if (self->m_type == QStringLiteral("image")) {
+                        self->syncImageProperties(props);
+                        emit self->imageInfoChanged();
                     }
+                    emit self->extraPropertiesChanged();
                 });
             });
         }
@@ -439,7 +943,9 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                 emit loadingChanged();
             }
             m_extraProperties.clear();
+            resetAudioProperties();
             emit extraPropertiesChanged();
+            emit audioPropertiesChanged();
 
             QPointer<QuickLookController> self(this);
             (void)QtConcurrent::run([self, path, myGen]() {
@@ -492,6 +998,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                     self->m_sizeText = std::move(data.sizeText);
                     self->m_modifiedText = std::move(data.modifiedText);
                     self->m_extraProperties = std::move(data.extraProperties);
+                    self->resetAudioProperties();
                     self->m_loading = false;
 
                     emit self->mimeNameChanged();
@@ -499,6 +1006,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                     emit self->sizeTextChanged();
                     emit self->modifiedTextChanged();
                     emit self->extraPropertiesChanged();
+                    emit self->audioPropertiesChanged();
                     emit self->loadingChanged();
 
                     self->m_content = QString("Folder: %1\nSize: %2\nModified: %3")
@@ -508,6 +1016,9 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                     emit self->contentChanged();
                 });
             });
+        } else if (m_loading) {
+            m_loading = false;
+            emit loadingChanged();
         }
     } else if (!archivePath && (mime.name() == "image/svg+xml" || m_extension == "svg" || m_extension == "svgz")) {
         m_type = "svg";
@@ -517,31 +1028,17 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
             m_loading = false;
             emit loadingChanged();
         }
-    } else if (mime.name().startsWith("image/") && (!archivePath || !archiveBytes.isEmpty())) {
+    } else if (!archivePath && mime.name().startsWith("image/")) {
         m_type = "image";
         m_content = path;
         m_lines = 0;
-        
-        QImageReader reader;
-        QBuffer imageBuffer;
-        if (archivePath && !archiveBytes.isEmpty()) {
-            imageBuffer.setData(archiveBytes);
-            imageBuffer.open(QIODevice::ReadOnly);
-            reader.setDevice(&imageBuffer);
-        } else {
-            reader.setFileName(path);
-        }
-        QSize sz = reader.size();
-        if (sz.isValid()) {
-            m_imageWidth = sz.width();
-            m_imageHeight = sz.height();
-        }
+        requestImageMetadata();
         
         if (m_loading) {
             m_loading = false;
             emit loadingChanged();
         }
-    } else if (mime.name() == "application/pdf" || m_extension == "pdf") {
+    } else if (!archivePath && (mime.name() == "application/pdf" || m_extension == "pdf")) {
         m_type = "pdf";
         m_content = path;
         m_lines = 0;
@@ -549,9 +1046,11 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
             m_loading = false;
             emit loadingChanged();
         }
-    } else if (m_extension == "ttf" || m_extension == "otf" || m_extension == "woff" || m_extension == "woff2"
-               || mime.name() == "font/ttf" || mime.name() == "font/otf"
-               || mime.name() == "application/font-woff" || mime.name() == "font/woff2") {
+    } else if (!archivePath
+               && (m_extension == "ttf" || m_extension == "otf" || m_extension == "woff" || m_extension == "woff2"
+               || (m_extension != "fon"
+                   && (mime.name() == "font/ttf" || mime.name() == "font/otf"
+                       || mime.name() == "application/font-woff" || mime.name() == "font/woff2")))) {
         m_type = "font";
         m_content = path;
         m_lines = 0;
@@ -559,7 +1058,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
             m_loading = false;
             emit loadingChanged();
         }
-    } else if (m_extension == "exe" || m_extension == "dll") {
+    } else if (!archivePath && (m_extension == "exe" || m_extension == "dll" || m_extension == "msi")) {
         m_type = "executable";
         m_content = path;
         m_lines = 0;
@@ -567,7 +1066,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
             m_loading = false;
             emit loadingChanged();
         }
-    } else if (m_extension == "lnk") {
+    } else if (!archivePath && m_extension == "lnk") {
         m_type = "shortcut";
         m_content = path;
         m_lines = 0;
@@ -580,7 +1079,13 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
         m_type = "text";
         m_content.clear();
         m_lines = 0;
+        m_textTruncated = false;
+        m_fullTextAvailable = false;
+        m_textChunked = false;
+        m_textChunkIndex = 0;
+        m_textChunkCount = 0;
         emit linesChanged();
+        emit textStateChanged();
         emit contentChanged();
         if (!m_loading) {
             m_loading = true;
@@ -595,21 +1100,22 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                 data.content = QString::fromUtf8(raw);
                 data.lines = data.content.count('\n') + 1;
                 if (archiveBytes.size() > kTextPreviewLimit) {
+                    data.truncated = true;
+                    data.fullTextAvailable = false;
                     if (!data.content.isEmpty() && !data.content.endsWith('\n')) {
                         data.content.append('\n');
                     }
                     data.content.append(QStringLiteral("..."));
                 }
-            } else if (archivePath) {
-                data.content.clear();
-                data.lines = 0;
             } else {
                 QFile file(path);
-                if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                if (file.open(QIODevice::ReadOnly)) {
                     QByteArray raw = file.read(kTextPreviewLimit);
                     data.content = QString::fromUtf8(raw);
                     data.lines = data.content.count('\n') + 1;
                     if (file.size() > kTextPreviewLimit) {
+                        data.truncated = true;
+                        data.fullTextAvailable = true;
                         if (!data.content.isEmpty() && !data.content.endsWith('\n')) {
                             data.content.append('\n');
                         }
@@ -631,14 +1137,31 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                 }
                 self->m_content = std::move(previewData.content);
                 self->m_lines = previewData.lines;
+                self->m_textTruncated = previewData.truncated;
+                self->m_fullTextAvailable = previewData.fullTextAvailable;
+                self->m_textChunked = previewData.chunked;
+                self->m_textChunkIndex = previewData.chunkIndex;
+                self->m_textChunkCount = previewData.chunkCount;
                 if (self->m_loading) {
                     self->m_loading = false;
                     emit self->loadingChanged();
                 }
                 emit self->linesChanged();
+                emit self->textStateChanged();
                 emit self->contentChanged();
             }, Qt::QueuedConnection);
         });
+    } else if (archivePath) {
+        m_type = "info";
+        m_content = QString("Name: %1\nSize: %2\nModified: %3")
+                        .arg(m_name)
+                        .arg(archiveEntryTooLarge ? QStringLiteral("Large file (%1)").arg(m_sizeText) : m_sizeText)
+                        .arg(m_modifiedText);
+        m_lines = 0;
+        if (m_loading) {
+            m_loading = false;
+            emit loadingChanged();
+        }
     } else if (mime.name().startsWith("audio/")) {
         m_type = "audio";
         m_content = path;
@@ -700,11 +1223,14 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
     emit permissionsTextChanged();
     emit attributesTextChanged();
     emit linesChanged();
+    emit textStateChanged();
     emit typeChanged();
     emit pathChanged();
     emit contentChanged();
     emit extraPropertiesChanged();
+    emit audioPropertiesChanged();
     emit imageSizeChanged();
+    emit imageInfoChanged();
 }
 
 void QuickLookController::setVisible(bool visible)

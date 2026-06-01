@@ -1,16 +1,28 @@
 #include "MetadataExtractor.h"
+#include "ArchiveSupport.h"
 
 #include <QFileInfo>
 #include <QDir>
 #include <QFile>
 #include <QImageReader>
 #include <QImage>
+#include <QColorSpace>
+#include <QPixelFormat>
 #include <QMimeDatabase>
 #include <QRawFont>
 #include <QXmlStreamReader>
 #include <QLocale>
 #include <QDataStream>
 #include <QTextStream>
+#include <QtMath>
+#include <limits>
+
+#ifdef HAS_UNOFFICIAL_BIT7Z
+#include <bit7z/bit7z.hpp>
+#include <bit7z/bitarchivereader.hpp>
+#include <bit7z/bitarchiveitem.hpp>
+#include <exception>
+#endif
 
 #ifdef Q_OS_WIN
 #ifndef WIN32_LEAN_AND_MEAN
@@ -37,6 +49,91 @@
 #endif
 
 // ─── Dispatch ────────────────────────────────────────────────────────────────
+
+namespace {
+QString imageFormatName(QImage::Format format)
+{
+    switch (format) {
+    case QImage::Format_Invalid: return {};
+    case QImage::Format_Mono: return QStringLiteral("Mono");
+    case QImage::Format_MonoLSB: return QStringLiteral("Mono LSB");
+    case QImage::Format_Indexed8: return QStringLiteral("Indexed8");
+    case QImage::Format_RGB32: return QStringLiteral("RGB32");
+    case QImage::Format_ARGB32: return QStringLiteral("ARGB32");
+    case QImage::Format_ARGB32_Premultiplied: return QStringLiteral("ARGB32 Premultiplied");
+    case QImage::Format_RGB16: return QStringLiteral("RGB16");
+    case QImage::Format_ARGB8565_Premultiplied: return QStringLiteral("ARGB8565 Premultiplied");
+    case QImage::Format_RGB666: return QStringLiteral("RGB666");
+    case QImage::Format_ARGB6666_Premultiplied: return QStringLiteral("ARGB6666 Premultiplied");
+    case QImage::Format_RGB555: return QStringLiteral("RGB555");
+    case QImage::Format_ARGB8555_Premultiplied: return QStringLiteral("ARGB8555 Premultiplied");
+    case QImage::Format_RGB888: return QStringLiteral("RGB888");
+    case QImage::Format_RGB444: return QStringLiteral("RGB444");
+    case QImage::Format_ARGB4444_Premultiplied: return QStringLiteral("ARGB4444 Premultiplied");
+    case QImage::Format_RGBX8888: return QStringLiteral("RGBX8888");
+    case QImage::Format_RGBA8888: return QStringLiteral("RGBA8888");
+    case QImage::Format_RGBA8888_Premultiplied: return QStringLiteral("RGBA8888 Premultiplied");
+    case QImage::Format_BGR30: return QStringLiteral("BGR30");
+    case QImage::Format_A2BGR30_Premultiplied: return QStringLiteral("A2BGR30 Premultiplied");
+    case QImage::Format_RGB30: return QStringLiteral("RGB30");
+    case QImage::Format_A2RGB30_Premultiplied: return QStringLiteral("A2RGB30 Premultiplied");
+    case QImage::Format_Alpha8: return QStringLiteral("Alpha8");
+    case QImage::Format_Grayscale8: return QStringLiteral("Grayscale8");
+    case QImage::Format_RGBX64: return QStringLiteral("RGBX64");
+    case QImage::Format_RGBA64: return QStringLiteral("RGBA64");
+    case QImage::Format_RGBA64_Premultiplied: return QStringLiteral("RGBA64 Premultiplied");
+    case QImage::Format_Grayscale16: return QStringLiteral("Grayscale16");
+    case QImage::Format_BGR888: return QStringLiteral("BGR888");
+    case QImage::Format_RGBX16FPx4: return QStringLiteral("RGBX16FPx4");
+    case QImage::Format_RGBA16FPx4: return QStringLiteral("RGBA16FPx4");
+    case QImage::Format_RGBA16FPx4_Premultiplied: return QStringLiteral("RGBA16FPx4 Premultiplied");
+    case QImage::Format_RGBX32FPx4: return QStringLiteral("RGBX32FPx4");
+    case QImage::Format_RGBA32FPx4: return QStringLiteral("RGBA32FPx4");
+    case QImage::Format_RGBA32FPx4_Premultiplied: return QStringLiteral("RGBA32FPx4 Premultiplied");
+    case QImage::Format_CMYK8888: return QStringLiteral("CMYK8888");
+    default: return QStringLiteral("Format %1").arg(static_cast<int>(format));
+    }
+}
+
+QString colorSpaceName(const QColorSpace &colorSpace)
+{
+    if (!colorSpace.isValid()) {
+        return {};
+    }
+
+    const QString description = colorSpace.description();
+    if (!description.isEmpty()) {
+        return description;
+    }
+
+    switch (colorSpace.primaries()) {
+    case QColorSpace::Primaries::SRgb: return QStringLiteral("sRGB");
+    case QColorSpace::Primaries::AdobeRgb: return QStringLiteral("Adobe RGB");
+    case QColorSpace::Primaries::DciP3D65: return QStringLiteral("Display P3");
+    case QColorSpace::Primaries::ProPhotoRgb: return QStringLiteral("ProPhoto RGB");
+    case QColorSpace::Primaries::Bt2020: return QStringLiteral("BT.2020");
+    default: return QStringLiteral("Custom");
+    }
+}
+
+QString dpiText(const QImage &image)
+{
+    const int dpmX = image.dotsPerMeterX();
+    const int dpmY = image.dotsPerMeterY();
+    if (dpmX <= 0 || dpmY <= 0) {
+        return {};
+    }
+
+    const int dpiX = qRound(dpmX * 0.0254);
+    const int dpiY = qRound(dpmY * 0.0254);
+    if (dpiX <= 0 || dpiY <= 0) {
+        return {};
+    }
+    return dpiX == dpiY
+        ? QStringLiteral("%1 DPI").arg(dpiX)
+        : QStringLiteral("%1 x %2 DPI").arg(dpiX).arg(dpiY);
+}
+}
 
 QVariantList MetadataExtractor::extract(const QString &path)
 {
@@ -65,8 +162,9 @@ QVariantList MetadataExtractor::extract(const QString &path)
 
     // Font
     if (suffix == "ttf" || suffix == "otf" || suffix == "woff" || suffix == "woff2"
-        || mimeName == "font/ttf" || mimeName == "font/otf"
-        || mimeName == "application/font-woff" || mimeName == "font/woff2") {
+        || (suffix != "fon"
+            && (mimeName == "font/ttf" || mimeName == "font/otf"
+                || mimeName == "application/font-woff" || mimeName == "font/woff2"))) {
         return extractFont(path);
     }
 
@@ -75,14 +173,14 @@ QVariantList MetadataExtractor::extract(const QString &path)
         return extractPdf(path);
     }
 
-    // ZIP archive
-    if (mimeName == "application/zip" || suffix == "zip") {
-        return extractArchiveZip(path);
+    // Archive
+    if (ArchiveSupport::isArchiveExtension(suffix)) {
+        return extractArchive(path);
     }
 
 #ifdef Q_OS_WIN
     // Windows executable
-    if (suffix == "exe" || suffix == "dll") {
+    if (suffix == "exe" || suffix == "dll" || suffix == "msi") {
         return extractExecutable(path);
     }
 
@@ -133,23 +231,58 @@ QVariantList MetadataExtractor::extractImage(const QString &path, const QMimeTyp
 
     add(props, "Format", QString::fromLatin1(reader.format()).toUpper());
 
-    // Color depth from format
     QImage::Format fmt = reader.imageFormat();
+    QImage image;
+    int depth = 0;
+    bool hasAlpha = false;
+    bool hasPixelInfo = false;
     if (fmt != QImage::Format_Invalid) {
-        int depth = QImage::toPixelFormat(fmt).bitsPerPixel();
-        if (depth > 0) {
-            add(props, "Color Depth", QString::number(depth) + " bit");
+        const QPixelFormat pixelFormat = QImage::toPixelFormat(fmt);
+        depth = pixelFormat.bitsPerPixel();
+        hasAlpha = pixelFormat.alphaUsage() == QPixelFormat::UsesAlpha;
+        hasPixelInfo = depth > 0;
+    } else {
+        QImageReader probeReader(path);
+        probeReader.setAutoTransform(false);
+        image = probeReader.read();
+        if (!image.isNull()) {
+            fmt = image.format();
+            depth = image.depth();
+            hasAlpha = image.hasAlphaChannel();
+            hasPixelInfo = depth > 0;
         }
+    }
 
-        // Alpha channel
-        bool hasAlpha = QImage::toPixelFormat(fmt).alphaUsage() == QPixelFormat::UsesAlpha;
+    if (image.isNull()) {
+        QImageReader detailReader(path);
+        detailReader.setAutoTransform(false);
+        image = detailReader.read();
+    }
+
+    add(props, "Pixel Format", imageFormatName(fmt));
+    if (hasPixelInfo) {
+        add(props, "Color Depth", QString::number(depth) + " bit");
         add(props, "Alpha Channel", hasAlpha ? "Yes" : "No");
+    }
+
+    if (!image.isNull()) {
+        add(props, "DPI", dpiText(image));
+        add(props, "Color Space", colorSpaceName(image.colorSpace()));
     }
 
     // Image count (animated GIF, APNG)
     int imageCount = reader.imageCount();
     if (imageCount > 1) {
+        add(props, "Animated", "Yes");
         add(props, "Frames", QString::number(imageCount));
+        const int loopCount = reader.loopCount();
+        if (loopCount >= 0) {
+            add(props, "Loop Count", loopCount == 0 ? QStringLiteral("Forever") : QString::number(loopCount));
+        }
+        const int delay = reader.nextImageDelay();
+        if (delay > 0) {
+            add(props, "Frame Delay", QStringLiteral("%1 ms").arg(delay));
+        }
     }
 
     return props;
@@ -401,62 +534,93 @@ QVariantList MetadataExtractor::extractPdf(const QString &path)
     return props;
 }
 
-// ─── ZIP Archive ─────────────────────────────────────────────────────────────
+// ─── Archive ─────────────────────────────────────────────────────────────────
 
-QVariantList MetadataExtractor::extractArchiveZip(const QString &path)
+QVariantList MetadataExtractor::extractArchive(const QString &path)
 {
     QVariantList props;
-    add(props, "Format", "ZIP");
+#ifdef HAS_UNOFFICIAL_BIT7Z
+    const QFileInfo info(path);
+    const QString archivePath = QDir::toNativeSeparators(info.absoluteFilePath());
 
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-        return props;
+    const auto readArchive = [&](const bit7z::Bit7zLibrary &library) {
+        bit7z::BitArchiveReader reader(
+            library,
+            archivePath.toStdString(),
+            bit7z::ArchiveStartOffset::FileStart,
+            bit7z::BitFormat::Auto);
 
-    // Find End of Central Directory (EOCD) record in last 65KB
-    qint64 searchStart = qMax(qint64(0), file.size() - 65536);
-    file.seek(searchStart);
-    QByteArray tail = file.readAll();
+        const uint32_t itemCount = reader.itemsCount();
+        uint32_t fileCount = 0;
+        uint32_t folderCount = 0;
+        quint64 unpackedSize = 0;
+        quint64 packedSize = 0;
+        bool encrypted = false;
 
-    // EOCD signature: 0x06054b50
-    static const char eocdSig[] = { 0x50, 0x4b, 0x05, 0x06 };
-    int eocdPos = -1;
-    for (int i = tail.size() - 22; i >= 0; --i) {
-        if (tail[i] == eocdSig[0] && tail[i+1] == eocdSig[1]
-            && tail[i+2] == eocdSig[2] && tail[i+3] == eocdSig[3]) {
-            eocdPos = i;
-            break;
-        }
-    }
-
-    if (eocdPos >= 0 && eocdPos + 22 <= tail.size()) {
-        // Total entries (offset 10 in EOCD, 2 bytes LE)
-        quint16 totalEntries = static_cast<quint8>(tail[eocdPos + 10])
-                             | (static_cast<quint8>(tail[eocdPos + 11]) << 8);
-        add(props, "Entries", QString::number(totalEntries));
-
-        // Central directory size (offset 12, 4 bytes LE)
-        quint32 cdSize = static_cast<quint8>(tail[eocdPos + 12])
-                       | (static_cast<quint8>(tail[eocdPos + 13]) << 8)
-                       | (static_cast<quint8>(tail[eocdPos + 14]) << 16)
-                       | (static_cast<quint8>(tail[eocdPos + 15]) << 24);
-
-        QLocale loc;
-        add(props, "Compressed", loc.formattedDataSize(file.size()));
-        Q_UNUSED(cdSize)
-    }
-
-    // ZIP comment
-    if (eocdPos >= 0 && eocdPos + 22 <= tail.size()) {
-        quint16 commentLen = static_cast<quint8>(tail[eocdPos + 20])
-                           | (static_cast<quint8>(tail[eocdPos + 21]) << 8);
-        if (commentLen > 0 && eocdPos + 22 + commentLen <= tail.size()) {
-            QString comment = QString::fromUtf8(tail.mid(eocdPos + 22, commentLen));
-            if (!comment.isEmpty()) {
-                add(props, "Comment", comment);
+        for (uint32_t i = 0; i < itemCount; ++i) {
+            const auto item = reader.itemAt(i);
+            if (item.isDir()) {
+                ++folderCount;
+                continue;
+            }
+            ++fileCount;
+            unpackedSize += item.size();
+            try {
+                packedSize += item.packSize();
+            } catch (const std::exception &) {
+            }
+            try {
+                encrypted = encrypted || item.isEncrypted();
+            } catch (const std::exception &) {
             }
         }
-    }
 
+        QLocale loc;
+        const auto formattedSize = [&](quint64 bytes) {
+            const quint64 capped = qMin<quint64>(bytes, std::numeric_limits<qint64>::max());
+            return loc.formattedDataSize(static_cast<qint64>(capped));
+        };
+        const QString suffix = info.suffix().toUpper();
+        add(props, "Format", suffix.isEmpty() ? QStringLiteral("Archive") : suffix);
+        add(props, "Entries", QString::number(itemCount));
+        add(props, "Files", QString::number(fileCount));
+        if (folderCount > 0) {
+            add(props, "Folders", QString::number(folderCount));
+        }
+        if (unpackedSize > 0) {
+            add(props, "Uncompressed", formattedSize(unpackedSize));
+        }
+        if (packedSize > 0) {
+            add(props, "Packed", formattedSize(packedSize));
+        }
+        add(props, "Compressed", loc.formattedDataSize(info.size()));
+        if (unpackedSize > 0 && info.size() > 0) {
+            const double ratio = 100.0 * static_cast<double>(info.size()) / static_cast<double>(unpackedSize);
+            add(props, "Archive Ratio", QStringLiteral("%1%").arg(ratio, 0, 'f', 1));
+        }
+        if (encrypted) {
+            add(props, "Encrypted", QStringLiteral("Yes"));
+        }
+    };
+
+    try {
+        bit7z::Bit7zLibrary library;
+        readArchive(library);
+    } catch (const std::exception &) {
+        const QString libraryPath = ArchiveSupport::archiveLibraryPath();
+        if (libraryPath.isEmpty()) {
+            return {};
+        }
+        try {
+            bit7z::Bit7zLibrary library(libraryPath.toStdString());
+            readArchive(library);
+        } catch (const std::exception &) {
+            return {};
+        }
+    }
+#else
+    Q_UNUSED(path)
+#endif
     return props;
 }
 

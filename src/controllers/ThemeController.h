@@ -121,7 +121,9 @@ public:
         CatppuccinLatte,
         AuroraGlass,
         OxideGarden,
-        EmberLuxe
+        EmberLuxe,
+        GraphiteSage,
+        VelvetExcess
     };
     Q_ENUM(ThemeScheme)
 

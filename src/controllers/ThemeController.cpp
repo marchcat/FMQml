@@ -354,12 +354,20 @@ QVariantMap ThemeController::defaultThemeDraftForMode(const QString &mode) const
 
 QVariantList ThemeController::builtInThemeDrafts() const
 {
+    auto draftWithSubtitle = [](const ThemePalette &palette, const QString &subtitle) {
+        QVariantMap draft = ThemeController::themeStateFromPalette(palette);
+        draft[QStringLiteral("subtitle")] = subtitle;
+        return draft;
+    };
+
     QVariantList drafts;
-    drafts.reserve(4);
-    drafts.append(themeStateFromPalette(paletteForScheme(CatppuccinLatte)));
-    drafts.append(themeStateFromPalette(paletteForScheme(AuroraGlass)));
-    drafts.append(themeStateFromPalette(paletteForScheme(OxideGarden)));
-    drafts.append(themeStateFromPalette(paletteForScheme(EmberLuxe)));
+    drafts.reserve(6);
+    drafts.append(draftWithSubtitle(paletteForScheme(CatppuccinLatte), QStringLiteral("Soft light, blue, mauve")));
+    drafts.append(draftWithSubtitle(paletteForScheme(AuroraGlass), QStringLiteral("Teal, orchid, blue")));
+    drafts.append(draftWithSubtitle(paletteForScheme(OxideGarden), QStringLiteral("Paper, rust, patina")));
+    drafts.append(draftWithSubtitle(paletteForScheme(EmberLuxe), QStringLiteral("Amber, ruby, espresso")));
+    drafts.append(draftWithSubtitle(paletteForScheme(GraphiteSage), QStringLiteral("Graphite, sage, brass")));
+    drafts.append(draftWithSubtitle(paletteForScheme(VelvetExcess), QStringLiteral("Velvet, orchid, gold")));
     return drafts;
 }
 
@@ -633,6 +641,88 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#22C55E")),
             QColor(QStringLiteral("#DC2626")));
 
+    case GraphiteSage:
+        return makePalette(
+            QStringLiteral("graphite-sage"),
+            QStringLiteral("Graphite Sage"),
+            true,
+            QColor(QStringLiteral("#111715")),
+            QColor(QStringLiteral("#1B2421")),
+            QColor(QStringLiteral("#24302B")),
+            QColor(QStringLiteral("#2E3B35")),
+            QColor(QStringLiteral("#EEF5F0")),
+            QColor(QStringLiteral("#A7B6AD")),
+            QColor(QStringLiteral("#34443D")),
+            QColor(QStringLiteral("#74C69D")),
+            QColor(QStringLiteral("#06110C")),
+            QColor(QStringLiteral("#E86F7E")),
+            QColor(QStringLiteral("#8FB7FF")),
+            QColor(QStringLiteral("#6E8FEF")),
+            QColor(QStringLiteral("#8FCAB8")),
+            QColor(QStringLiteral("#D6A85C")),
+            QColor(QStringLiteral("#7DCC9A")),
+            QColor(QStringLiteral("#D6A85C")),
+            QColor(QStringLiteral("#8FB7FF")),
+            QColor(QStringLiteral("#B7A6D8")),
+            QColor(QStringLiteral("#74C69D")),
+            QColor(QStringLiteral("#8FCAB8")),
+            QColor(QStringLiteral("#8AA0B8")));
+
+    case VelvetExcess: {
+        auto alpha = [](const QColor &color, qreal value) {
+            QColor c = color;
+            c.setAlphaF(value);
+            return c;
+        };
+
+        ThemePalette palette = makePalette(
+            QStringLiteral("velvet-excess"),
+            QStringLiteral("Velvet Excess"),
+            true,
+            QColor(QStringLiteral("#160817")),
+            QColor(QStringLiteral("#281229")),
+            QColor(QStringLiteral("#401A3F")),
+            QColor(QStringLiteral("#56234F")),
+            QColor(QStringLiteral("#FFF2FA")),
+            QColor(QStringLiteral("#D8B7D4")),
+            QColor(QStringLiteral("#67305E")),
+            QColor(QStringLiteral("#F472D0")),
+            QColor(QStringLiteral("#190514")),
+            QColor(QStringLiteral("#FF4D8D")),
+            QColor(QStringLiteral("#E0B35F")),
+            QColor(QStringLiteral("#C084FC")),
+            QColor(QStringLiteral("#FB9ACD")),
+            QColor(QStringLiteral("#E0B35F")),
+            QColor(QStringLiteral("#5EEAD4")),
+            QColor(QStringLiteral("#FACC15")),
+            QColor(QStringLiteral("#38BDF8")),
+            QColor(QStringLiteral("#C084FC")),
+            QColor(QStringLiteral("#F472D0")),
+            QColor(QStringLiteral("#5EEAD4")),
+            QColor(QStringLiteral("#FF7A45")));
+
+        palette.panelSurface = QColor(QStringLiteral("#24102C"));
+        palette.panelSurfaceSoft = QColor(QStringLiteral("#321637"));
+        palette.panelSurfaceStrong = QColor(QStringLiteral("#421C43"));
+        palette.panelBorder = QColor(QStringLiteral("#7A3B72"));
+        palette.controlSurface = QColor(QStringLiteral("#351838"));
+        palette.controlSurfaceActive = QColor(QStringLiteral("#5A2650"));
+        palette.controlBorder = QColor(QStringLiteral("#78406F"));
+        palette.itemHoverFill = alpha(QColor(QStringLiteral("#F472D0")), 0.12);
+        palette.itemCurrentFill = alpha(QColor(QStringLiteral("#E0B35F")), 0.15);
+        palette.itemCurrentBorder = alpha(QColor(QStringLiteral("#E0B35F")), 0.70);
+        palette.itemSelectedFill = alpha(QColor(QStringLiteral("#C084FC")), 0.18);
+        palette.itemSelectedFillInactive = alpha(QColor(QStringLiteral("#C084FC")), 0.11);
+        palette.itemSelectedBorder = alpha(QColor(QStringLiteral("#F0ABFC")), 0.72);
+        palette.itemSelectedBorderInactive = alpha(QColor(QStringLiteral("#C084FC")), 0.44);
+        palette.statusRailFill = QColor(QStringLiteral("#1E0D25"));
+        palette.menuBorder = QColor(QStringLiteral("#8A447B"));
+        palette.menuSeparator = QColor(QStringLiteral("#B15B96"));
+        palette.menuItemPressed = QColor(QStringLiteral("#542149"));
+        palette.glassShadow = alpha(QColor(QStringLiteral("#050106")), 0.54);
+        return palette;
+    }
+
     case CatppuccinLatte:
     default:
         return makePalette(
@@ -817,6 +907,14 @@ ThemeController::ThemeScheme ThemeController::schemeFromId(const QString &id, bo
     if (key == QStringLiteral("ember-luxe")) {
         if (ok) *ok = true;
         return EmberLuxe;
+    }
+    if (key == QStringLiteral("graphite-sage")) {
+        if (ok) *ok = true;
+        return GraphiteSage;
+    }
+    if (key == QStringLiteral("velvet-excess")) {
+        if (ok) *ok = true;
+        return VelvetExcess;
     }
     if (ok) *ok = false;
     return CatppuccinLatte;

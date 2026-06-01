@@ -19,13 +19,13 @@ Item {
 
     signal activated()
 
-    implicitWidth: 160
-    implicitHeight: 132
+    implicitWidth: 156
+    implicitHeight: 108
 
     Rectangle {
         id: shell
         anchors.fill: parent
-        radius: 16
+        radius: 12
         color: Theme.panelSurfaceStrong
         border.width: 1
         border.color: root.selected ? Theme.focusRing : Theme.panelBorder
@@ -74,8 +74,8 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 7
+        anchors.margins: 8
+        spacing: 5
 
         RowLayout {
             Layout.fillWidth: true
@@ -88,7 +88,7 @@ Item {
                 Label {
                     text: root.title
                     color: Theme.textPrimary
-                    font.pixelSize: 13
+                    font.pixelSize: 12
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     Layout.fillWidth: true
@@ -97,7 +97,7 @@ Item {
                 Label {
                     text: root.subtitle
                     color: Theme.textSecondary
-                    font.pixelSize: 10
+                    font.pixelSize: 9
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
@@ -124,7 +124,7 @@ Item {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: 38
+            Layout.preferredHeight: 28
 
             RowLayout {
                 anchors.fill: parent
@@ -133,7 +133,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
+                    radius: 8
                     color: root.bgColor
                     border.color: Theme.withAlpha(Qt.darker(root.bgColor, 1.15), 0.48)
                     border.width: 1
@@ -142,7 +142,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
+                    radius: 8
                     color: root.surfaceColor
                     border.color: Theme.withAlpha(Theme.border, 0.55)
                     border.width: 1
@@ -151,7 +151,7 @@ Item {
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    radius: 10
+                    radius: 8
                     color: root.accentColor
                     border.color: Theme.withAlpha(root.accentColor, 0.95)
                     border.width: 1
@@ -164,8 +164,8 @@ Item {
             textColor: root.selected ? root.accentColor : Theme.textSecondary
             fillColor: Theme.withAlpha(root.accentColor, root.selected ? 0.16 : 0.10)
             strokeColor: Theme.withAlpha(root.accentColor, root.selected ? 0.36 : 0.22)
-            horizontalPadding: 18
-            badgeHeight: 20
+            horizontalPadding: 14
+            badgeHeight: 18
             fontSize: 9
             fontWeight: Font.Medium
             Layout.alignment: Qt.AlignHCenter

@@ -21,6 +21,31 @@ qt_policy(SET QTP0004 NEW)
 
 find_package(Qt6 COMPONENTS Pdf QUIET)
 
+option(FM_ENABLE_MULTIMEDIA_PREVIEW "Enable experimental QtMultimedia audio playback controls in QuickLook" OFF)
+# Uncomment this line to force-enable the experimental audio playback controls.
+set(FM_ENABLE_MULTIMEDIA_PREVIEW ON CACHE BOOL "Enable experimental QtMultimedia audio playback controls in QuickLook" FORCE)
+set(FM_MULTIMEDIA_PREVIEW_AVAILABLE OFF)
+if(FM_ENABLE_MULTIMEDIA_PREVIEW)
+    find_package(Qt6 COMPONENTS Multimedia QUIET)
+    if(Qt6Multimedia_FOUND OR Qt6_Multimedia_FOUND)
+        get_filename_component(FM_QT_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+        set(FM_QT_MULTIMEDIA_QML_DIR "${FM_QT_PREFIX}/qml/QtMultimedia")
+        set(FM_QT_MULTIMEDIA_PLUGIN_DIR "${FM_QT_PREFIX}/plugins/multimedia")
+        file(GLOB FM_QT_MULTIMEDIA_BACKENDS
+            "${FM_QT_MULTIMEDIA_PLUGIN_DIR}/*mediaplugin*.dll"
+            "${FM_QT_MULTIMEDIA_PLUGIN_DIR}/*mediaplugin*.so"
+            "${FM_QT_MULTIMEDIA_PLUGIN_DIR}/*mediaplugin*.dylib"
+        )
+        if(EXISTS "${FM_QT_MULTIMEDIA_QML_DIR}/qmldir" AND FM_QT_MULTIMEDIA_BACKENDS)
+            set(FM_MULTIMEDIA_PREVIEW_AVAILABLE ON)
+        elseif(NOT EXISTS "${FM_QT_MULTIMEDIA_QML_DIR}/qmldir")
+            message(WARNING "Qt6 Multimedia C++ module found, but QML import QtMultimedia was not found at ${FM_QT_MULTIMEDIA_QML_DIR}. Audio playback controls will stay disabled.")
+        else()
+            message(WARNING "Qt6 Multimedia C++/QML modules found, but no QMediaPlayer backend plugin was found at ${FM_QT_MULTIMEDIA_PLUGIN_DIR}. Audio playback controls will stay disabled.")
+        endif()
+    endif()
+endif()
+
 qt_add_executable(fm
     src/main.cpp
     src/app/AppServices.cpp
@@ -200,11 +225,19 @@ set(MY_QML_FILES
     qml/components/preview/PreviewRenderer.qml
     qml/components/preview/ImagePreview.qml
     qml/components/preview/AudioPreview.qml
+    qml/components/preview/ArchivePreview.qml
+    qml/components/preview/ArchiveLimitedPreview.qml
+    qml/components/preview/ExecutablePreview.qml
+    qml/components/preview/FontPreview.qml
+    qml/components/preview/FolderPreview.qml
     qml/components/preview/ZoomableImagePreview.qml
     qml/components/preview/MediaPreview.qml
     qml/components/preview/VideoPreview.qml
+    qml/components/preview/UnsupportedPreview.qml
     qml/components/preview/PdfPreviewFallback.qml
+    qml/components/preview/PreviewMetaStrip.qml
     qml/components/preview/TextPreview.qml
+    qml/components/preview/PreviewFactsPanel.qml
     qml/components/preview/PreviewPropertiesList.qml
     qml/components/filepanel/FilePanelStatusBar.qml
     qml/components/filepanel/FilePanelFooter.qml
@@ -229,6 +262,10 @@ set(MY_QML_FILES
 
 if (Qt6Pdf_FOUND OR Qt6_Pdf_FOUND)
     list(APPEND MY_QML_FILES qml/components/PdfPreviewer.qml)
+endif()
+
+if (FM_MULTIMEDIA_PREVIEW_AVAILABLE)
+    list(APPEND MY_QML_FILES qml/components/preview/AudioPlaybackControls.qml)
 endif()
 
 qt_add_qml_module(fm
@@ -266,6 +303,7 @@ qt_add_qml_module(fm
         qml/assets/icons/folder-plus.svg
         qml/assets/icons/folder.svg
         qml/assets/icons/file-manager.svg
+        qml/assets/icons/app_icon.ico
         qml/assets/icons/app_icon.svg
         qml/assets/icons/app_icon.png
         qml/assets/icons/grid.svg
@@ -317,11 +355,15 @@ qt_add_qml_module(fm
         qml/assets/lucide-toolbar/moon.svg
         qml/assets/lucide-toolbar/move.svg
         qml/assets/lucide-toolbar/move-to-panel.svg
+        qml/assets/lucide-toolbar/pause.svg
         qml/assets/lucide-toolbar/panel-open.svg
         qml/assets/lucide-toolbar/panel-right.svg
+        qml/assets/lucide-toolbar/play.svg
         qml/assets/lucide-toolbar/refresh-cw.svg
         qml/assets/lucide-toolbar/search.svg
         qml/assets/lucide-toolbar/sun.svg
+        qml/assets/lucide-toolbar/volume-2.svg
+        qml/assets/lucide-toolbar/volume-x.svg
 )
 
 target_link_libraries(fm
@@ -393,4 +435,16 @@ if(WIN32)
             COMMENT "Copying TagLib and ZLib DLLs from vcpkg to output folder..."
         )
     endif()
+endif()
+
+if (FM_MULTIMEDIA_PREVIEW_AVAILABLE)
+    message(STATUS "Qt6 Multimedia and QML import found; experimental audio playback controls are enabled!")
+    target_link_libraries(fm PRIVATE Qt6::Multimedia)
+    target_compile_definitions(fm PRIVATE
+        HAS_QT_MULTIMEDIA
+        FM_QT_QML_IMPORT_PATH="${FM_QT_PREFIX}/qml"
+        FM_QT_PLUGIN_PATH="${FM_QT_PREFIX}/plugins"
+    )
+else()
+    message(STATUS "Experimental audio playback controls are disabled.")
 endif()

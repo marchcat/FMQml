@@ -6,7 +6,6 @@ import "../../style"
 Item {
     id: root
 
-    property string type: "executable"
     property string path: ""
     property string name: ""
     property string sizeText: ""
@@ -19,39 +18,32 @@ Item {
     property bool useNativeIcons: true
     property bool useHighQualitySystemIcons: true
 
-    readonly property bool shortcut: type === "shortcut"
-    readonly property string formatText: shortcut ? "LNK" : (extension.length > 0 ? extension.toUpperCase() : "APP")
-    readonly property string productText: firstValue(["Product", "Description"])
-    readonly property string companyText: extraValue("Company")
-    readonly property string versionText: firstValue(["File Version", "Product Version"])
-    readonly property string targetText: extraValue("Target")
-    readonly property string workingDirectoryText: extraValue("Working Directory")
-    readonly property string argumentsText: extraValue("Arguments")
-    readonly property string commentText: firstValue(["Comment", "Description"])
-    readonly property string titleText: {
-        if (root.productText.length > 0 && !root.shortcut) return root.productText
-        if (root.name.length > 0) return root.name
-        return root.shortcut ? "Shortcut" : "Application"
+    readonly property string formatText: {
+        const format = extraValue("Format")
+        if (format.length > 0) return format
+        if (extension.length > 0) return extension.toUpperCase()
+        return "ARCHIVE"
     }
-    readonly property string subtitleText: {
-        if (root.shortcut) {
-            return root.targetText.length > 0 ? displayPath(root.targetText) : "Windows shortcut"
-        }
-        if (root.companyText.length > 0) return root.companyText
-        return root.mimeName.length > 0 ? root.mimeName : "Windows executable"
-    }
-    readonly property string metaText: {
-        if (root.versionText.length > 0 && root.sizeText.length > 0) return root.versionText + "  |  " + root.sizeText
-        if (root.versionText.length > 0) return root.versionText
-        if (root.sizeText.length > 0) return root.sizeText
-        return root.formatText
-    }
+    readonly property string entriesText: extraValue("Entries")
+    readonly property string filesText: extraValue("Files")
+    readonly property string foldersText: extraValue("Folders")
+    readonly property string uncompressedText: extraValue("Uncompressed")
+    readonly property string packedText: extraValue("Packed")
+    readonly property string compressedText: extraValue("Compressed")
+    readonly property string ratioText: extraValue("Archive Ratio")
+    readonly property string encryptedText: extraValue("Encrypted")
+    readonly property string commentText: extraValue("Comment")
+    readonly property string subtitleText: entriesText.length > 0
+                                      ? entriesText + " entries"
+                                      : (mimeName.length > 0 ? mimeName : "Compressed file")
+    readonly property string metaText: compressedText.length > 0
+                                   ? compressedText
+                                   : (sizeText.length > 0 ? sizeText : formatText)
     readonly property string iconSource: {
-        if (root.path.length === 0) return ""
-        if (root.useNativeIcons) {
+        if (root.useNativeIcons && root.path.length > 0) {
             return "image://icon/" + encodeURIComponent(root.path + "?hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
         }
-        return fileTypeIconResolver.iconForSuffix(root.extension, false)
+        return "qrc:/qt/qml/FM/qml/assets/icons/archive.svg"
     }
 
     clip: true
@@ -71,22 +63,6 @@ Item {
         return ""
     }
 
-    function firstValue(labels) {
-        for (let i = 0; i < labels.length; i++) {
-            const value = extraValue(labels[i])
-            if (value.length > 0) return value
-        }
-        return ""
-    }
-
-    function displayPath(path) {
-        const value = safeText(path)
-        if (value.length === 0 || value.indexOf("archive://") === 0 || value.indexOf("devices://") === 0) {
-            return value
-        }
-        return Qt.platform.os === "windows" ? value.replace(/\//g, "\\") : value
-    }
-
     function metricItems() {
         const items = []
         function addMetric(label, value) {
@@ -96,21 +72,15 @@ Item {
             }
         }
 
-        if (root.shortcut) {
-            addMetric("Target", root.targetText.length > 0 ? displayPath(root.targetText) : "")
-            addMetric("Work Dir", root.workingDirectoryText.length > 0 ? displayPath(root.workingDirectoryText) : "")
-            addMetric("Arguments", root.argumentsText)
-            addMetric("Comment", root.commentText)
-            addMetric("Size", root.sizeText)
-            addMetric("Modified", root.modifiedText)
-        } else {
-            addMetric("Company", root.companyText)
-            addMetric("Version", root.versionText)
-            addMetric("Product", root.productText)
-            addMetric("Original", extraValue("Original Name"))
-            addMetric("Size", root.sizeText)
-            addMetric("Modified", root.modifiedText)
-        }
+        addMetric("Entries", root.entriesText)
+        addMetric("Files", root.filesText)
+        addMetric("Folders", root.foldersText)
+        addMetric("Unpacked", root.uncompressedText)
+        addMetric("Packed", root.packedText)
+        addMetric("Ratio", root.ratioText)
+        addMetric("Encrypted", root.encryptedText)
+        addMetric("Size", root.sizeText)
+        addMetric("Modified", root.modifiedText)
 
         return root.showDetails ? items : items.slice(0, 6)
     }
@@ -144,9 +114,9 @@ Item {
                     Image {
                         anchors.centerIn: parent
                         source: root.iconSource
-                        sourceSize: Qt.size(root.compact ? 40 : 80, root.compact ? 40 : 80)
+                        sourceSize: Qt.size(root.compact ? 38 : 76, root.compact ? 38 : 76)
                         smooth: true
-                        opacity: 0.94
+                        opacity: 0.92
                     }
 
                     Rectangle {
@@ -176,7 +146,7 @@ Item {
 
                     Label {
                         Layout.fillWidth: true
-                        text: root.titleText
+                        text: root.name.length > 0 ? root.name : "Archive"
                         font.pixelSize: root.compact ? 14 : 24
                         font.bold: true
                         color: Theme.textPrimary
@@ -188,7 +158,7 @@ Item {
                         text: root.subtitleText
                         font.pixelSize: root.compact ? 11 : 15
                         color: Theme.textSecondary
-                        elide: Text.ElideMiddle
+                        elide: Text.ElideRight
                     }
 
                     Label {
@@ -218,6 +188,18 @@ Item {
                         value: modelData.value
                     }
                 }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: !root.compact && root.commentText.length > 0
+                text: root.commentText
+                color: Theme.textSecondary
+                font.pixelSize: 12
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                elide: Text.ElideRight
+                maximumLineCount: 3
             }
 
             Item {
@@ -257,7 +239,7 @@ Item {
                 font.pixelSize: root.compact ? 10 : 11
                 font.bold: true
                 color: Theme.textPrimary
-                elide: Text.ElideMiddle
+                elide: Text.ElideRight
             }
         }
     }

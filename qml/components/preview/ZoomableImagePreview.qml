@@ -17,6 +17,20 @@ Item {
     property int overlayIconSize: 64
     property real overlayIconOpacity: 0.6
     property bool requestThumbnail: true
+    property string extension: ""
+    property string sizeText: ""
+    property string modifiedText: ""
+    property int imageWidth: 0
+    property int imageHeight: 0
+    property string imageFormatText: ""
+    property string imageColorDepthText: ""
+    property string imageAlphaChannelText: ""
+    property string imageDpiText: ""
+    property string imageColorSpaceText: ""
+    property string imagePixelFormatText: ""
+    property var extraProperties: []
+    property bool compactMeta: false
+    property bool metadataHidden: false
     property var thumbnailSuffixes: [
         "jpg", "jpeg", "png", "gif", "bmp", "webp", "ico", "tif", "tiff",
         "svg", "svgz", "pdf",
@@ -30,12 +44,44 @@ Item {
     property real minimumZoom: 1.0
     property real maximumZoom: 4.0
     property bool resetZoomOnSourceChange: true
+    property bool controlsVisible: true
+    property int backgroundMode: 0
 
     readonly property int imageStatus: previewImage.status
     readonly property bool loading: previewImage.status === Image.Loading
     readonly property string zoomPercentText: Math.round(root.zoomLevel * 100) + "%"
+    readonly property string backgroundModeText: backgroundMode === 0 ? "Soft" : (backgroundMode === 1 ? "Grid" : "Clear")
+    readonly property string formatText: imageFormatText.length > 0 ? imageFormatText : (extraValue("Format").length > 0 ? extraValue("Format") : (extension.length > 0 ? extension.toUpperCase() : ""))
+    readonly property string dimensionsText: imageWidth > 0 && imageHeight > 0 ? imageWidth + " x " + imageHeight : extraValue("Dimensions")
+    readonly property string megapixelsText: megapixelsCompactText()
+    readonly property string colorDepthText: colorDepthCompactText()
+    readonly property string alphaText: alphaCompactText()
+    readonly property string dpiText: {
+        const value = imageDpiText.length > 0 ? imageDpiText : extraValue("DPI")
+        return value.length > 0 ? "DPI " + value : ""
+    }
+    readonly property string colorSpaceText: imageColorSpaceText.length > 0 ? imageColorSpaceText : extraValue("Color Space")
+    readonly property string pixelFormatText: imagePixelFormatText.length > 0 ? imagePixelFormatText : extraValue("Pixel Format")
+    readonly property bool hasMetadataItems: root.compactMeta
+                                             ? compactImageMetaItems().length > 0
+                                             : fullImageMetaItems().length > 0
+    readonly property real paintedContentWidth: Math.max(1, previewImage.paintedWidth * root.zoomLevel)
+    readonly property real paintedContentHeight: Math.max(1, previewImage.paintedHeight * root.zoomLevel)
+    readonly property real paintedContentLeft: previewImage.x + previewImage.width / 2 - paintedContentWidth / 2
+    readonly property real paintedContentTop: previewImage.y + previewImage.height / 2 - paintedContentHeight / 2
+    readonly property real paintedContentRight: paintedContentLeft + paintedContentWidth
+    readonly property real paintedContentBottom: paintedContentTop + paintedContentHeight
+    readonly property real visibleContentLeft: Math.max(0, paintedContentLeft)
+    readonly property real visibleContentTop: Math.max(0, paintedContentTop)
+    readonly property real visibleContentRight: Math.min(width, paintedContentRight)
+    readonly property real visibleContentBottom: Math.min(height, paintedContentBottom)
+    readonly property real visibleContentWidth: Math.max(1, visibleContentRight - visibleContentLeft)
+    readonly property real visibleContentHeight: Math.max(1, visibleContentBottom - visibleContentTop)
 
     clip: true
+
+    signal hideMetadataRequested()
+    signal showMetadataRequested()
 
     function resolvedOverlayIconSource() {
         if (!root.overlayIconSource || root.overlayIconSource.length === 0) {
@@ -48,6 +94,61 @@ Item {
             return "qrc:/qt/qml/FM/qml/" + root.overlayIconSource.slice(3)
         }
         return root.overlayIconSource
+    }
+
+    function safeText(value) {
+        return value === undefined || value === null ? "" : String(value)
+    }
+
+    function extraValue(label) {
+        const extras = Array.isArray(root.extraProperties) ? root.extraProperties : []
+        for (let i = 0; i < extras.length; i++) {
+            if (safeText(extras[i].label) === label) {
+                return safeText(extras[i].value)
+            }
+        }
+        return ""
+    }
+
+    function alphaCompactText() {
+        const value = root.imageAlphaChannelText.length > 0 ? root.imageAlphaChannelText : extraValue("Alpha Channel")
+        if (value.length === 0) {
+            return ""
+        }
+        const lower = value.toLowerCase()
+        return "AC=" + (lower === "yes" || lower === "true" || lower === "1" ? "1" : "0")
+    }
+
+    function colorDepthCompactText() {
+        const value = root.imageColorDepthText.length > 0 ? root.imageColorDepthText : extraValue("Color Depth")
+        return value.length > 0 ? "CD=" + value : ""
+    }
+
+    function megapixelsCompactText() {
+        if (root.imageWidth > 0 && root.imageHeight > 0) {
+            const mp = root.imageWidth * root.imageHeight / 1000000.0
+            if (mp >= 0.1) {
+                return mp.toFixed(1) + " MP"
+            }
+        }
+        return extraValue("Megapixels")
+    }
+
+    function compactImageMetaItems() {
+        return [root.formatText, root.dimensionsText, root.colorDepthText, root.alphaText]
+    }
+
+    function fullImageMetaItems() {
+        return [
+            root.formatText,
+            root.dimensionsText,
+            root.megapixelsText,
+            root.colorDepthText,
+            root.alphaText,
+            root.dpiText,
+            root.colorSpaceText,
+            root.pixelFormatText
+        ]
     }
 
     function canRequestThumbnail(path) {
@@ -93,6 +194,17 @@ Item {
         root.offsetY = root.clampOffsetY(root.offsetY)
     }
 
+    function cycleBackground() {
+        root.backgroundMode = (root.backgroundMode + 1) % 3
+    }
+
+    function imageHeaderY(stripHeight) {
+        if (root.visibleContentHeight < stripHeight) {
+            return root.visibleContentTop
+        }
+        return Math.min(root.visibleContentTop, root.visibleContentBottom - stripHeight)
+    }
+
     onSourcePathChanged: {
         if (root.resetZoomOnSourceChange) {
             root.resetView()
@@ -120,6 +232,33 @@ Item {
         id: viewport
         anchors.fill: parent
         clip: true
+
+        Rectangle {
+            anchors.fill: parent
+            color: root.backgroundMode === 0
+                   ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.035 : 0.025)
+                   : "transparent"
+        }
+
+        Grid {
+            id: backgroundGrid
+            anchors.fill: parent
+            rows: Math.max(0, Math.ceil(height / 16))
+            columns: Math.max(0, Math.ceil(width / 16))
+            visible: root.backgroundMode === 1
+
+            Repeater {
+                model: backgroundGrid.rows * backgroundGrid.columns
+
+                Rectangle {
+                    width: 16
+                    height: 16
+                    color: (Math.floor(index / backgroundGrid.columns) + index) % 2 === 0
+                           ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.075 : 0.055)
+                           : Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.025 : 0.018)
+                }
+            }
+        }
 
         Image {
             id: previewImage
@@ -158,7 +297,54 @@ Item {
         }
     }
 
+    PreviewMetaStrip {
+        id: imageMetaStrip
+        z: 3
+        x: root.visibleContentLeft
+        y: root.imageHeaderY(height)
+        width: root.visibleContentWidth
+        compact: root.compactMeta
+        columnCount: root.compactMeta ? 0 : 4
+        backgroundOpacity: themeController.isDark ? 0.54 : 0.62
+        borderOpacity: themeController.isDark ? 0.42 : 0.50
+        labelWeight: Font.DemiBold
+        showHideButton: true
+        items: root.compactMeta ? root.compactImageMetaItems() : root.fullImageMetaItems()
+        visible: !root.metadataHidden && previewImage.status === Image.Ready && visibleItems.length > 0
+        onHideRequested: root.hideMetadataRequested()
+    }
+
+    ToolButton {
+        id: showMetadataButton
+        z: 4
+        x: Math.max(8, root.visibleContentRight - width - (root.compactMeta ? 6 : 8))
+        y: root.imageHeaderY(height)
+        width: root.compactMeta ? 24 : 28
+        height: width
+        visible: root.metadataHidden && previewImage.status === Image.Ready
+        hoverEnabled: true
+        padding: 5
+        icon.source: "qrc:/qt/qml/FM/qml/assets/lucide-toolbar/eye.svg"
+        icon.width: root.compactMeta ? 13 : 15
+        icon.height: root.compactMeta ? 13 : 15
+        icon.color: hovered ? Theme.textPrimary : Theme.textSecondary
+        opacity: hovered ? 1.0 : 0.82
+        display: AbstractButton.IconOnly
+        ToolTip.visible: hovered
+        ToolTip.text: "Show metadata"
+        onClicked: root.showMetadataRequested()
+
+        background: Rectangle {
+            radius: Theme.radiusSm
+            color: Theme.withAlpha(themeController.isDark ? Theme.surface : Theme.bg,
+                                   showMetadataButton.hovered ? 0.72 : 0.54)
+            border.color: Theme.withAlpha(Theme.border, showMetadataButton.hovered ? 0.58 : 0.42)
+            border.width: 1
+        }
+    }
+
     MouseArea {
+        z: 1
         anchors.fill: parent
         enabled: previewImage.status !== Image.Error
         acceptedButtons: Qt.LeftButton
@@ -205,80 +391,102 @@ Item {
     Rectangle {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 20
-        width: Math.min(parent.width - 40, 560)
-        height: Math.max(74, overlayColumn.implicitHeight + 20)
-        radius: 16
-        color: Theme.withAlpha(themeController.isDark ? Theme.surface : Theme.bg, 0.84)
+        anchors.bottomMargin: 16
+        width: Math.max(1, Math.min(parent.width - 32, 420))
+        height: 42
+        radius: Theme.radiusLg
+        color: Theme.withAlpha(themeController.isDark ? Theme.surface : Theme.bg, 0.88)
         border.color: Theme.withAlpha(Theme.border, 0.85)
         border.width: 1
-        visible: root.loading || root.imageStatus === Image.Ready
+        visible: root.controlsVisible && (root.loading || root.imageStatus === Image.Ready)
         opacity: previewImage.status === Image.Error ? 0.0 : 1.0
 
-        ColumnLayout {
-            id: overlayColumn
+        RowLayout {
             anchors.fill: parent
-            anchors.margins: 14
-            spacing: 8
+            anchors.leftMargin: 10
+            anchors.rightMargin: 10
+            spacing: 6
 
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 10
-
-                Image {
-                    source: "qrc:/qt/qml/FM/qml/assets/lucide-toolbar/info.svg"
-                    sourceSize: Qt.size(16, 16)
-                    opacity: 0.85
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Zoom with mouse wheel"
-                        color: Theme.textPrimary
-                        font.pixelSize: 12
-                        font.bold: true
-                        elide: Text.ElideRight
-                    }
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: "Double-click to restore"
-                        color: Theme.textSecondary
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                    }
-                }
-
-                Rectangle {
-                    Layout.alignment: Qt.AlignVCenter
-                    implicitWidth: zoomLabel.implicitWidth + 18
-                    implicitHeight: 28
-                    radius: 14
-                    color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.12)
-                    border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.32 : 0.22)
-                    border.width: 1
-
-                    Label {
-                        id: zoomLabel
-                        anchors.centerIn: parent
-                        text: root.zoomPercentText
-                        color: Theme.accentText
-                        font.pixelSize: 11
-                        font.bold: true
-                    }
-                }
-
-                BusyIndicator {
-                    running: root.loading
-                    visible: root.loading
-                    width: 18
-                    height: 18
-                }
+            ImageControlButton {
+                text: "-"
+                enabled: root.zoomLevel > root.minimumZoom
+                onClicked: root.applyZoom(root.zoomLevel - root.zoomStep)
+                ToolTip.visible: hovered
+                ToolTip.text: "Zoom out"
             }
+
+            ImageControlButton {
+                text: "+"
+                enabled: root.zoomLevel < root.maximumZoom
+                onClicked: root.applyZoom(root.zoomLevel + root.zoomStep)
+                ToolTip.visible: hovered
+                ToolTip.text: "Zoom in"
+            }
+
+            ImageControlButton {
+                text: "Fit"
+                enabled: root.zoomLevel !== 1.0 || root.offsetX !== 0.0 || root.offsetY !== 0.0
+                implicitWidth: 36
+                onClicked: root.resetView()
+                ToolTip.visible: hovered
+                ToolTip.text: "Fit to view"
+            }
+
+            Label {
+                text: root.zoomPercentText
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.bold: true
+                Layout.preferredWidth: 44
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            ImageControlButton {
+                text: root.backgroundModeText
+                implicitWidth: 48
+                onClicked: root.cycleBackground()
+                ToolTip.visible: hovered
+                ToolTip.text: "Change background"
+            }
+
+            BusyIndicator {
+                running: root.loading
+                visible: root.loading
+                width: 18
+                height: 18
+            }
+        }
+    }
+
+    component ImageControlButton: Button {
+        id: controlButton
+
+        implicitWidth: 28
+        implicitHeight: 28
+        padding: 0
+        hoverEnabled: true
+
+        contentItem: Label {
+            text: controlButton.text
+            color: controlButton.enabled ? Theme.accent : Theme.textSecondary
+            opacity: controlButton.enabled ? 1.0 : 0.45
+            font.pixelSize: 10
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        background: Rectangle {
+            radius: Theme.radiusSm
+            color: controlButton.down
+                   ? Theme.surfaceActive
+                   : (controlButton.hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.20 : 0.14) : "transparent")
+            border.color: controlButton.hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.48 : 0.34) : "transparent"
+            border.width: controlButton.hovered ? 1 : 0
         }
     }
 }

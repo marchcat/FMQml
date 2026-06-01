@@ -9,6 +9,7 @@ Popup {
     id: root
 
     property string previewPath: ""
+    property bool imageMetadataHidden: false
     readonly property bool useHighQualitySystemIcons: typeof appSettings !== "undefined" && appSettings
                                                       ? appSettings.useHighQualitySystemIcons
                                                       : true
@@ -16,6 +17,11 @@ Popup {
                                            ? appSettings.useNativeIcons
                                            : true
     readonly property string displayPath: root.previewPath.length > 0 ? root.previewPath : quickLookController.path
+
+    function updateImageMetadataDemand() {
+        if (typeof quickLookController === "undefined" || !quickLookController || !quickLookController.setImageMetadataRequested) return
+        quickLookController.setImageMetadataRequested("quicklook", root.opened && !root.imageMetadataHidden)
+    }
 
     function displayTitle() {
         if (quickLookController.name.length > 0) {
@@ -30,6 +36,9 @@ Popup {
         if (root.displayPath === "favorites://") {
             return "Favorites"
         }
+        if (root.displayPath === "selection://") {
+            return "Multiple selection"
+        }
 
         const parts = root.displayPath.split(/[/\\]/)
         const tail = parts.length > 0 ? parts[parts.length - 1] : root.displayPath
@@ -43,6 +52,9 @@ Popup {
         if (root.displayPath === "favorites://") {
             return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
         }
+        if (root.displayPath === "selection://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
         if (!root.useNativeIcons) {
             return fileTypeIconResolver.iconForSuffix(quickLookController.extension, quickLookController.directory)
         }
@@ -55,6 +67,9 @@ Popup {
     function displaySubtitle() {
         if (quickLookController.mimeName === "drive") {
             return quickLookController.extension.length > 0 ? quickLookController.extension.toUpperCase() : "Drive Preview"
+        }
+        if (root.displayPath === "selection://") {
+            return "Multiple Selection"
         }
         if (quickLookController.type.length === 0) {
             return "Preview"
@@ -134,15 +149,53 @@ Popup {
                 attributesText: quickLookController.attributesText
                 content: quickLookController.content
                 lineCount: quickLookController.lines
+                textTruncated: quickLookController.textTruncated
+                fullTextAvailable: quickLookController.fullTextAvailable
+                textChunked: quickLookController.textChunked
+                textChunkIndex: quickLookController.textChunkIndex
+                textChunkCount: quickLookController.textChunkCount
                 loading: quickLookController.loading
                 extraProperties: quickLookController.extraProperties
+                audioTitle: quickLookController.audioTitle
+                audioArtist: quickLookController.audioArtist
+                audioAlbum: quickLookController.audioAlbum
+                audioYear: quickLookController.audioYear
+                audioTrack: quickLookController.audioTrack
+                audioGenre: quickLookController.audioGenre
+                audioComment: quickLookController.audioComment
+                audioDuration: quickLookController.audioDuration
+                audioBitrate: quickLookController.audioBitrate
+                audioSampleRate: quickLookController.audioSampleRate
+                audioChannels: quickLookController.audioChannels
+                mediaSourceUrl: quickLookController.mediaSourceUrl
                 hasPdfSupport: quickLookController.hasPdfSupport
+                hasMultimediaSupport: quickLookController.hasMultimediaSupport
+                playbackControlsActive: root.opened
+                imageWidth: quickLookController.imageWidth
+                imageHeight: quickLookController.imageHeight
+                imageFormatText: quickLookController.imageFormatText
+                imageColorDepthText: quickLookController.imageColorDepthText
+                imageAlphaChannelText: quickLookController.imageAlphaChannelText
+                imageDpiText: quickLookController.imageDpiText
+                imageColorSpaceText: quickLookController.imageColorSpaceText
+                imagePixelFormatText: quickLookController.imagePixelFormatText
+                imageMetadataHidden: root.imageMetadataHidden
                 sourceSizeWidth: 2048
                 sourceSizeHeight: 2048
                 useNativeIcons: root.useNativeIcons
+                onHideImageMetadataRequested: root.imageMetadataHidden = true
+                onShowImageMetadataRequested: root.imageMetadataHidden = false
+                onLoadFullTextRequested: quickLookController.loadFullText()
+                onPreviousTextChunkRequested: quickLookController.loadTextChunk(quickLookController.textChunkIndex - 1)
+                onNextTextChunkRequested: quickLookController.loadTextChunk(quickLookController.textChunkIndex + 1)
             }
         }
     }
 
-    onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
+    onImageMetadataHiddenChanged: root.updateImageMetadataDemand()
+    onOpened: {
+        root.updateImageMetadataDemand()
+        Qt.callLater(() => contentItem.forceActiveFocus())
+    }
+    onClosed: root.updateImageMetadataDemand()
 }

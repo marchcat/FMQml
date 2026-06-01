@@ -92,11 +92,12 @@ Item {
             height: 32
             iconSource: "../assets/lucide-toolbar/funnel.svg"
             iconTone: "filter"
-            isHighlighted: root.directoryModel && root.directoryModel.hasActiveFilters
+            isHighlighted: root.controller && root.controller.categoryFilterActive
             onClicked: filterPopover.openAt(filterButton)
             ToolTip.visible: hovered
-            ToolTip.text: root.directoryModel && root.directoryModel.hasActiveFilters
-                          ? "Filters - " + root.directoryModel.activeFiltersSummary
+            ToolTip.text: root.controller && root.controller.categoryFilterActive
+                          ? "Filters - " + root.controller.categoryFilterSummary
+                            + (root.controller.categoryFilterSuspended ? " (Suspended)" : "")
                           : "Open Filters"
 
             Rectangle {
@@ -107,8 +108,10 @@ Item {
                 width: 8
                 height: 8
                 radius: 4
-                visible: root.directoryModel && root.directoryModel.hasActiveFilters
-                color: Theme.categoryUtility
+                visible: root.controller && root.controller.categoryFilterActive
+                color: root.controller && root.controller.categoryFilterSuspended
+                       ? Theme.warning
+                       : Theme.categoryUtility
                 border.color: Theme.panelSurface
                 border.width: 1
             }

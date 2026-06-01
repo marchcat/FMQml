@@ -192,7 +192,11 @@ QImage ThumbnailProvider::requestImage(const QString &id, QSize *size, const QSi
         totalTimer.start();
     }
 
-    const QString originalPath = QDir::toNativeSeparators(QUrl::fromPercentEncoding(id.toUtf8()));
+    QString originalPath = QDir::toNativeSeparators(QUrl::fromPercentEncoding(id.toUtf8()));
+    const bool coverOnly = originalPath.endsWith(QStringLiteral("::cover"));
+    if (coverOnly) {
+        originalPath.chop(7);
+    }
     QString path = originalPath;
     QSize targetSize = requestedSize.isValid() ? requestedSize : QSize(128, 128);
     const QSize cacheSize = bucketSize(targetSize);
@@ -207,7 +211,8 @@ QImage ThumbnailProvider::requestImage(const QString &id, QSize *size, const QSi
     QString cacheKey = originalPath + QStringLiteral("::")
                     + QString::number(cacheSize.width())
                     + QStringLiteral("x")
-                    + QString::number(cacheSize.height());
+                    + QString::number(cacheSize.height())
+                    + (coverOnly ? QStringLiteral("::cover") : QString());
     {
         QMutexLocker locker(&m_cacheMutex);
         if (QImage *cached = m_cache.object(cacheKey)) {
@@ -292,7 +297,14 @@ QImage ThumbnailProvider::requestImage(const QString &id, QSize *size, const QSi
             thumb.fill(Qt::transparent);
             QPainter p(&thumb);
             p.setRenderHint(QPainter::Antialiasing);
-            p.setPen(QColor("#FFFFFF")); // White text
+
+            const qreal inset = qMax<qreal>(4.0, qMin(cacheSize.width(), cacheSize.height()) * 0.08);
+            const QRectF paperRect = QRectF(QPointF(inset, inset),
+                                            QSizeF(cacheSize.width() - inset * 2,
+                                                   cacheSize.height() - inset * 2));
+            p.setPen(QPen(QColor(210, 214, 220, 190), qMax<qreal>(1.0, inset * 0.12)));
+            p.setBrush(QColor("#F8FAFC"));
+            p.drawRoundedRect(paperRect, inset * 0.7, inset * 0.7);
             
             QString sample = "Aa";
             QPainterPath pathObj;
@@ -315,10 +327,10 @@ QImage ThumbnailProvider::requestImage(const QString &id, QSize *size, const QSi
             }
             
             QRectF bounds = pathObj.boundingRect();
-            // Center the text
-            p.translate((cacheSize.width() - bounds.width()) / 2.0 - bounds.x(),
-                        (cacheSize.height() - bounds.height()) / 2.0 - bounds.y());
-            
+            p.translate(paperRect.center().x() - bounds.width() / 2.0 - bounds.x(),
+                        paperRect.center().y() - bounds.height() / 2.0 - bounds.y());
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#111827"));
             p.drawPath(pathObj);
         }
         stage = QStringLiteral("font");
@@ -394,7 +406,7 @@ QImage ThumbnailProvider::requestImage(const QString &id, QSize *size, const QSi
     
     // 4. Fallback to Windows Shell (for video, PDF, Office, etc.)
 #ifdef Q_OS_WIN
-    if (thumb.isNull() && !fi.isDir()) {
+    if (!coverOnly && thumb.isNull() && !fi.isDir()) {
         QElapsedTimer stageTimer;
         if (thumbnailTimingEnabled()) {
             stageTimer.start();

@@ -6,14 +6,36 @@ import "../style"
 
 Item {
     id: root
+
     property string sourcePath: ""
-
-    clip: true
-
     property string pdfSourceUrl: root.sourcePath.length > 0
                                   ? ("file:///" + root.sourcePath.replace(/\\/g, "/"))
                                   : ""
     property int currentPage: 0
+    property real zoomLevel: 1.0
+    property real zoomStep: 0.12
+    property real minimumZoom: 1.0
+    property real maximumZoom: 4.0
+    property real offsetX: 0.0
+    property real offsetY: 0.0
+    property bool compactControls: false
+
+    readonly property bool ready: pdfDoc.status === PdfDocument.Ready
+    readonly property bool loading: pdfDoc.status === PdfDocument.Loading
+    readonly property bool error: pdfDoc.status === PdfDocument.Error
+    readonly property string zoomPercentText: Math.round(root.zoomLevel * 100) + "%"
+    readonly property real renderPixelRatio: Screen.devicePixelRatio > 0 ? Screen.devicePixelRatio : 1.0
+    readonly property real renderQualityScale: root.compactControls ? 2.0 : 2.5
+    readonly property int minimumRenderSize: root.compactControls ? 900 : 1600
+    readonly property int maximumRenderSize: root.compactControls ? 2400 : 4096
+    readonly property int renderWidth: Math.min(root.maximumRenderSize,
+                                                Math.max(root.minimumRenderSize,
+                                                         Math.ceil(Math.max(root.width, 1) * root.renderPixelRatio * root.renderQualityScale)))
+    readonly property int renderHeight: Math.min(root.maximumRenderSize,
+                                                 Math.max(root.minimumRenderSize,
+                                                          Math.ceil(Math.max(root.height, 1) * root.renderPixelRatio * root.renderQualityScale)))
+
+    clip: true
 
     PdfDocument {
         id: pdfDoc
@@ -27,156 +49,197 @@ Item {
         return Math.max(0, Math.min(pdfDoc.pageCount - 1, page))
     }
 
-    function fitCurrentPage() {
-        currentPage = clampPage(currentPage)
+    function clampZoom(value) {
+        return Math.max(root.minimumZoom, Math.min(root.maximumZoom, value))
+    }
+
+    function clampOffsetX(value) {
+        const limit = Math.max(0, (root.width * root.zoomLevel - root.width) / 2)
+        return Math.max(-limit, Math.min(limit, value))
+    }
+
+    function clampOffsetY(value) {
+        const limit = Math.max(0, (root.height * root.zoomLevel - root.height) / 2)
+        return Math.max(-limit, Math.min(limit, value))
+    }
+
+    function resetView() {
+        root.zoomLevel = 1.0
+        root.offsetX = 0.0
+        root.offsetY = 0.0
+    }
+
+    function applyZoom(nextZoom) {
+        root.zoomLevel = root.clampZoom(nextZoom)
+        root.offsetX = root.clampOffsetX(root.offsetX)
+        root.offsetY = root.clampOffsetY(root.offsetY)
+    }
+
+    function goToPage(page) {
+        root.currentPage = root.clampPage(page)
+        root.resetView()
     }
 
     onSourcePathChanged: {
-        currentPage = 0
+        root.currentPage = 0
+        root.resetView()
     }
 
-    onWidthChanged: {
-        // Keep the visible page stable; the image itself adapts to the viewport.
-    }
+    onWidthChanged: root.offsetX = root.clampOffsetX(root.offsetX)
+    onHeightChanged: root.offsetY = root.clampOffsetY(root.offsetY)
 
-    onHeightChanged: {
-        // Keep the visible page stable; the image itself adapts to the viewport.
-    }
-
-    Image {
-        id: pdfImage
+    Rectangle {
         anchors.fill: parent
-        visible: pdfDoc.status === 2
-        source: pdfDoc.status === 2 ? root.pdfSourceUrl : ""
-        currentFrame: root.currentPage
-        fillMode: Image.PreserveAspectFit
-        asynchronous: true
-        cache: false
-        sourceSize: Qt.size(Math.max(width, 1), Math.max(height, 1))
-        smooth: true
+        color: Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.035 : 0.025)
+    }
+
+    Item {
+        id: viewport
+        anchors.fill: parent
+        clip: true
+
+        Item {
+            id: pageLayer
+            width: viewport.width
+            height: viewport.height
+            x: root.offsetX
+            y: root.offsetY
+            visible: root.ready
+            scale: root.zoomLevel
+            transformOrigin: Item.Center
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.max(1, pdfImage.paintedWidth)
+                height: Math.max(1, pdfImage.paintedHeight)
+                color: "#ffffff"
+            }
+
+            Image {
+                id: pdfImage
+                anchors.fill: parent
+                source: root.ready ? root.pdfSourceUrl : ""
+                currentFrame: root.currentPage
+                fillMode: Image.PreserveAspectFit
+                asynchronous: true
+                cache: false
+                sourceSize: Qt.size(root.renderWidth, root.renderHeight)
+                smooth: true
+                opacity: root.ready ? 1.0 : 0.0
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+            }
+        }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        enabled: root.ready
+        acceptedButtons: Qt.LeftButton
+        hoverEnabled: true
+        preventStealing: true
+        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+        property real pressX: 0.0
+        property real pressY: 0.0
+        property real startOffsetX: 0.0
+        property real startOffsetY: 0.0
+
+        onPressed: (mouse) => {
+            pressX = mouse.x
+            pressY = mouse.y
+            startOffsetX = root.offsetX
+            startOffsetY = root.offsetY
+        }
+
+        onPositionChanged: (mouse) => {
+            if (!pressed) {
+                return
+            }
+            root.offsetX = root.clampOffsetX(startOffsetX + (mouse.x - pressX))
+            root.offsetY = root.clampOffsetY(startOffsetY + (mouse.y - pressY))
+        }
+
+        onWheel: (wheel) => {
+            const delta = wheel.angleDelta.y !== 0 ? wheel.angleDelta.y : wheel.angleDelta.x
+            if (delta === 0) {
+                return
+            }
+            root.applyZoom(root.zoomLevel + (delta > 0 ? root.zoomStep : -root.zoomStep))
+            wheel.accepted = true
+        }
+
+        onDoubleClicked: root.resetView()
     }
 
     BusyIndicator {
         anchors.centerIn: parent
-        running: pdfDoc.status === 1
+        running: root.loading
         visible: running
     }
 
-    ColumnLayout {
+    PdfPreviewFallback {
         anchors.centerIn: parent
-        visible: pdfDoc.status === 4
-        spacing: 16
-
-        Rectangle {
-            Layout.alignment: Qt.AlignHCenter
-            width: 96
-            height: 96
-            radius: 18
-            color: Qt.rgba(219/255, 68/255, 55/255, 0.15)
-
-            Image {
-                anchors.centerIn: parent
-                source: "../assets/icons/document.svg"
-                sourceSize: Qt.size(44, 44)
-                opacity: 0.8
-            }
-        }
-
-        ColumnLayout {
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 4
-
-            Label {
-                text: "Failed to load PDF"
-                font.bold: true
-                font.pixelSize: 15
-                color: Theme.textPrimary
-                Layout.alignment: Qt.AlignHCenter
-            }
-            Label {
-                text: "The document may be corrupted"
-                font.pixelSize: 11
-                color: Theme.textSecondary
-                Layout.alignment: Qt.AlignHCenter
-                opacity: 0.7
-            }
-        }
+        visible: root.error
+        title: "Failed to load PDF"
+        subtitle: "The document may be corrupted"
     }
 
     Rectangle {
-        id: navBar
-        anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottomMargin: 16
-        visible: pdfDoc.status === 2 && pdfDoc.pageCount > 1
-        height: 40
-        implicitWidth: navRow.width + 24
-        radius: 20
-        color: Theme.glassSurfaceStrong
-        border.color: Theme.glassBorder
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: root.compactControls ? 10 : 16
+        width: Math.max(1, Math.min(parent.width - (root.compactControls ? 12 : 32), root.compactControls ? 336 : 500))
+        height: 42
+        radius: Theme.radiusLg
+        color: Theme.withAlpha(themeController.isDark ? Theme.surface : Theme.bg, 0.88)
+        border.color: Theme.withAlpha(Theme.border, 0.85)
         border.width: 1
+        visible: root.ready
 
-        Row {
-            id: navRow
-            anchors.centerIn: parent
-            spacing: 8
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: root.compactControls ? 6 : 10
+            anchors.rightMargin: root.compactControls ? 6 : 10
+            spacing: root.compactControls ? 4 : 6
 
-            Button {
-                id: prevBtn
-                flat: true
+            PdfToolButton {
+                text: "<"
                 enabled: root.currentPage > 0
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.currentPage = root.clampPage(root.currentPage - 1)
-
-                background: Rectangle {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    radius: 14
-                    color: prevBtn.hovered ? (themeController.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.05)) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                }
-
-                contentItem: Image {
-                    source: "../assets/icons/arrow-left.svg"
-                    sourceSize: Qt.size(16, 16)
-                    opacity: prevBtn.enabled ? (prevBtn.hovered ? 1.0 : 0.7) : 0.25
-                    anchors.centerIn: parent
-                    Behavior on opacity { NumberAnimation { duration: 100 } }
-                }
+                onClicked: root.goToPage(root.currentPage - 1)
+                ToolTip.visible: hovered
+                ToolTip.text: "Previous page"
             }
 
             TextField {
                 id: pageInput
+
+                Layout.preferredWidth: root.compactControls ? 34 : 42
+                Layout.preferredHeight: 28
                 text: (root.currentPage + 1).toString()
-                font.pixelSize: 12
+                font.pixelSize: 11
                 font.bold: true
                 color: Theme.textPrimary
-                width: 36
-                height: 26
-                anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 selectByMouse: true
-
-                background: Rectangle {
-                    color: pageInput.activeFocus
-                        ? (themeController.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.05))
-                        : "transparent"
-                    border.color: pageInput.activeFocus ? Theme.accent : "transparent"
-                    border.width: 1
-                    radius: 6
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                }
-
                 validator: IntValidator {
                     bottom: 1
                     top: Math.max(1, pdfDoc.pageCount)
                 }
 
+                background: Rectangle {
+                    radius: Theme.radiusSm
+                    color: pageInput.activeFocus
+                           ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.10)
+                           : "transparent"
+                    border.color: pageInput.activeFocus ? Theme.accent : Theme.withAlpha(Theme.border, 0.35)
+                    border.width: 1
+                }
+
                 onAccepted: {
                     const targetPage = parseInt(text) - 1
                     if (targetPage >= 0 && targetPage < pdfDoc.pageCount) {
-                        root.currentPage = targetPage
+                        root.goToPage(targetPage)
                     }
                     pageInput.focus = false
                 }
@@ -193,35 +256,88 @@ Item {
 
             Label {
                 text: "/ " + pdfDoc.pageCount
-                font.pixelSize: 12
                 color: Theme.textSecondary
-                verticalAlignment: Text.AlignVCenter
-                anchors.verticalCenter: parent.verticalCenter
+                font.pixelSize: 11
+                Layout.preferredWidth: root.compactControls ? 32 : 44
+                elide: Text.ElideRight
             }
 
-            Button {
-                id: nextBtn
-                flat: true
+            PdfToolButton {
+                text: ">"
                 enabled: root.currentPage < pdfDoc.pageCount - 1
-                anchors.verticalCenter: parent.verticalCenter
-                onClicked: root.currentPage = root.clampPage(root.currentPage + 1)
-
-                background: Rectangle {
-                    implicitWidth: 28
-                    implicitHeight: 28
-                    radius: 14
-                    color: nextBtn.hovered ? (themeController.isDark ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(0, 0, 0, 0.05)) : "transparent"
-                    Behavior on color { ColorAnimation { duration: 100 } }
-                }
-
-                contentItem: Image {
-                    source: "../assets/icons/arrow-right.svg"
-                    sourceSize: Qt.size(16, 16)
-                    opacity: nextBtn.enabled ? (nextBtn.hovered ? 1.0 : 0.7) : 0.25
-                    anchors.centerIn: parent
-                    Behavior on opacity { NumberAnimation { duration: 100 } }
-                }
+                onClicked: root.goToPage(root.currentPage + 1)
+                ToolTip.visible: hovered
+                ToolTip.text: "Next page"
             }
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.preferredHeight: 22
+                color: Theme.withAlpha(Theme.border, 0.55)
+            }
+
+            PdfToolButton {
+                text: "-"
+                enabled: root.zoomLevel > root.minimumZoom
+                onClicked: root.applyZoom(root.zoomLevel - root.zoomStep)
+                ToolTip.visible: hovered
+                ToolTip.text: "Zoom out"
+            }
+
+            PdfToolButton {
+                text: "+"
+                enabled: root.zoomLevel < root.maximumZoom
+                onClicked: root.applyZoom(root.zoomLevel + root.zoomStep)
+                ToolTip.visible: hovered
+                ToolTip.text: "Zoom in"
+            }
+
+            PdfToolButton {
+                text: "Fit"
+                enabled: root.zoomLevel !== 1.0 || root.offsetX !== 0.0 || root.offsetY !== 0.0
+                implicitWidth: root.compactControls ? 32 : 36
+                onClicked: root.resetView()
+                ToolTip.visible: hovered
+                ToolTip.text: "Fit to view"
+            }
+
+            Label {
+                text: root.zoomPercentText
+                color: Theme.textSecondary
+                font.pixelSize: 10
+                font.bold: true
+                Layout.preferredWidth: 42
+                horizontalAlignment: Text.AlignHCenter
+                visible: !root.compactControls
+            }
+        }
+    }
+
+    component PdfToolButton: Button {
+        id: controlButton
+
+        implicitWidth: 28
+        implicitHeight: 28
+        padding: 0
+        hoverEnabled: true
+
+        contentItem: Label {
+            text: controlButton.text
+            color: controlButton.enabled ? Theme.accent : Theme.textSecondary
+            opacity: controlButton.enabled ? 1.0 : 0.45
+            font.pixelSize: 10
+            font.bold: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        background: Rectangle {
+            radius: Theme.radiusSm
+            color: controlButton.down
+                   ? Theme.surfaceActive
+                   : (controlButton.hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.20 : 0.14) : "transparent")
+            border.color: controlButton.hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.48 : 0.34) : "transparent"
+            border.width: controlButton.hovered ? 1 : 0
         }
     }
 }

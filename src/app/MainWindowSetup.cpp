@@ -16,7 +16,7 @@
 #endif
 
 namespace {
-constexpr const char *AppIconPath = ":/qt/qml/FM/qml/assets/icons/app_icon.png";
+constexpr const char *AppIconPath = ":/qt/qml/FM/qml/assets/icons/app_icon.ico";
 QString appIconPath()
 {
     return QString::fromLatin1(AppIconPath);

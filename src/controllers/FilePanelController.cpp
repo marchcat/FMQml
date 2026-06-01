@@ -56,6 +56,63 @@ QString normalizedVirtualRoot(const QString &path)
 
     return {};
 }
+
+QString normalizedScopePath(const QString &path)
+{
+    QString value = QDir::fromNativeSeparators(path.trimmed());
+    while (value.size() > 1 && value.endsWith(QLatin1Char('/'))) {
+        if (value.size() == 3 && value.at(1) == QLatin1Char(':')) {
+            break;
+        }
+        value.chop(1);
+    }
+    return value;
+}
+
+bool sameOrChildPath(const QString &path, const QString &scope)
+{
+    const QString normalizedPath = normalizedScopePath(path);
+    const QString normalizedScope = normalizedScopePath(scope);
+    if (normalizedPath.isEmpty() || normalizedScope.isEmpty()) {
+        return false;
+    }
+
+#ifdef Q_OS_WIN
+    constexpr Qt::CaseSensitivity caseSensitivity = Qt::CaseInsensitive;
+#else
+    constexpr Qt::CaseSensitivity caseSensitivity = Qt::CaseSensitive;
+#endif
+
+    if (normalizedPath.compare(normalizedScope, caseSensitivity) == 0) {
+        return true;
+    }
+
+    const QString prefix = normalizedScope.endsWith(QLatin1Char('/'))
+        ? normalizedScope
+        : normalizedScope + QLatin1Char('/');
+    return normalizedPath.startsWith(prefix, caseSensitivity);
+}
+
+QString categoryFilterSummaryText(DirectoryModel::CategoryFilter filter)
+{
+    switch (filter) {
+    case DirectoryModel::FilterExecutables:
+        return QStringLiteral("Executables");
+    case DirectoryModel::FilterLibraries:
+        return QStringLiteral("Libraries");
+    case DirectoryModel::FilterImages:
+        return QStringLiteral("Images");
+    case DirectoryModel::FilterArchives:
+        return QStringLiteral("Archives");
+    case DirectoryModel::FilterMedia:
+        return QStringLiteral("Media");
+    case DirectoryModel::FilterDocuments:
+        return QStringLiteral("Documents");
+    case DirectoryModel::FilterAll:
+        break;
+    }
+    return {};
+}
 }
 
 FilePanelController::FilePanelController(QObject *parent)
@@ -420,6 +477,26 @@ bool FilePanelController::canPasteIntoCurrentPath() const
         return false;
     }
     return pathCanCreateChildren(currentPath());
+}
+
+int FilePanelController::categoryFilter() const
+{
+    return m_categoryFilter;
+}
+
+bool FilePanelController::categoryFilterActive() const
+{
+    return m_categoryFilter != DirectoryModel::FilterAll;
+}
+
+bool FilePanelController::categoryFilterSuspended() const
+{
+    return categoryFilterActive() && m_directoryModel.categoryFilter() == DirectoryModel::FilterAll;
+}
+
+QString FilePanelController::categoryFilterSummary() const
+{
+    return categoryFilterSummaryText(m_categoryFilter);
 }
 
 void FilePanelController::setHoveredPath(const QString &path)
@@ -1152,6 +1229,122 @@ void FilePanelController::clearError()
     m_directoryModel.clearError();
 }
 
+void FilePanelController::setCategoryFilter(int filter)
+{
+    if (filter < DirectoryModel::FilterAll || filter > DirectoryModel::FilterDocuments) {
+        filter = DirectoryModel::FilterAll;
+    }
+
+    const auto category = static_cast<DirectoryModel::CategoryFilter>(filter);
+    if (category == DirectoryModel::FilterAll) {
+        clearCategoryFilterScope();
+        return;
+    }
+
+    const bool stateChanged = m_categoryFilter != category
+        || m_categoryFilterScopePath != filterScopeForPath(currentPath())
+        || m_categoryFilterContext != filterContextForPath(currentPath());
+    m_categoryFilter = category;
+    m_categoryFilterScopePath = filterScopeForPath(currentPath());
+    m_categoryFilterContext = filterContextForPath(currentPath());
+    updateCategoryFilterForPath(currentPath());
+    if (stateChanged) {
+        emit categoryFilterStateChanged();
+    }
+}
+
+QString FilePanelController::filterScopeForPath(const QString &path) const
+{
+    if (path.isEmpty()) {
+        return {};
+    }
+    if (ArchiveSupport::isArchivePath(path)) {
+        return normalizedScopePath(ArchiveSupport::normalizeArchivePath(path));
+    }
+    return normalizedScopePath(m_fileProvider->normalizedPath(path));
+}
+
+QString FilePanelController::comparisonPathForFilterScope(const QString &path) const
+{
+    if (path.isEmpty()) {
+        return {};
+    }
+    if (ArchiveSupport::isArchivePath(m_categoryFilterScopePath)) {
+        return ArchiveSupport::isArchivePath(path)
+            ? normalizedScopePath(ArchiveSupport::normalizeArchivePath(path))
+            : normalizedScopePath(m_fileProvider->normalizedPath(path));
+    }
+    if (ArchiveSupport::isArchivePath(path)) {
+        return normalizedScopePath(ArchiveSupport::physicalArchivePath(path));
+    }
+    return normalizedScopePath(m_fileProvider->normalizedPath(path));
+}
+
+QString FilePanelController::filterContextForPath(const QString &path) const
+{
+    const QString trimmed = path.trimmed();
+    if (ArchiveSupport::isArchivePath(trimmed)) {
+        return QStringLiteral("archive");
+    }
+    if (normalizedVirtualRoot(trimmed) == DEVICE_ROOT) {
+        return QStringLiteral("devices");
+    }
+    if (normalizedVirtualRoot(trimmed) == FAVORITES_ROOT) {
+        return QStringLiteral("favorites");
+    }
+
+    const int schemeIndex = trimmed.indexOf(QStringLiteral("://"));
+    if (schemeIndex > 0) {
+        return trimmed.left(schemeIndex).toLower();
+    }
+    return QStringLiteral("filesystem");
+}
+
+bool FilePanelController::isPathInsideCategoryFilterScope(const QString &path) const
+{
+    if (m_categoryFilterScopePath.isEmpty()) {
+        return true;
+    }
+    return sameOrChildPath(comparisonPathForFilterScope(path), m_categoryFilterScopePath);
+}
+
+void FilePanelController::clearCategoryFilterScope()
+{
+    const bool stateChanged = categoryFilterActive() || categoryFilterSuspended();
+    m_categoryFilter = DirectoryModel::FilterAll;
+    m_categoryFilterScopePath.clear();
+    m_categoryFilterContext.clear();
+    m_directoryModel.setCategoryFilter(DirectoryModel::FilterAll);
+    if (stateChanged) {
+        emit categoryFilterStateChanged();
+    }
+}
+
+void FilePanelController::updateCategoryFilterForPath(const QString &path)
+{
+    if (m_categoryFilter == DirectoryModel::FilterAll) {
+        m_categoryFilterScopePath.clear();
+        m_categoryFilterContext.clear();
+        m_directoryModel.setCategoryFilter(DirectoryModel::FilterAll);
+        return;
+    }
+
+    if (!isPathInsideCategoryFilterScope(path)) {
+        clearCategoryFilterScope();
+        return;
+    }
+
+    const DirectoryModel::CategoryFilter displayFilter =
+        filterContextForPath(path) == m_categoryFilterContext
+            ? m_categoryFilter
+            : DirectoryModel::FilterAll;
+    const bool wasSuspended = categoryFilterSuspended();
+    m_directoryModel.setCategoryFilter(displayFilter);
+    if (wasSuspended != categoryFilterSuspended()) {
+        emit categoryFilterStateChanged();
+    }
+}
+
 QStringList FilePanelController::selectedPaths() const
 {
     return m_directoryModel.selectedPaths();
@@ -1246,7 +1439,6 @@ void FilePanelController::syncStateFrom(FilePanelController *other)
 
     targetModel->setShowHidden(sourceModel->showHidden());
     targetModel->setMixFilesAndFolders(sourceModel->mixFilesAndFolders());
-    targetModel->setCategoryFilter(sourceModel->categoryFilter());
     targetModel->setSearchText(sourceModel->searchText());
 }
 
@@ -1279,7 +1471,7 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
 
     if (targetIsDeviceRoot || targetIsFavoritesRoot) {
         m_directoryModel.setSearchText({});
-        m_directoryModel.clearFilters();
+        clearCategoryFilterScope();
         setStatusMessage({});
         setLastError({});
         if (addToHistory && !oldPath.isEmpty()) {
@@ -1296,8 +1488,8 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
     }
 
     if (m_directoryModel.openPath(newPath)) {
+        updateCategoryFilterForPath(newPath);
         m_directoryModel.setSearchText({});
-        m_directoryModel.clearFilters();
         setStatusMessage({});
         setLastError({});
         if (addToHistory && !oldPath.isEmpty()) {

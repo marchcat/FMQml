@@ -24,7 +24,9 @@ Item {
             width: root.cardSize
             height: root.cardSize
             radius: 16
-            color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.15)
+            color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.18 : 0.12)
+            border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.34 : 0.24)
+            border.width: 1
 
             Image {
                 anchors.centerIn: parent

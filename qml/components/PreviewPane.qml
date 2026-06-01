@@ -10,6 +10,7 @@ Pane {
 
     property bool liveResizeActive: false
     property bool scrollPauseActive: false
+    property bool imageMetadataHidden: false
     readonly property bool ultraLightMode: typeof appSettings !== "undefined" && appSettings
                                            ? appSettings.ultraLightMode
                                            : false
@@ -26,6 +27,11 @@ Pane {
                                               || quickLookController.path === "devices://"
                                               || quickLookController.path === "favorites://"
                                               || quickLookController.type === "info"
+
+    function updateImageMetadataDemand() {
+        if (typeof quickLookController === "undefined" || !quickLookController || !quickLookController.setImageMetadataRequested) return
+        quickLookController.setImageMetadataRequested("pane", root.visible && !root.imageMetadataHidden)
+    }
 
     function displayTitle() {
         if (quickLookController.name.length > 0) {
@@ -47,6 +53,9 @@ Pane {
     }
 
     function displayIconSource() {
+        if (quickLookController.path === "selection://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
         if (quickLookController.path.length === 0) {
             return quickLookController.type === "info"
                    ? "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
@@ -74,17 +83,30 @@ Pane {
         if (quickLookController.mimeName === "drive") {
             return quickLookController.extension.length > 0 ? quickLookController.extension.toUpperCase() : "Drive Preview"
         }
+        if (quickLookController.directory) {
+            return "Folder Preview"
+        }
         if (quickLookController.type === "info") {
+            if (quickLookController.path === "selection://") {
+                return "Multiple Selection"
+            }
             return quickLookController.path === "favorites://" ? "Virtual Location" : "System Overview"
         }
         return quickLookController.type.length > 0 ? quickLookController.type.toUpperCase() + " Preview" : "Preview"
     }
 
     function lightweightProperties() {
+        const deferredText = root.ultraLightMode && !root.resizeOptimized
+                           ? "Available in full preview"
+                           : (root.scrollPauseActive ? "Resumes after scroll" : "Resumes after drag")
         const props = [
             { label: "Name", value: root.displayTitle() },
             { label: "Type", value: root.displaySubtitle() }
         ]
+
+        if (quickLookController.path.length > 0 && quickLookController.path !== "devices://" && quickLookController.path !== "selection://") {
+            props.push({ label: "Location", value: deferredText })
+        }
 
         if (quickLookController.sizeText.length > 0) {
             props.push({ label: "Size", value: quickLookController.sizeText })
@@ -94,11 +116,20 @@ Pane {
             props.push({ label: "Modified", value: quickLookController.modifiedText })
         }
 
+        if (quickLookController.path.length > 0 && quickLookController.path !== "devices://" && quickLookController.path !== "selection://") {
+            props.push({ label: "Access", value: deferredText })
+            props.push({ label: "Attributes", value: deferredText })
+        }
+
         return props
     }
 
     padding: 0
     clip: true
+
+    onVisibleChanged: root.updateImageMetadataDemand()
+    onImageMetadataHiddenChanged: root.updateImageMetadataDemand()
+    Component.onCompleted: root.updateImageMetadataDemand()
 
     implicitWidth: 320
     implicitHeight: 480
@@ -262,16 +293,12 @@ Pane {
                         }
                     }
 
-                    PreviewPropertiesList {
+                    PreviewFactsPanel {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
+                        alignToBottom: true
                         title: "Details"
                         properties: root.lightweightProperties()
-                        rowRadius: 10
-                        rowPadding: 12
-                        labelPixelSize: 10
-                        valuePixelSize: 12
-                        rowSpacing: 8
                     }
                 }
             }
@@ -307,10 +334,34 @@ Pane {
                     lineCount: quickLookController.lines
                     loading: quickLookController.loading
                     extraProperties: quickLookController.extraProperties
+                    audioTitle: quickLookController.audioTitle
+                    audioArtist: quickLookController.audioArtist
+                    audioAlbum: quickLookController.audioAlbum
+                    audioYear: quickLookController.audioYear
+                    audioTrack: quickLookController.audioTrack
+                    audioGenre: quickLookController.audioGenre
+                    audioComment: quickLookController.audioComment
+                    audioDuration: quickLookController.audioDuration
+                    audioBitrate: quickLookController.audioBitrate
+                    audioSampleRate: quickLookController.audioSampleRate
+                    audioChannels: quickLookController.audioChannels
+                    mediaSourceUrl: quickLookController.mediaSourceUrl
                     hasPdfSupport: quickLookController.hasPdfSupport
+                    hasMultimediaSupport: quickLookController.hasMultimediaSupport
+                    imageWidth: quickLookController.imageWidth
+                    imageHeight: quickLookController.imageHeight
+                    imageFormatText: quickLookController.imageFormatText
+                    imageColorDepthText: quickLookController.imageColorDepthText
+                    imageAlphaChannelText: quickLookController.imageAlphaChannelText
+                    imageDpiText: quickLookController.imageDpiText
+                    imageColorSpaceText: quickLookController.imageColorSpaceText
+                    imagePixelFormatText: quickLookController.imagePixelFormatText
+                    imageMetadataHidden: root.imageMetadataHidden
                     sourceSizeWidth: 512
                     sourceSizeHeight: 512
                     useNativeIcons: root.useNativeIcons
+                    onHideImageMetadataRequested: root.imageMetadataHidden = true
+                    onShowImageMetadataRequested: root.imageMetadataHidden = false
                 }
             }
         }

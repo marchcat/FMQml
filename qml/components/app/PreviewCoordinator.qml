@@ -65,14 +65,18 @@ Item {
         }
 
         const selected = selectedPathsFor(controller)
-        if (selected.length > 0 && modelContainsPath(controller, selected[0])) {
-            return selected[0]
+        if (selected.length > 1) {
+            return "selection://"
         }
 
         if (controller.currentItemPath
                 && controller.currentItemPath.length > 0
                 && modelContainsPath(controller, controller.currentItemPath)) {
             return controller.currentItemPath
+        }
+
+        if (selected.length > 0 && modelContainsPath(controller, selected[0])) {
+            return selected[0]
         }
 
         if (controller.isDeviceRoot) {
@@ -84,6 +88,21 @@ Item {
         }
 
         return controller.currentPath || ""
+    }
+
+    function syncQuickLookPreview(controller, targetPath) {
+        const quickLookController = quickLook()
+        if (!quickLookController) {
+            return
+        }
+
+        const selected = selectedPathsFor(controller)
+        if (selected.length > 1 && targetPath === "selection://") {
+            quickLookController.previewSelection(selected)
+            return
+        }
+
+        quickLookController.preview(targetPath)
     }
 
     Timer {
@@ -103,7 +122,7 @@ Item {
                 previewSyncTimer.restart()
                 return
             }
-            quickLookController.preview(root.pendingPreviewPath)
+            root.syncQuickLookPreview(activePanelController(), root.pendingPreviewPath)
         }
     }
 
@@ -193,7 +212,7 @@ Item {
         if (immediate === true) {
             previewSyncTimer.stop()
             root.pendingPreviewPath = targetPath
-            quickLookController.preview(targetPath)
+            root.syncQuickLookPreview(controller, targetPath)
             return
         }
 

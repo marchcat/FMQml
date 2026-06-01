@@ -21,6 +21,7 @@ Item {
         ? root.iconSource
         : root.bundledIconForSuffix(root.isDirectory, root.suffix)
     readonly property string nativeIconSource: root.iconSourceFor(root.path, root.isDirectory, root.suffix, root.useNativeIcons)
+    readonly property bool pdfThumbnail: !root.isDirectory && String(root.suffix || "").toLowerCase() === "pdf"
 
     function bundledIconForSuffix(isDirectory, suffix) {
         return fileTypeIconResolver.iconForSuffix(String(suffix || ""), isDirectory)
@@ -66,6 +67,13 @@ Item {
         visible: root.useNativeIcons
                  && (!root.showThumbnail || thumbImg.status !== Image.Ready)
                  && status === Image.Ready
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: root.thumbCornerRadius
+        color: "#ffffff"
+        visible: root.pdfThumbnail && root.showThumbnail && thumbImg.status === Image.Ready
     }
 
     Image {

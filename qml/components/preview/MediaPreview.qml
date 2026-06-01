@@ -7,10 +7,20 @@ Item {
     id: root
 
     property string sourcePath: ""
+    property string name: ""
+    property string sizeText: ""
+    property string modifiedText: ""
+    property string mimeName: ""
+    property string extension: ""
     property string type: ""
     property bool hasPdfSupport: false
     property int sourceSizeWidth: 2048
     property int sourceSizeHeight: 2048
+    property bool interactiveImage: false
+    property bool compactControls: true
+    property int imageWidth: 0
+    property int imageHeight: 0
+    property var extraProperties: []
 
     clip: true
 
@@ -18,22 +28,65 @@ Item {
         anchors.fill: parent
         visible: root.type === "video"
         sourcePath: root.sourcePath
+        name: root.name
+        sizeText: root.sizeText
+        modifiedText: root.modifiedText
+        mimeName: root.mimeName
+        extension: root.extension
         sourceSizeWidth: root.sourceSizeWidth
         sourceSizeHeight: root.sourceSizeHeight
         loadingText: "Loading video preview..."
+        compact: root.compactControls
     }
 
-    ImagePreview {
-        id: previewImage
+    Loader {
+        id: previewImageLoader
         anchors.fill: parent
-        requestThumbnail: root.type === "svg"
-                          || root.type === "font"
-                          || (root.type === "pdf" && !root.hasPdfSupport)
-        sourcePath: root.sourcePath
-        fillMode: Image.PreserveAspectFit
-        sourceSizeWidth: root.sourceSizeWidth
-        sourceSizeHeight: root.sourceSizeHeight
         visible: root.type !== "video" && (root.type !== "pdf" || !root.hasPdfSupport)
+        active: visible
+        sourceComponent: root.interactiveImage && root.type === "svg"
+                         ? zoomablePreviewComponent
+                         : staticPreviewComponent
+    }
+
+    Component {
+        id: staticPreviewComponent
+
+        ImagePreview {
+            requestThumbnail: root.type === "svg"
+                              || root.type === "font"
+                              || (root.type === "pdf" && !root.hasPdfSupport)
+            sourcePath: root.sourcePath
+            extension: root.extension
+            sizeText: root.sizeText
+            modifiedText: root.modifiedText
+            imageWidth: root.imageWidth
+            imageHeight: root.imageHeight
+            extraProperties: root.extraProperties
+            compactMeta: root.compactControls
+            fillMode: Image.PreserveAspectFit
+            sourceSizeWidth: root.sourceSizeWidth
+            sourceSizeHeight: root.sourceSizeHeight
+        }
+    }
+
+    Component {
+        id: zoomablePreviewComponent
+
+        ZoomableImagePreview {
+            requestThumbnail: true
+            sourcePath: root.sourcePath
+            extension: root.extension
+            sizeText: root.sizeText
+            modifiedText: root.modifiedText
+            imageWidth: root.imageWidth
+            imageHeight: root.imageHeight
+            extraProperties: root.extraProperties
+            compactMeta: root.compactControls
+            fillMode: Image.PreserveAspectFit
+            sourceSizeWidth: root.sourceSizeWidth
+            sourceSizeHeight: root.sourceSizeHeight
+        }
     }
 
     Loader {
@@ -50,8 +103,17 @@ Item {
         when: pdfPreviewerLoader.status === Loader.Ready
     }
 
+    Binding {
+        target: pdfPreviewerLoader.item
+        property: "compactControls"
+        value: root.compactControls
+        when: pdfPreviewerLoader.status === Loader.Ready
+    }
+
     PdfPreviewFallback {
         anchors.centerIn: parent
-        visible: root.type === "pdf" && previewImage.imageStatus === Image.Error
+        visible: root.type === "pdf"
+                 && previewImageLoader.item
+                 && previewImageLoader.item.imageStatus === Image.Error
     }
 }

@@ -37,6 +37,10 @@ class FilePanelController final : public QObject {
     Q_PROPERTY(bool canDuplicateSelection READ canDuplicateSelection NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool canCompressSelection READ canCompressSelection NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool canPasteIntoCurrentPath READ canPasteIntoCurrentPath NOTIFY capabilitiesChanged)
+    Q_PROPERTY(int categoryFilter READ categoryFilter NOTIFY categoryFilterStateChanged)
+    Q_PROPERTY(bool categoryFilterActive READ categoryFilterActive NOTIFY categoryFilterStateChanged)
+    Q_PROPERTY(bool categoryFilterSuspended READ categoryFilterSuspended NOTIFY categoryFilterStateChanged)
+    Q_PROPERTY(QString categoryFilterSummary READ categoryFilterSummary NOTIFY categoryFilterStateChanged)
     Q_PROPERTY(ChecksumCalculator* checksumCalculator READ checksumCalculator CONSTANT)
 
     static constexpr QLatin1String DEVICE_ROOT{"devices://"};
@@ -74,6 +78,10 @@ public:
     bool canDuplicateSelection() const;
     bool canCompressSelection() const;
     bool canPasteIntoCurrentPath() const;
+    int categoryFilter() const;
+    bool categoryFilterActive() const;
+    bool categoryFilterSuspended() const;
+    QString categoryFilterSummary() const;
     Q_INVOKABLE QString fileNameForPath(const QString &path) const;
     Q_INVOKABLE QString parentPathForPath(const QString &path) const;
     Q_INVOKABLE QString childPathForCurrent(const QString &name) const;
@@ -100,6 +108,7 @@ public:
     Q_INVOKABLE void goUp();
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void clearError();
+    Q_INVOKABLE void setCategoryFilter(int filter);
     Q_INVOKABLE QStringList selectedPaths() const;
     Q_INVOKABLE QVariantMap storageInfoForPath(const QString &rootPath) const;
     Q_INVOKABLE void ejectDrive(const QString &rootPath);
@@ -143,6 +152,7 @@ signals:
     void lastErrorChanged();
     void scrollingChanged();
     void capabilitiesChanged();
+    void categoryFilterStateChanged();
     void ejectFinished(const QString &rootPath, bool success);
     void isoMountRequested(const QString &path);
     // Emitted on the GUI thread when async metadata finishes
@@ -153,6 +163,12 @@ private:
     bool pathCanCreateChildren(const QString &path) const;
     bool pathCanDelete(const QString &path) const;
     bool openPathInternal(const QString &path, bool addToHistory, bool preserveScroll = false);
+    QString filterScopeForPath(const QString &path) const;
+    QString comparisonPathForFilterScope(const QString &path) const;
+    QString filterContextForPath(const QString &path) const;
+    bool isPathInsideCategoryFilterScope(const QString &path) const;
+    void clearCategoryFilterScope();
+    void updateCategoryFilterForPath(const QString &path);
     void pushHistory(const QString &path);
     void setStatusMessage(const QString &message);
     void setLastError(const QVariantMap &error);
@@ -178,6 +194,9 @@ private:
     bool m_isFavoritesRoot = false;
     QTimer m_createdEntryRevealTimer;
     QString m_pendingCreatedEntryRevealPath;
+    DirectoryModel::CategoryFilter m_categoryFilter = DirectoryModel::FilterAll;
+    QString m_categoryFilterScopePath;
+    QString m_categoryFilterContext;
     ChecksumCalculator m_checksumCalculator;
     BatchRenameEngine m_renameEngine;
 

@@ -2454,6 +2454,15 @@ Pane {
                             color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, themeController.isDark ? 0.18 : 0.12)
                         }
 
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 10
+                            color: "#ffffff"
+                            visible: gridDelegate.thumbnailRequestActive
+                                     && String(suffix || "").toLowerCase() === "pdf"
+                                     && thumbnail.status === Image.Ready
+                        }
+
                         Image {
                             id: thumbnail
                             anchors.fill: parent

@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <atomic>
 
@@ -29,12 +30,36 @@ class QuickLookController final : public QObject {
     Q_PROPERTY(QString permissionsText READ permissionsText NOTIFY permissionsTextChanged)
     Q_PROPERTY(QString attributesText READ attributesText NOTIFY attributesTextChanged)
     Q_PROPERTY(int lines READ lines NOTIFY linesChanged)
+    Q_PROPERTY(bool textTruncated READ textTruncated NOTIFY textStateChanged)
+    Q_PROPERTY(bool fullTextAvailable READ fullTextAvailable NOTIFY textStateChanged)
+    Q_PROPERTY(bool textChunked READ textChunked NOTIFY textStateChanged)
+    Q_PROPERTY(int textChunkIndex READ textChunkIndex NOTIFY textStateChanged)
+    Q_PROPERTY(int textChunkCount READ textChunkCount NOTIFY textStateChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool visible READ visible WRITE setVisible NOTIFY visibleChanged)
     Q_PROPERTY(QVariantList extraProperties READ extraProperties NOTIFY extraPropertiesChanged)
+    Q_PROPERTY(QString audioTitle READ audioTitle NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioArtist READ audioArtist NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioAlbum READ audioAlbum NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioYear READ audioYear NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioTrack READ audioTrack NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioGenre READ audioGenre NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioComment READ audioComment NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioDuration READ audioDuration NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioBitrate READ audioBitrate NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioSampleRate READ audioSampleRate NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString audioChannels READ audioChannels NOTIFY audioPropertiesChanged)
+    Q_PROPERTY(QString mediaSourceUrl READ mediaSourceUrl NOTIFY pathChanged)
     Q_PROPERTY(bool hasPdfSupport READ hasPdfSupport CONSTANT)
+    Q_PROPERTY(bool hasMultimediaSupport READ hasMultimediaSupport CONSTANT)
     Q_PROPERTY(int imageWidth READ imageWidth NOTIFY imageSizeChanged)
     Q_PROPERTY(int imageHeight READ imageHeight NOTIFY imageSizeChanged)
+    Q_PROPERTY(QString imageFormatText READ imageFormatText NOTIFY imageInfoChanged)
+    Q_PROPERTY(QString imageColorDepthText READ imageColorDepthText NOTIFY imageInfoChanged)
+    Q_PROPERTY(QString imageAlphaChannelText READ imageAlphaChannelText NOTIFY imageInfoChanged)
+    Q_PROPERTY(QString imageDpiText READ imageDpiText NOTIFY imageInfoChanged)
+    Q_PROPERTY(QString imageColorSpaceText READ imageColorSpaceText NOTIFY imageInfoChanged)
+    Q_PROPERTY(QString imagePixelFormatText READ imagePixelFormatText NOTIFY imageInfoChanged)
 
 public:
     explicit QuickLookController(QObject *parent = nullptr);
@@ -59,14 +84,42 @@ public:
     QString permissionsText() const;
     QString attributesText() const;
     int lines() const;
+    bool textTruncated() const;
+    bool fullTextAvailable() const;
+    bool textChunked() const;
+    int textChunkIndex() const;
+    int textChunkCount() const;
     bool loading() const;
     bool visible() const;
     QVariantList extraProperties() const;
+    QString audioTitle() const;
+    QString audioArtist() const;
+    QString audioAlbum() const;
+    QString audioYear() const;
+    QString audioTrack() const;
+    QString audioGenre() const;
+    QString audioComment() const;
+    QString audioDuration() const;
+    QString audioBitrate() const;
+    QString audioSampleRate() const;
+    QString audioChannels() const;
+    QString mediaSourceUrl() const;
     bool hasPdfSupport() const;
+    bool hasMultimediaSupport() const;
     int imageWidth() const;
     int imageHeight() const;
+    QString imageFormatText() const;
+    QString imageColorDepthText() const;
+    QString imageAlphaChannelText() const;
+    QString imageDpiText() const;
+    QString imageColorSpaceText() const;
+    QString imagePixelFormatText() const;
 
     Q_INVOKABLE void preview(const QString &path);
+    Q_INVOKABLE void previewSelection(const QStringList &paths);
+    Q_INVOKABLE void loadFullText();
+    Q_INVOKABLE void loadTextChunk(int chunkIndex);
+    Q_INVOKABLE void setImageMetadataRequested(const QString &scope, bool requested);
     Q_INVOKABLE void refresh();
     void setVisible(bool visible);
     void setIsoMountManager(IsoMountManager *manager);
@@ -92,10 +145,13 @@ signals:
     void permissionsTextChanged();
     void attributesTextChanged();
     void linesChanged();
+    void textStateChanged();
     void loadingChanged();
     void visibleChanged();
     void extraPropertiesChanged();
+    void audioPropertiesChanged();
     void imageSizeChanged();
+    void imageInfoChanged();
 
 private:
     QString m_path;
@@ -118,13 +174,46 @@ private:
     QString m_permissionsText;
     QString m_attributesText;
     int m_lines = 0;
+    bool m_textTruncated = false;
+    bool m_fullTextAvailable = false;
+    bool m_textChunked = false;
+    int m_textChunkIndex = 0;
+    int m_textChunkCount = 0;
     bool m_loading = false;
     bool m_visible = false;
     QVariantList m_extraProperties;
+    QString m_audioTitle;
+    QString m_audioArtist;
+    QString m_audioAlbum;
+    QString m_audioYear;
+    QString m_audioTrack;
+    QString m_audioGenre;
+    QString m_audioComment;
+    QString m_audioDuration;
+    QString m_audioBitrate;
+    QString m_audioSampleRate;
+    QString m_audioChannels;
     int m_imageWidth = 0;
     int m_imageHeight = 0;
+    QString m_imageFormatText;
+    QString m_imageColorDepthText;
+    QString m_imageAlphaChannelText;
+    QString m_imageDpiText;
+    QString m_imageColorSpaceText;
+    QString m_imagePixelFormatText;
     std::atomic<int> m_previewGeneration{0};
     IsoMountManager *m_isoMountManager = nullptr;
+    bool m_previewPaneImageMetadataRequested = true;
+    bool m_quickLookImageMetadataRequested = false;
+    bool m_imageMetadataLoading = false;
+    QString m_imageMetadataLoadedPath;
 
     void previewPath(const QString &path, bool forceReload);
+    bool imageMetadataRequested() const;
+    void requestImageMetadata();
+    void resetAudioProperties();
+    void syncAudioProperties(const QVariantList &properties);
+    void resetImageInfo();
+    void syncImageInfo(const QString &path);
+    void syncImageProperties(const QVariantList &properties);
 };

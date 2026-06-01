@@ -15,8 +15,10 @@ Menu {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     dim: false
     property var customThemes: []
+    property var builtInThemes: []
 
     function openAt(item) {
+        reloadBuiltInThemes()
         reloadCustomThemes()
         if (item) {
             popup(item, 0, item.height + 8)
@@ -42,6 +44,10 @@ Menu {
 
     function reloadCustomThemes() {
         customThemes = themeController.availableCustomThemes()
+    }
+
+    function reloadBuiltInThemes() {
+        builtInThemes = themeController.builtInThemeDrafts()
     }
 
     background: Item {
@@ -184,51 +190,22 @@ Menu {
             GridLayout {
                 Layout.fillWidth: true
                 columns: 2
-                columnSpacing: 10
-                rowSpacing: 10
+                columnSpacing: 8
+                rowSpacing: 8
 
-                ThemeSchemeCard {
-                    title: "Catppuccin Latte"
-                    subtitle: "Soft light, blue, mauve"
-                    bgColor: "#EFF1F5"
-                    surfaceColor: "#E6E9EF"
-                    accentColor: "#1E66F5"
-                    glowColor: "#8839EF"
-                    selected: !themeController.customThemeLoaded && themeController.scheme === 0
-                    onActivated: root.applyScheme(0)
-                }
+                Repeater {
+                    model: root.builtInThemes
 
-                ThemeSchemeCard {
-                    title: "Aurora Glass"
-                    subtitle: "Teal, orchid, blue"
-                    bgColor: "#08111F"
-                    surfaceColor: "#102033"
-                    accentColor: "#2DD4BF"
-                    glowColor: "#C084FC"
-                    selected: !themeController.customThemeLoaded && themeController.scheme === 1
-                    onActivated: root.applyScheme(1)
-                }
-
-                ThemeSchemeCard {
-                    title: "Oxide Garden"
-                    subtitle: "Paper, rust, patina"
-                    bgColor: "#F3EDDF"
-                    surfaceColor: "#E8DDC4"
-                    accentColor: "#A3442F"
-                    glowColor: "#2F6F5E"
-                    selected: !themeController.customThemeLoaded && themeController.scheme === 2
-                    onActivated: root.applyScheme(2)
-                }
-
-                ThemeSchemeCard {
-                    title: "Ember Luxe"
-                    subtitle: "Amber, ruby, espresso"
-                    bgColor: "#100C0A"
-                    surfaceColor: "#1B1410"
-                    accentColor: "#F59E0B"
-                    glowColor: "#F43F5E"
-                    selected: !themeController.customThemeLoaded && themeController.scheme === 3
-                    onActivated: root.applyScheme(3)
+                    ThemeSchemeCard {
+                        title: modelData.name || ""
+                        subtitle: modelData.subtitle || ""
+                        bgColor: modelData.colors && modelData.colors.bg ? modelData.colors.bg : Theme.bg
+                        surfaceColor: modelData.colors && modelData.colors.surface ? modelData.colors.surface : Theme.surface
+                        accentColor: modelData.colors && modelData.colors.accent ? modelData.colors.accent : Theme.accent
+                        glowColor: modelData.colors && modelData.colors.activeGlow ? modelData.colors.activeGlow : Theme.activeGlow
+                        selected: !themeController.customThemeLoaded && themeController.scheme === index
+                        onActivated: root.applyScheme(index)
+                    }
                 }
             }
 

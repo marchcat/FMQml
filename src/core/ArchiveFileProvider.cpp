@@ -2178,6 +2178,36 @@ ArchiveFileProvider::ArchiveState ArchiveFileProvider::buildStateFromScratch(
             }
         }
 
+        for (const QString &directoryPath : std::as_const(state.directories)) {
+            const QString normalizedDirectory = normalizeRelativePath(directoryPath);
+            if (normalizedDirectory.isEmpty() || state.pathIndex.contains(normalizedDirectory)) {
+                continue;
+            }
+
+            ArchiveItemRecord record;
+            record.relativePath = normalizedDirectory;
+            record.name = QFileInfo(normalizedDirectory).fileName();
+            record.suffix = archiveSuffixFromName(record.name);
+            record.isDirectory = true;
+            record.isHidden = isHiddenName(record.name);
+            record.isArchive = false;
+            record.absolutePath = itemAbsolutePath(state.archivePrefix, record.relativePath);
+
+            const bool isVisibleDirectChild = parentRelativePath(record.relativePath) == state.browsePath
+                && (showHidden || !record.isHidden);
+            state.pathIndex.insert(record.relativePath, state.items.size());
+            state.items.append(record);
+
+            if (batchCallback && isVisibleDirectChild) {
+                visibleBatch.append(fileEntryFromRecord(state, state.items.constLast()));
+                if (!firstVisibleBatchSent || visibleBatch.size() >= 512) {
+                    batchCallback(visibleBatch);
+                    visibleBatch.clear();
+                    firstVisibleBatchSent = true;
+                }
+            }
+        }
+
         if (batchCallback && !visibleBatch.isEmpty()) {
             batchCallback(visibleBatch);
         }

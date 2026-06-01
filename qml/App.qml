@@ -525,7 +525,12 @@ ApplicationWindow {
             return
         }
 
-        quickLookController.preview(targetPath)
+        const selected = controller ? controller.selectedPaths() : []
+        if (targetPath === "selection://" && selected && selected.length > 1) {
+            quickLookController.previewSelection(selected)
+        } else {
+            quickLookController.preview(targetPath)
+        }
         quickLookPopup.previewPath = targetPath
         quickLookPopup.open()
     }

@@ -11,6 +11,17 @@
 QmlEngineBootstrap::QmlEngineBootstrap(AppServices *services)
     : m_services(services)
 {
+#ifdef HAS_QT_MULTIMEDIA
+    QCoreApplication::addLibraryPath(QCoreApplication::applicationDirPath() + QStringLiteral("/plugins"));
+#ifdef FM_QT_PLUGIN_PATH
+    QCoreApplication::addLibraryPath(QString::fromUtf8(FM_QT_PLUGIN_PATH));
+#endif
+    m_engine.addImportPath(QCoreApplication::applicationDirPath() + QStringLiteral("/qml"));
+#ifdef FM_QT_QML_IMPORT_PATH
+    m_engine.addImportPath(QString::fromUtf8(FM_QT_QML_IMPORT_PATH));
+#endif
+#endif
+
     m_engine.addImageProvider(QStringLiteral("icon"), new IconProvider);
     m_engine.addImageProvider(QStringLiteral("thumbnail"), new ThumbnailProvider);
     m_engine.rootContext()->setContextProperty(QStringLiteral("workspaceController"), services->workspace());

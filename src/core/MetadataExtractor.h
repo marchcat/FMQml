@@ -19,7 +19,7 @@ private:
     static QVariantList extractSvg(const QString &path);
     static QVariantList extractFont(const QString &path);
     static QVariantList extractPdf(const QString &path);
-    static QVariantList extractArchiveZip(const QString &path);
+    static QVariantList extractArchive(const QString &path);
 #ifdef Q_OS_WIN
     static QVariantList extractExecutable(const QString &path);
     static QVariantList extractShortcut(const QString &path);

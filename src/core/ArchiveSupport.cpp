@@ -45,6 +45,7 @@ bool isArchiveExtension(const QString &suffix)
         QStringLiteral("txz"),
         QStringLiteral("tbz2"),
         QStringLiteral("zst"),
+        QStringLiteral("apk"),
     };
     return archiveSuffixes.contains(suffix.toLower());
 }
