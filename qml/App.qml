@@ -722,8 +722,8 @@ ApplicationWindow {
                         || event.key === Qt.Key_Delete)
                     return;
 
-                if (root.typeToSearchEnabled) {
-                     mainToolbar.focusSearch()
+                if (root.typeToSearchEnabled && mainToolbar.focusSearch(event.text)) {
+                    event.accepted = true
                 }
             }
         }

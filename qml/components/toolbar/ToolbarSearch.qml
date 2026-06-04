@@ -12,9 +12,29 @@ Rectangle {
     property var workspaceController
     readonly property bool editorActiveFocus: searchField.activeFocus
 
-    function focusSearch() {
+    function focusSearch(initialText) {
         searchField.forceActiveFocus()
-        searchField.selectAll()
+        if (initialText !== undefined && initialText !== null && String(initialText).length > 0) {
+            const text = String(initialText)
+            if (root.controller) {
+                root.controller.directoryModel.searchText = text
+            } else {
+                searchField.text = text
+            }
+            searchField.cursorPosition = text.length
+        } else {
+            searchField.selectAll()
+        }
+        return true
+    }
+
+    function switchPanelByTab() {
+        if (!root.workspaceController || !root.workspaceController.splitEnabled) {
+            return false
+        }
+        root.workspaceController.activePanel = root.workspaceController.activePanel === 0 ? 1 : 0
+        root.workspaceController.focusActivePanel()
+        return true
     }
 
     implicitWidth: searchField.activeFocus ? 200 : 140
@@ -60,7 +80,9 @@ Rectangle {
         background: null
 
         Keys.onPressed: (event) => {
-            if (event.key === Qt.Key_Escape) {
+            if (event.key === Qt.Key_Tab) {
+                event.accepted = root.switchPanelByTab()
+            } else if (event.key === Qt.Key_Escape) {
                 text = ""
                 if (root.controller) {
                     root.controller.directoryModel.searchText = ""

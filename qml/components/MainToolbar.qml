@@ -67,11 +67,11 @@ ToolBar {
         toolbarPathEditor.cancelPathEdit()
     }
 
-    function focusSearch() {
+    function focusSearch(initialText) {
         if (root.activeIsFavoritesRoot) {
-            return
+            return false
         }
-        toolbarSearch.focusSearch()
+        return toolbarSearch.focusSearch(initialText)
     }
 
     function openThemeSelector() {
