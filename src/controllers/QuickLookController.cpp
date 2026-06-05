@@ -14,6 +14,7 @@
 #include <QPixelFormat>
 #include <QRegularExpression>
 #include <QUrl>
+#include <QTimer>
 #include <QXmlStreamReader>
 #include <QtConcurrent/QtConcurrentRun>
 #include <memory>
@@ -182,6 +183,8 @@ static constexpr qint64 kArchivePreviewExtractLimit = 1024 * 1024;
 static constexpr int kFb2DefaultReaderPixelSize = 17;
 static constexpr qsizetype kFb2PageCharLimit = 3500;
 static constexpr qsizetype kFb2MaxPages = 2000;
+static constexpr int kAudioMetadataRetryCount = 2;
+static constexpr int kAudioMetadataRetryBaseDelayMs = 140;
 
 bool isImageSuffix(const QString &suffix)
 {
@@ -1083,6 +1086,65 @@ void QuickLookController::requestImageMetadata()
     });
 }
 
+void QuickLookController::requestMetadata(const QString &path, int previewGeneration, int retryAttempt)
+{
+    QPointer<QuickLookController> self(this);
+    (void)QtConcurrent::run([self, path, previewGeneration, retryAttempt]() {
+        QVariantList props = MetadataExtractor::extract(path);
+        if (!self) {
+            return;
+        }
+
+        QMetaObject::invokeMethod(self.data(), [self, path, previewGeneration, retryAttempt, props = std::move(props)]() mutable {
+            if (!self
+                || previewGeneration != self->m_previewGeneration.load()
+                || self->m_path != path) {
+                return;
+            }
+
+            const bool keepExistingAudioProps = retryAttempt > 0
+                && props.isEmpty()
+                && self->m_type == QStringLiteral("audio")
+                && !self->m_extraProperties.isEmpty();
+            if (!keepExistingAudioProps) {
+                self->m_extraProperties = std::move(props);
+            }
+
+            if (self->m_type == QStringLiteral("audio")) {
+                if (!keepExistingAudioProps) {
+                    self->syncAudioProperties(self->m_extraProperties);
+                }
+                emit self->audioPropertiesChanged();
+
+                const bool missingCoreAudioMetadata = self->m_audioDuration.isEmpty()
+                    || self->m_audioSampleRate.isEmpty();
+                if (missingCoreAudioMetadata && retryAttempt < kAudioMetadataRetryCount) {
+                    const int nextAttempt = retryAttempt + 1;
+                    QTimer::singleShot(kAudioMetadataRetryBaseDelayMs * nextAttempt,
+                                       self.data(),
+                                       [self, path, previewGeneration, nextAttempt]() {
+                        if (!self
+                            || previewGeneration != self->m_previewGeneration.load()
+                            || self->m_path != path
+                            || self->m_type != QStringLiteral("audio")
+                            || (!self->m_audioDuration.isEmpty() && !self->m_audioSampleRate.isEmpty())) {
+                            return;
+                        }
+                        self->requestMetadata(path, previewGeneration, nextAttempt);
+                    });
+                }
+            } else if (self->m_type == QStringLiteral("image")
+                       || self->m_type == QStringLiteral("svg")) {
+                self->syncImageProperties(self->m_extraProperties);
+                emit self->imageInfoChanged();
+                emit self->imageSizeChanged();
+            }
+
+            emit self->extraPropertiesChanged();
+        }, Qt::QueuedConnection);
+    });
+}
+
 void QuickLookController::preview(const QString &path)
 {
     previewPath(path, false);
@@ -1797,27 +1859,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
                 }
 
                 if (data.requestMetadata) {
-                    QPointer<QuickLookController> metaSelf(self.data());
-                    (void)QtConcurrent::run([metaSelf, path, myGen]() {
-                        QVariantList props = MetadataExtractor::extract(path);
-                        if (!metaSelf) return;
-                        QMetaObject::invokeMethod(metaSelf.data(), [metaSelf, myGen, props = std::move(props)]() mutable {
-                            if (!metaSelf || myGen != metaSelf->m_previewGeneration.load()) {
-                                return;
-                            }
-                            metaSelf->m_extraProperties = props;
-                            if (metaSelf->m_type == QStringLiteral("audio")) {
-                                metaSelf->syncAudioProperties(props);
-                                emit metaSelf->audioPropertiesChanged();
-                            } else if (metaSelf->m_type == QStringLiteral("image")
-                                       || metaSelf->m_type == QStringLiteral("svg")) {
-                                metaSelf->syncImageProperties(props);
-                                emit metaSelf->imageInfoChanged();
-                                emit metaSelf->imageSizeChanged();
-                            }
-                            emit metaSelf->extraPropertiesChanged();
-                        });
-                    });
+                    self->requestMetadata(path, myGen);
                 }
             }, Qt::QueuedConnection);
         });
@@ -1979,26 +2021,7 @@ void QuickLookController::previewPath(const QString &path, bool forceReload)
             && displaySuffix != QStringLiteral("svg")
             && displaySuffix != QStringLiteral("svgz");
         if (!archivePath && !isDir && !isImageMetadataFile) {
-            (void)QtConcurrent::run([self, path, myGen]() {
-                QVariantList props = MetadataExtractor::extract(path);
-                if (!self) return;
-                QMetaObject::invokeMethod(self.data(), [self, myGen, props = std::move(props)]() {
-                    if (!self || myGen != self->m_previewGeneration.load()) {
-                        return;
-                    }
-                    self->m_extraProperties = props;
-                    if (self->m_type == QStringLiteral("audio")) {
-                        self->syncAudioProperties(props);
-                        emit self->audioPropertiesChanged();
-                    } else if (self->m_type == QStringLiteral("image")
-                               || self->m_type == QStringLiteral("svg")) {
-                        self->syncImageProperties(props);
-                        emit self->imageInfoChanged();
-                        emit self->imageSizeChanged();
-                    }
-                    emit self->extraPropertiesChanged();
-                });
-            });
+            requestMetadata(path, myGen);
         }
     }
 

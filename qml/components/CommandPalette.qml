@@ -668,8 +668,10 @@ Popup {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.withAlpha(Theme.accent, 0.12)
-            opacity: 0.9
+            Layout.leftMargin: 16
+            Layout.rightMargin: 16
+            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.075 : 0.055)
+            opacity: 1.0
         }
 
         Rectangle {
@@ -919,8 +921,10 @@ Popup {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.withAlpha(Theme.border, 0.55)
-            opacity: 0.7
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.36 : 0.24)
+            opacity: 1.0
         }
 
         Item {
@@ -1115,8 +1119,10 @@ Popup {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 1
-            color: Theme.withAlpha(Theme.border, 0.55)
-            opacity: 0.7
+            Layout.leftMargin: 14
+            Layout.rightMargin: 14
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.36 : 0.24)
+            opacity: 1.0
         }
 
         RowLayout {

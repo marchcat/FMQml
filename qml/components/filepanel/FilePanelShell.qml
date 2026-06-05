@@ -14,10 +14,11 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        anchors.margins: 2
+        anchors.margins: 1
         color: "transparent"
-        radius: Math.max(0, Theme.radiusMd - 2)
+        radius: Theme.innerRadius(Theme.panelRadius, 1)
         clip: true
+        antialiasing: true
 
         Item {
             id: body

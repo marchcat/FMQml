@@ -92,9 +92,9 @@ Rectangle {
         spacing: 10
 
         Rectangle {
-            Layout.preferredWidth: 8
+            Layout.preferredWidth: 3
             Layout.fillHeight: true
-            radius: 4
+            radius: 1.5
             color: Theme.danger
         }
 

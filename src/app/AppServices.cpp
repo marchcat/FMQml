@@ -2,7 +2,6 @@
 
 #include "../core/ArchiveSupport.h"
 #include "../core/IsoSupport.h"
-#include "../core/LocalFileProvider.h"
 #include "../models/DirectoryModel.h"
 
 #include <QApplication>
@@ -89,13 +88,6 @@ AppServices::AppServices(QObject *parent)
     m_quickLook.setIsoMountManager(m_workspace.isoMountManager());
     m_favorites.setIsoMountManager(m_workspace.isoMountManager());
     m_settings.setThemeController(&m_theme);
-    LocalFileProvider::setUseNativeFileEnumerators(m_settings.useNativeFileEnumerators());
-    connect(&m_settings, &AppSettingsController::useNativeFileEnumeratorsChanged, this, [this]() {
-        LocalFileProvider::setUseNativeFileEnumerators(m_settings.useNativeFileEnumerators());
-        m_workspace.leftPanel()->refresh();
-        m_workspace.rightPanel()->refresh();
-        m_workspace.treeModel()->refresh();
-    });
     connect(&m_favorites, &FavoritesController::openPathRequested, &m_workspace, [this](const QString &path) {
         FilePanelController *panel = m_workspace.activePanel() == 0
             ? m_workspace.leftPanel()
@@ -273,18 +265,16 @@ void AppServices::restoreInitialWorkspaceState()
     m_workspace.leftPanel()->setViewMode(boundedInt(state, QStringLiteral("leftViewMode"), 0, 0, 2));
     m_workspace.rightPanel()->setViewMode(boundedInt(state, QStringLiteral("rightViewMode"), 0, 0, 2));
 
-    m_workspace.leftPanel()->directoryModel()->setSortRole(
-        static_cast<DirectoryModel::SortRole>(boundedInt(state, QStringLiteral("leftSortRole"), 0, 0, 5)));
-    m_workspace.rightPanel()->directoryModel()->setSortRole(
-        static_cast<DirectoryModel::SortRole>(boundedInt(state, QStringLiteral("rightSortRole"), 0, 0, 5)));
-    m_workspace.leftPanel()->directoryModel()->setSortOrder(
-        boundedInt(state, QStringLiteral("leftSortOrder"), int(Qt::AscendingOrder), 0, 1) == int(Qt::DescendingOrder)
-            ? Qt::DescendingOrder
-            : Qt::AscendingOrder);
-    m_workspace.rightPanel()->directoryModel()->setSortOrder(
-        boundedInt(state, QStringLiteral("rightSortOrder"), int(Qt::AscendingOrder), 0, 1) == int(Qt::DescendingOrder)
-            ? Qt::DescendingOrder
-            : Qt::AscendingOrder);
+    m_workspace.leftPanel()->setPanelSortPolicy(
+        boundedInt(state, QStringLiteral("leftSortRole"), 0, 0, 5),
+        boundedInt(state, QStringLiteral("leftSortOrder"), int(Qt::AscendingOrder), 0, 1));
+    m_workspace.rightPanel()->setPanelSortPolicy(
+        boundedInt(state, QStringLiteral("rightSortRole"), 0, 0, 5),
+        boundedInt(state, QStringLiteral("rightSortOrder"), int(Qt::AscendingOrder), 0, 1));
+    m_workspace.leftPanel()->directoryModel()->setMixFilesAndFolders(
+        state.value(QStringLiteral("leftMixFilesAndFolders"), false).toBool());
+    m_workspace.rightPanel()->directoryModel()->setMixFilesAndFolders(
+        state.value(QStringLiteral("rightMixFilesAndFolders"), false).toBool());
 
     m_workspace.leftPanel()->openPath(m_settings.safeFolderPath(state.value(QStringLiteral("leftPath")).toString()));
     m_workspace.rightPanel()->openPath(m_settings.safeFolderPath(state.value(QStringLiteral("rightPath")).toString()));

@@ -77,6 +77,18 @@ QtObject {
             && !path.startsWith("favorites://")
     }
 
+    function canPinPanelSelection(ctrl) {
+        if (!ctrl || !ctrl.directoryModel || ctrl.directoryModel.selectedCount === 0 || ctrl.isVirtualRoot) return false
+        const selected = ctrl.selectedPaths ? ctrl.selectedPaths() : []
+        if (!selected || selected.length === 0) return false
+        for (let i = 0; i < selected.length; ++i) {
+            if (String(selected[i]).toLowerCase().startsWith("archive://")) {
+                return false
+            }
+        }
+        return true
+    }
+
     readonly property var commands: [
         {
             id: "nav.goBack",
@@ -195,7 +207,7 @@ QtObject {
             enabled: function() {
                 if (!root.workspaceCommandsEnabled) return false
                 const ctrl = root.activePanelController ? root.activePanelController() : null
-                return ctrl && ctrl.directoryModel && ctrl.directoryModel.selectedCount > 0 && !ctrl.isVirtualRoot
+                return root.canPinPanelSelection(ctrl)
             },
             disabledReason: function() {
                 if (!root.workspaceCommandsEnabled) return "Overlays are open"
@@ -203,6 +215,7 @@ QtObject {
                 if (!ctrl) return "No active panel"
                 if (ctrl.isVirtualRoot) return "Favorites cannot pin virtual locations"
                 if (!ctrl.directoryModel || ctrl.directoryModel.selectedCount === 0) return "No items selected"
+                if (!root.canPinPanelSelection(ctrl)) return "Archive contents cannot be pinned"
                 return ""
             },
             run: function() {
@@ -284,12 +297,12 @@ QtObject {
             run: function() { if (root.setThemeScheme) root.setThemeScheme(1) }
         },
         {
-            id: "view.oxideGarden",
-            title: "Switch to Oxide Garden",
-            subtitle: "Apply the earthy paper-and-patina scheme",
+            id: "view.porcelainBloom",
+            title: "Switch to Porcelain Bloom",
+            subtitle: "Apply the bright white-and-rose light scheme",
             category: "Theme",
             shortcut: "",
-            keywords: ["theme", "appearance", "light", "earth", "oxide", "garden", "patina"],
+            keywords: ["theme", "appearance", "light", "white", "red", "rose", "porcelain", "bloom", "coral"],
             enabled: function() { return root.workspaceCommandsEnabled },
             run: function() { if (root.setThemeScheme) root.setThemeScheme(2) }
         },
@@ -336,19 +349,19 @@ QtObject {
         {
             id: "theme.switch",
             title: "Switch theme by name",
-            subtitle: "Catppuccin Latte / Aurora Glass / Oxide Garden / Ember Luxe / Graphite Sage / Velvet Excess",
+            subtitle: "Catppuccin Latte / Aurora Glass / Porcelain Bloom / Ember Luxe / Graphite Sage / Velvet Excess",
             category: "Theme",
             shortcut: "",
-            keywords: ["theme", "appearance", "scheme", "switch", "change", "catppuccin", "aurora", "oxide", "ember", "graphite", "sage", "velvet", "excess"],
+            keywords: ["theme", "appearance", "scheme", "switch", "change", "catppuccin", "aurora", "porcelain", "bloom", "rose", "ember", "graphite", "sage", "velvet", "excess"],
             aliases: ["set theme", "change theme", "apply theme"],
             acceptsArgument: true,
-            argumentLabel: "Theme name (e.g. Aurora Glass, Velvet Excess)...",
+            argumentLabel: "Theme name (e.g. Porcelain Bloom, Aurora Glass)...",
             enabled: function() { return root.workspaceCommandsEnabled },
             getSuggestions: function(input) {
                 const builtins = [
                     { title: "Catppuccin Latte", value: "Catppuccin Latte", subtitle: "Built-in soft light scheme", previewColor: "#EFF1F5" },
                     { title: "Aurora Glass", value: "Aurora Glass", subtitle: "Built-in dark glass scheme", previewColor: "#08111F" },
-                    { title: "Oxide Garden", value: "Oxide Garden", subtitle: "Built-in earthy light scheme", previewColor: "#F3EDDF" },
+                    { title: "Porcelain Bloom", value: "Porcelain Bloom", subtitle: "Built-in white-and-rose light scheme", previewColor: "#FAFBFA" },
                     { title: "Ember Luxe", value: "Ember Luxe", subtitle: "Built-in dark luxury scheme", previewColor: "#100C0A" },
                     { title: "Graphite Sage", value: "Graphite Sage", subtitle: "Built-in graphite, sage, and brass scheme", previewColor: "#111715" },
                     { title: "Velvet Excess", value: "Velvet Excess", subtitle: "Built-in velvet, orchid, and gold scheme", previewColor: "#160817" }
@@ -396,7 +409,7 @@ QtObject {
                     root.setThemeScheme(0)
                 } else if (name.indexOf("aurora") >= 0 || name.indexOf("glass") >= 0) {
                     root.setThemeScheme(1)
-                } else if (name.indexOf("oxide") >= 0 || name.indexOf("garden") >= 0) {
+                } else if (name.indexOf("porcelain") >= 0 || name.indexOf("bloom") >= 0 || name.indexOf("rose") >= 0) {
                     root.setThemeScheme(2)
                 } else if (name.indexOf("ember") >= 0 || name.indexOf("luxe") >= 0) {
                     root.setThemeScheme(3)

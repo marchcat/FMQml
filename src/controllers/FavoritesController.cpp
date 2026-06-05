@@ -17,6 +17,12 @@ bool isArchivePath(const QString &path)
 {
     return ArchiveSupport::isArchivePath(path);
 }
+
+bool canPinPath(const QString &path)
+{
+    const QString normalized = path.trimmed();
+    return !normalized.isEmpty() && !ArchiveSupport::isArchivePath(normalized);
+}
 }
 
 FavoritesController::FavoritesController(QObject *parent)
@@ -74,6 +80,9 @@ int FavoritesController::tagCount() const
 
 bool FavoritesController::pinPath(const QString &path)
 {
+    if (!canPinPath(path)) {
+        return false;
+    }
     const bool changed = m_store.pinPath(path);
     if (changed) {
         refreshModel();
@@ -128,6 +137,9 @@ bool FavoritesController::setPinnedTags(const QString &path, const QStringList &
 
 bool FavoritesController::togglePinned(const QString &path)
 {
+    if (!isPinned(path) && !canPinPath(path)) {
+        return false;
+    }
     return isPinned(path) ? unpinPath(path) : pinPath(path);
 }
 
@@ -140,6 +152,9 @@ int FavoritesController::pinPaths(const QStringList &paths)
 {
     int changed = 0;
     for (const QString &path : paths) {
+        if (!canPinPath(path)) {
+            continue;
+        }
         if (m_store.pinPath(path)) {
             ++changed;
         }

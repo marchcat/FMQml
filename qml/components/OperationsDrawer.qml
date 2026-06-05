@@ -45,6 +45,10 @@ Item {
     readonly property color solidPanelSurfaceSoft: root.opaque(Theme.panelSurfaceSoft)
     readonly property color solidPanelSurfaceStrong: root.opaque(Theme.panelSurfaceStrong)
     readonly property color solidSurfaceActive: root.opaque(Theme.surfaceActive)
+    readonly property color quietBorder: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.38 : 0.28)
+    readonly property color accentBorder: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.44 : 0.34)
+    readonly property color dangerBorder: Theme.withAlpha(Theme.danger, themeController.isDark ? 0.58 : 0.46)
+    readonly property color warningBorder: Theme.withAlpha(Theme.warning, themeController.isDark ? 0.52 : 0.40)
 
     property bool expanded: false
     property int previewDelayMs: 900
@@ -203,7 +207,7 @@ Item {
         radius: 16
         visible: root.chipVisible
         color: root.solidPanelSurfaceStrong
-        border.color: root.hasOperationError ? Theme.danger : Theme.panelBorder
+        border.color: root.hasOperationError ? root.dangerBorder : root.quietBorder
         border.width: 1
 
         layer.enabled: true
@@ -219,8 +223,8 @@ Item {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 4
-            radius: 2
+            width: 2
+            radius: 1
             color: root.hasOperationError ? Theme.danger : Theme.accent
         }
 
@@ -242,7 +246,7 @@ Item {
                 Layout.preferredHeight: 28
                 radius: 9
                 color: root.solidPanelSurface
-                border.color: root.hasOperationError ? Theme.danger : Theme.accent
+                border.color: root.hasOperationError ? root.dangerBorder : root.accentBorder
                 border.width: 1
 
                 RecolorSvgIcon {
@@ -306,7 +310,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 4
                     radius: 2
-                    color: Theme.panelBorder
+                    color: root.quietBorder
                     visible: root.busy
 
                     Rectangle {
@@ -330,7 +334,7 @@ Item {
         visible: root.cardVisible
         scale: visible ? 1.0 : 0.98
         color: root.solidPanelSurfaceStrong
-        border.color: root.hasOperationError ? Theme.danger : Theme.panelBorder
+        border.color: root.hasOperationError ? root.dangerBorder : root.quietBorder
         border.width: 1
 
         Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
@@ -355,8 +359,8 @@ Item {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 6
-            radius: 3
+            width: 3
+            radius: 1.5
             color: root.hasOperationError ? Theme.danger : Theme.accent
         }
 
@@ -377,7 +381,7 @@ Item {
                 color: collapseBtn.pressed
                        ? root.solidSurfaceActive
                        : (collapseBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
-                border.color: Theme.panelBorder
+                border.color: root.quietBorder
                 border.width: 1
             }
 
@@ -413,7 +417,7 @@ Item {
                     Layout.preferredHeight: 40
                     radius: 12
                     color: root.solidPanelSurface
-                    border.color: root.hasOperationError ? Theme.danger : Theme.accent
+                    border.color: root.hasOperationError ? root.dangerBorder : root.accentBorder
                     border.width: 1
 
                     RecolorSvgIcon {
@@ -458,7 +462,7 @@ Item {
                             implicitHeight: 20
                             implicitWidth: itemsLabel.implicitWidth + 14
                             color: root.solidPanelSurface
-                            border.color: Theme.panelBorder
+                            border.color: root.quietBorder
                             border.width: 1
 
                             Label {
@@ -477,7 +481,7 @@ Item {
                             implicitHeight: 20
                             implicitWidth: speedLabel.implicitWidth + 14
                             color: root.solidPanelSurface
-                            border.color: Theme.accent
+                            border.color: root.accentBorder
                             border.width: 1
 
                             Label {
@@ -496,7 +500,7 @@ Item {
                             implicitHeight: 20
                             implicitWidth: etaLabel.implicitWidth + 14
                             color: root.solidPanelSurface
-                            border.color: Theme.panelBorder
+                            border.color: root.quietBorder
                             border.width: 1
 
                             Label {
@@ -527,7 +531,7 @@ Item {
 
                     background: Rectangle {
                         implicitHeight: 10
-                        color: Theme.panelBorder
+                        color: root.quietBorder
                         radius: 5
                     }
 
@@ -554,7 +558,7 @@ Item {
                         implicitHeight: 20
                         implicitWidth: pctLabel.implicitWidth + 14
                         color: root.solidPanelSurface
-                        border.color: Theme.accent
+                        border.color: root.accentBorder
                         border.width: 1
 
                         Label {
@@ -595,7 +599,7 @@ Item {
                 Layout.preferredHeight: msgLabel.implicitHeight + 24
                 color: root.solidPanelSurface
                 radius: 14
-                border.color: root.hasOperationError ? Theme.danger : Theme.panelBorder
+                border.color: root.hasOperationError ? root.dangerBorder : root.quietBorder
                 border.width: 1
 
                 Label {
@@ -621,7 +625,7 @@ Item {
                 Layout.preferredHeight: errorPathLabel.implicitHeight + 20
                 radius: 12
                 color: root.solidPanelSurface
-                border.color: Theme.panelBorder
+                border.color: root.quietBorder
                 border.width: 1
 
                 Label {
@@ -644,7 +648,7 @@ Item {
                 Layout.preferredHeight: failedItemsLabel.implicitHeight + 20
                 radius: 12
                 color: root.solidPanelSurface
-                border.color: Theme.warning
+                border.color: root.warningBorder
                 border.width: 1
 
                 Label {
@@ -679,7 +683,7 @@ Item {
                         color: retryBtn.pressed
                                ? root.solidSurfaceActive
                                : (retryBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
-                        border.color: Theme.accent
+                        border.color: root.accentBorder
                         border.width: 1
                     }
 
@@ -706,7 +710,7 @@ Item {
                         color: refreshBtn.pressed
                                ? root.solidSurfaceActive
                                : (refreshBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
-                        border.color: Theme.accent
+                        border.color: root.accentBorder
                         border.width: 1
                     }
 
@@ -739,7 +743,7 @@ Item {
                         color: copyPathBtn.pressed
                                ? root.solidSurfaceActive
                                : (copyPathBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
-                        border.color: Theme.accent
+                        border.color: root.accentBorder
                         border.width: 1
                     }
 
@@ -766,7 +770,7 @@ Item {
                         color: adminBtn.pressed
                                ? root.solidSurfaceActive
                                : (adminBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
-                        border.color: Theme.warning
+                        border.color: root.warningBorder
                         border.width: 1
                     }
 
@@ -799,8 +803,8 @@ Item {
                                ? root.solidSurfaceActive
                                : (cancelBtn.hovered ? root.solidPanelSurfaceSoft : root.solidPanelSurface)
                         border.color: root.hasOperationError
-                                      ? Theme.panelBorder
-                                      : Theme.danger
+                                      ? root.quietBorder
+                                      : root.dangerBorder
                         border.width: 1
                     }
 

@@ -100,7 +100,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: root.compact ? 8 : 18
-        radius: Theme.radiusMd
+        radius: Theme.panelRadius
         color: root.paperColor
         border.color: Theme.withAlpha(root.bookAccent, themeController.isDark ? 0.34 : 0.24)
         border.width: 1
@@ -118,7 +118,7 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: root.compact ? 48 : 84
                     Layout.preferredHeight: root.compact ? 64 : 112
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: Theme.withAlpha(root.bookAccent, themeController.isDark ? 0.20 : 0.14)
                     border.color: Theme.withAlpha(root.bookAccent, themeController.isDark ? 0.48 : 0.34)
                     border.width: 1

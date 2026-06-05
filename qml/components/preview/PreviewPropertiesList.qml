@@ -8,7 +8,7 @@ ScrollView {
 
     property var properties: []
     property string title: ""
-    property int rowRadius: 12
+    property int rowRadius: Theme.radiusMd
     property int rowPadding: 14
     property int labelPixelSize: 10
     property int valuePixelSize: 12

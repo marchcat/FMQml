@@ -57,6 +57,9 @@ class ThemeController final : public QObject {
     Q_PROPERTY(QColor menuBorder READ menuBorder NOTIFY themeChanged)
     Q_PROPERTY(QColor menuSeparator READ menuSeparator NOTIFY themeChanged)
     Q_PROPERTY(QColor menuItemPressed READ menuItemPressed NOTIFY themeChanged)
+    Q_PROPERTY(QColor chromeGradientStart READ chromeGradientStart NOTIFY themeChanged)
+    Q_PROPERTY(QColor chromeGradientMid READ chromeGradientMid NOTIFY themeChanged)
+    Q_PROPERTY(QColor chromeGradientEnd READ chromeGradientEnd NOTIFY themeChanged)
     Q_PROPERTY(QColor glassShadow READ glassShadow NOTIFY themeChanged)
     Q_PROPERTY(QColor shadow READ shadow NOTIFY themeChanged)
 
@@ -106,6 +109,9 @@ public:
         QColor menuBorder;
         QColor menuSeparator;
         QColor menuItemPressed;
+        QColor chromeGradientStart;
+        QColor chromeGradientMid;
+        QColor chromeGradientEnd;
         QColor glassShadow;
         QColor shadow;
     };
@@ -120,7 +126,7 @@ public:
     enum ThemeScheme {
         CatppuccinLatte,
         AuroraGlass,
-        OxideGarden,
+        PorcelainBloom,
         EmberLuxe,
         GraphiteSage,
         VelvetExcess
@@ -182,6 +188,9 @@ public:
     QColor menuBorder() const;
     QColor menuSeparator() const;
     QColor menuItemPressed() const;
+    QColor chromeGradientStart() const;
+    QColor chromeGradientMid() const;
+    QColor chromeGradientEnd() const;
     QColor glassShadow() const;
     QColor shadow() const;
 

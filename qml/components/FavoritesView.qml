@@ -13,6 +13,7 @@ FocusScope {
     property var controller
     property var panel
     property var favoritesBackend
+    property var quickLookPopup
     property bool liveResizeActive: false
 
     signal activated()
@@ -26,6 +27,7 @@ FocusScope {
                                            : false
     readonly property bool resizeOptimized: root.liveResizeActive
     readonly property bool effectsReduced: root.resizeOptimized || root.ultraLightMode
+    readonly property bool wideFavoritesLayout: width >= 860
     property string contextFavoriteId: ""
     property string contextTargetPath: ""
     property bool contextTargetExists: false
@@ -36,6 +38,9 @@ FocusScope {
     property bool selectedTargetExists: false
     property bool selectedTargetIsDirectory: false
     property bool selectedIsPinned: false
+    property bool previewScrollActive: false
+    property bool previewScrollbarPressed: false
+    property string pendingPreviewPath: ""
     property string labelEditTargetPath: ""
     property int labelEditPinnedIndex: -1
     property string tagEditTargetPath: ""
@@ -64,6 +69,64 @@ FocusScope {
         return root.selectedIsPinned ? pinnedList : frequentList
     }
 
+    function favoritesMotionActive() {
+        return root.previewScrollbarPressed
+            || (pinnedList && (pinnedList.moving || pinnedList.flicking))
+            || (frequentList && (frequentList.moving || frequentList.flicking))
+    }
+
+    function favoritePreviewSuppressed() {
+        return root.previewScrollActive || root.previewScrollbarPressed
+    }
+
+    function markFavoritePreviewScrollActive() {
+        if (root.resizeOptimized || root.modelCount <= 0) {
+            return
+        }
+        root.previewScrollActive = true
+        favoritePreviewSyncTimer.stop()
+        previewScrollStopTimer.restart()
+    }
+
+    function handleFavoriteScrollbarPressed(pressed) {
+        root.previewScrollbarPressed = pressed
+        if (pressed) {
+            root.markFavoritePreviewScrollActive()
+            return
+        }
+        previewScrollStopTimer.restart()
+    }
+
+    function scheduleFavoritePreview(targetPath, exists) {
+        favoritePreviewSyncTimer.stop()
+        if (!exists || targetPath.length === 0 || typeof quickLookController === "undefined" || !quickLookController) {
+            root.pendingPreviewPath = ""
+            return
+        }
+
+        root.pendingPreviewPath = targetPath
+        if (root.favoritePreviewSuppressed()) {
+            return
+        }
+        favoritePreviewSyncTimer.restart()
+    }
+
+    function flushPendingFavoritePreview() {
+        if (root.favoritePreviewSuppressed()) {
+            return
+        }
+        if (root.pendingPreviewPath.length === 0
+                || root.pendingPreviewPath !== root.selectedTargetPath
+                || !root.selectedTargetExists
+                || typeof quickLookController === "undefined"
+                || !quickLookController) {
+            return
+        }
+        const path = root.pendingPreviewPath
+        root.pendingPreviewPath = ""
+        quickLookController.preview(path)
+    }
+
     function selectRow(listView, index, favoriteId, name, targetPath, exists, isDirectory, isPinned) {
         root.activated()
         root.forceActiveFocus()
@@ -80,9 +143,7 @@ FocusScope {
         } else {
             pinnedList.currentIndex = -1
         }
-        if (exists && targetPath.length > 0 && typeof quickLookController !== "undefined" && quickLookController) {
-            quickLookController.preview(targetPath)
-        }
+        root.scheduleFavoritePreview(targetPath, exists)
     }
 
     function selectPinnedIndex(index) {
@@ -151,6 +212,23 @@ FocusScope {
             return
         }
         root.favoritesBackend.openItem(favoriteId)
+    }
+
+    function openQuickLookForCurrentFavorite() {
+        if (!root.selectedTargetExists
+                || root.selectedTargetPath.length === 0
+                || typeof quickLookController === "undefined"
+                || !quickLookController
+                || !root.quickLookPopup) {
+            return false
+        }
+
+        favoritePreviewSyncTimer.stop()
+        root.pendingPreviewPath = ""
+        quickLookController.preview(root.selectedTargetPath)
+        root.quickLookPopup.previewPath = root.selectedTargetPath
+        root.quickLookPopup.open()
+        return true
     }
 
     function removeFavorite(targetPath) {
@@ -245,10 +323,47 @@ FocusScope {
         onActivated: root.removeCurrentFavorite()
     }
 
+    Timer {
+        id: favoritePreviewSyncTimer
+        interval: 90
+        repeat: false
+        onTriggered: {
+            if (root.favoritePreviewSuppressed()) {
+                return
+            }
+            root.flushPendingFavoritePreview()
+        }
+    }
+
+    Timer {
+        id: previewScrollStopTimer
+        interval: 220
+        repeat: false
+        onTriggered: {
+            if (root.favoritesMotionActive()) {
+                root.previewScrollActive = true
+                previewScrollStopTimer.restart()
+                return
+            }
+            root.previewScrollActive = false
+            root.flushPendingFavoritePreview()
+        }
+    }
+
     function handleKey(event) {
+        if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
+            root.markFavoritePreviewScrollActive()
+        }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (root.selectedFavoriteId.length > 0) {
                 root.openFavorite(root.selectedFavoriteId)
+            } else {
+                root.selectFirstAvailable()
+            }
+            event.accepted = true
+        } else if (event.key === Qt.Key_Space && event.modifiers === Qt.NoModifier) {
+            if (root.selectedFavoriteId.length > 0) {
+                root.openQuickLookForCurrentFavorite()
             } else {
                 root.selectFirstAvailable()
             }
@@ -433,12 +548,67 @@ FocusScope {
         }
     }
 
+    component StatTile : Rectangle {
+        property string iconSource: ""
+        property string title: ""
+        property string value: ""
+        property color accentColor: Theme.accent
+
+        Layout.fillWidth: true
+        Layout.preferredHeight: root.ultraLightMode ? 46 : 56
+        radius: Theme.radiusMd
+        color: Theme.withAlpha(accentColor, themeController.isDark ? 0.105 : 0.065)
+        border.color: Theme.withAlpha(accentColor, themeController.isDark ? 0.30 : 0.22)
+        border.width: 1
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: root.ultraLightMode ? 10 : 12
+            anchors.rightMargin: root.ultraLightMode ? 10 : 12
+            spacing: root.ultraLightMode ? 8 : 10
+
+            RecolorSvgIcon {
+                Layout.preferredWidth: root.ultraLightMode ? 16 : 18
+                Layout.preferredHeight: root.ultraLightMode ? 16 : 18
+                sourcePath: iconSource
+                recolorColor: accentColor
+                cacheKey: "favorites-stat"
+                sourceSize: Qt.size(32, 32)
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+
+                Label {
+                    Layout.fillWidth: true
+                    text: value
+                    color: Theme.textPrimary
+                    font.pixelSize: root.ultraLightMode ? 13 : 15
+                    font.weight: Font.DemiBold
+                    elide: Text.ElideRight
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    text: title
+                    color: Theme.textSecondary
+                    font.pixelSize: root.ultraLightMode ? 10 : 11
+                    elide: Text.ElideRight
+                }
+            }
+        }
+    }
+
     component FavoriteRow : ItemDelegate {
         id: row
 
         property var listView
         property bool rowPinned: true
         readonly property bool isCurrent: listView && listView.activeFocus && listView.currentIndex === index
+        readonly property int actionHitMargin: root.ultraLightMode
+                                                ? (rowPinned ? 116 : 58)
+                                                : (rowPinned ? 136 : 68)
         readonly property string favoriteId: model.id || ""
         readonly property string itemName: model.name || ""
         readonly property string itemTargetPath: model.targetPath || ""
@@ -535,27 +705,62 @@ FocusScope {
                 }
             }
 
-            ToolButton {
+            IconButton {
                 Layout.preferredWidth: root.ultraLightMode ? 26 : 30
                 Layout.preferredHeight: root.ultraLightMode ? 26 : 30
                 visible: row.itemExists
-                icon.source: row.itemIsDirectory
-                             ? "qrc:/qt/qml/FM/qml/assets/icons/folder-open.svg"
-                             : "qrc:/qt/qml/FM/qml/assets/icons/open.svg"
-                icon.width: 15
-                icon.height: 15
+                iconSource: row.itemIsDirectory
+                            ? "qrc:/qt/qml/FM/qml/assets/icons/folder-open.svg"
+                            : "qrc:/qt/qml/FM/qml/assets/icons/open.svg"
+                iconTone: "open"
+                iconSize: 15
                 onClicked: root.openFavoriteTarget(row.favoriteId, row.itemTargetPath)
                 ToolTip.visible: hovered
                 ToolTip.text: row.itemIsDirectory ? "Open folder" : "Open file"
             }
 
-            ToolButton {
+            IconButton {
                 Layout.preferredWidth: root.ultraLightMode ? 26 : 30
                 Layout.preferredHeight: root.ultraLightMode ? 26 : 30
                 visible: row.rowPinned
-                icon.source: "qrc:/qt/qml/FM/qml/assets/icons/star-off.svg"
-                icon.width: 15
-                icon.height: 15
+                enabled: row.itemTargetPath.length > 0
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/rename.svg"
+                iconTone: "rename"
+                iconSize: 15
+                onClicked: {
+                    root.selectRow(row.listView, index, row.favoriteId, row.itemName, row.itemTargetPath,
+                                   row.itemExists, row.itemIsDirectory, row.rowPinned)
+                    root.editSelectedPinnedLabel()
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: "Edit Label"
+            }
+
+            IconButton {
+                Layout.preferredWidth: root.ultraLightMode ? 26 : 30
+                Layout.preferredHeight: root.ultraLightMode ? 26 : 30
+                visible: row.rowPinned
+                enabled: row.itemTargetPath.length > 0
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/tag.svg"
+                iconTone: "action"
+                svgRecolorColor: root.tagAccent
+                iconSize: 15
+                onClicked: {
+                    root.selectRow(row.listView, index, row.favoriteId, row.itemName, row.itemTargetPath,
+                                   row.itemExists, row.itemIsDirectory, row.rowPinned)
+                    root.editSelectedPinnedTags()
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: "Edit Tags"
+            }
+
+            IconButton {
+                Layout.preferredWidth: root.ultraLightMode ? 26 : 30
+                Layout.preferredHeight: root.ultraLightMode ? 26 : 30
+                visible: row.rowPinned
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/star-off.svg"
+                iconTone: "favorite"
+                iconSize: 15
                 onClicked: {
                     root.selectRow(row.listView, index, row.favoriteId, row.itemName, row.itemTargetPath,
                                    row.itemExists, row.itemIsDirectory, row.rowPinned)
@@ -586,7 +791,7 @@ FocusScope {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
-            anchors.rightMargin: root.ultraLightMode ? (row.rowPinned ? 60 : 30) : (row.rowPinned ? 72 : 36)
+            anchors.rightMargin: row.actionHitMargin
             acceptedButtons: Qt.LeftButton | Qt.RightButton
             z: 2
 
@@ -660,132 +865,157 @@ FocusScope {
             Layout.fillWidth: true
             spacing: root.ultraLightMode ? 6 : 10
 
-            InlineBadge {
-                text: "Pinned: " + root.pinnedCount
-                textColor: Theme.textSecondary
-                fillColor: Theme.withAlpha(Theme.categoryNavigation, themeController.isDark ? 0.12 : 0.08)
-                strokeColor: Theme.border
-                badgeHeight: root.ultraLightMode ? 22 : 28
+            StatTile {
+                title: "Pinned"
+                value: String(root.pinnedCount)
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+                accentColor: Theme.accent
             }
 
-            InlineBadge {
-                text: "Frequent: " + root.frequentCount
-                textColor: Theme.textSecondary
-                fillColor: Theme.withAlpha(Theme.categoryUtility, themeController.isDark ? 0.12 : 0.08)
-                strokeColor: Theme.border
-                badgeHeight: root.ultraLightMode ? 22 : 28
+            StatTile {
+                title: "Frequent"
+                value: String(root.frequentCount)
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/folder-open.svg"
+                accentColor: Theme.categoryUtility
             }
 
-            InlineBadge {
-                text: "Tags: " + (root.favoritesBackend ? root.favoritesBackend.tagCount : 0)
-                textColor: root.tagAccent
-                fillColor: Theme.withAlpha(root.tagAccent, themeController.isDark ? 0.12 : 0.08)
-                strokeColor: Theme.border
-                badgeHeight: root.ultraLightMode ? 22 : 28
+            StatTile {
+                title: "Tags"
+                value: String(root.favoritesBackend ? root.favoritesBackend.tagCount : 0)
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/tag.svg"
+                accentColor: root.tagAccent
             }
 
-            Item { Layout.fillWidth: true }
-
-            ToolButton {
+            IconButton {
                 Layout.preferredWidth: root.ultraLightMode ? 26 : 30
                 Layout.preferredHeight: root.ultraLightMode ? 26 : 30
                 visible: root.frequentCount > 0
-                icon.source: "qrc:/qt/qml/FM/qml/assets/icons/delete.svg"
-                icon.width: 14
-                icon.height: 14
+                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/delete.svg"
+                iconTone: "delete"
+                iconSize: 14
                 onClicked: root.favoritesBackend.clearFrequent()
                 ToolTip.visible: hovered
                 ToolTip.text: "Clear Frequent"
             }
         }
 
-        ColumnLayout {
+        GridLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: root.pinnedCount > 0
-                                    ? Math.min(root.ultraLightMode ? 300 : 360,
-                                               Math.max(root.ultraLightMode ? 70 : 88,
-                                                        pinnedList.contentHeight + (root.ultraLightMode ? 26 : 34)))
-                                    : (root.ultraLightMode ? 66 : 84)
-            Layout.maximumHeight: root.pinnedCount > 0
-                                  ? Math.min(root.ultraLightMode ? 300 : 360,
-                                             Math.max(root.ultraLightMode ? 44 : 54,
-                                                      pinnedList.contentHeight + (root.ultraLightMode ? 26 : 34)))
-                                  : (root.ultraLightMode ? 66 : 84)
+            Layout.fillHeight: true
             visible: root.modelCount > 0
-            spacing: root.ultraLightMode ? 4 : 6
+            columns: root.wideFavoritesLayout ? 2 : 1
+            columnSpacing: root.ultraLightMode ? 8 : 12
+            rowSpacing: root.ultraLightMode ? 8 : 12
 
-            SectionHeader {
-                title: "Pinned"
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: root.wideFavoritesLayout
+                Layout.preferredHeight: root.pinnedCount > 0
+                                        ? Math.min(root.ultraLightMode ? 300 : 360,
+                                                   Math.max(root.ultraLightMode ? 70 : 88,
+                                                            pinnedList.contentHeight + (root.ultraLightMode ? 26 : 34)))
+                                        : (root.ultraLightMode ? 66 : 84)
+                Layout.maximumHeight: root.wideFavoritesLayout
+                                      ? 10000
+                                      : (root.pinnedCount > 0
+                                         ? Math.min(root.ultraLightMode ? 300 : 360,
+                                                    Math.max(root.ultraLightMode ? 44 : 54,
+                                                             pinnedList.contentHeight + (root.ultraLightMode ? 26 : 34)))
+                                         : (root.ultraLightMode ? 66 : 84))
+                spacing: root.ultraLightMode ? 4 : 6
+
+                SectionHeader {
+                    title: "Pinned"
+                }
+
+                ListView {
+                    id: pinnedList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: root.ultraLightMode ? 4 : 6
+                    model: root.favoritesBackend ? root.favoritesBackend.pinnedModel : null
+                    currentIndex: -1
+                    focus: true
+                    Keys.priority: Keys.BeforeItem
+                    Keys.onPressed: (event) => root.handleKey(event)
+                    onMovementStarted: root.markFavoritePreviewScrollActive()
+                    onFlickStarted: root.markFavoritePreviewScrollActive()
+                    onMovingChanged: if (moving) root.markFavoritePreviewScrollActive()
+                    onFlickingChanged: if (flicking) root.markFavoritePreviewScrollActive()
+                    onContentYChanged: root.markFavoritePreviewScrollActive()
+                    visible: root.pinnedCount > 0
+
+                    delegate: FavoriteRow {
+                        listView: pinnedList
+                        rowPinned: true
+                    }
+
+                    ScrollBar.vertical: ScrollBar {
+                        id: pinnedScrollBar
+                        policy: pinnedList.contentHeight > pinnedList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                        onPressedChanged: root.handleFavoriteScrollbarPressed(pressed)
+                    }
+                }
+
+                EmptySectionRow {
+                    visible: root.pinnedCount === 0
+                    iconSource: "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+                    iconColor: Theme.accent
+                    title: "No pinned items"
+                    subtitle: "Use Pin to Favorites from a file or folder menu."
+                }
             }
 
-            ListView {
-                id: pinnedList
+            ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                clip: true
                 spacing: root.ultraLightMode ? 4 : 6
-                model: root.favoritesBackend ? root.favoritesBackend.pinnedModel : null
-                currentIndex: -1
-                focus: true
-                Keys.priority: Keys.BeforeItem
-                Keys.onPressed: (event) => root.handleKey(event)
-                visible: root.pinnedCount > 0
 
-                delegate: FavoriteRow {
-                    listView: pinnedList
-                    rowPinned: true
+                SectionHeader {
+                    title: "Frequent"
                 }
 
-                ScrollBar.vertical: ScrollBar {
-                    policy: pinnedList.contentHeight > pinnedList.height ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                ListView {
+                    id: frequentList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: root.wideFavoritesLayout
+                    Layout.preferredHeight: root.frequentCount > 0
+                                            ? Math.min(root.ultraLightMode ? 240 : 314, frequentList.contentHeight)
+                                            : (root.ultraLightMode ? 36 : 44)
+                    clip: true
+                    spacing: root.ultraLightMode ? 4 : 6
+                    model: root.favoritesBackend ? root.favoritesBackend.frequentModel : null
+                    currentIndex: -1
+                    focus: true
+                    Keys.priority: Keys.BeforeItem
+                    Keys.onPressed: (event) => root.handleKey(event)
+                    onMovementStarted: root.markFavoritePreviewScrollActive()
+                    onFlickStarted: root.markFavoritePreviewScrollActive()
+                    onMovingChanged: if (moving) root.markFavoritePreviewScrollActive()
+                    onFlickingChanged: if (flicking) root.markFavoritePreviewScrollActive()
+                    onContentYChanged: root.markFavoritePreviewScrollActive()
+                    visible: root.frequentCount > 0
+
+                    delegate: FavoriteRow {
+                        listView: frequentList
+                        rowPinned: false
+                    }
+
+                    ScrollBar.vertical: ScrollBar {
+                        id: frequentScrollBar
+                        policy: ScrollBar.AsNeeded
+                        onPressedChanged: root.handleFavoriteScrollbarPressed(pressed)
+                    }
                 }
-            }
 
-            EmptySectionRow {
-                visible: root.pinnedCount === 0
-                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
-                iconColor: Theme.accent
-                title: "No pinned items"
-                subtitle: "Use Pin to Favorites from a file or folder menu."
-            }
-        }
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: root.modelCount > 0
-            spacing: root.ultraLightMode ? 4 : 6
-
-            SectionHeader {
-                title: "Frequent"
-            }
-
-            ListView {
-                id: frequentList
-                Layout.fillWidth: true
-                Layout.preferredHeight: root.frequentCount > 0
-                                        ? Math.min(root.ultraLightMode ? 240 : 314, frequentList.contentHeight)
-                                        : (root.ultraLightMode ? 36 : 44)
-                clip: true
-                spacing: root.ultraLightMode ? 4 : 6
-                model: root.favoritesBackend ? root.favoritesBackend.frequentModel : null
-                currentIndex: -1
-                focus: true
-                Keys.priority: Keys.BeforeItem
-                Keys.onPressed: (event) => root.handleKey(event)
-                visible: root.frequentCount > 0
-
-                delegate: FavoriteRow {
-                    listView: frequentList
-                    rowPinned: false
+                EmptySectionRow {
+                    visible: root.frequentCount === 0
+                    iconSource: "qrc:/qt/qml/FM/qml/assets/icons/folder.svg"
+                    iconColor: Theme.categoryUtility
+                    title: "No frequent folders yet"
+                    subtitle: "Open folders and they will appear here."
                 }
-            }
-
-            EmptySectionRow {
-                visible: root.frequentCount === 0
-                iconSource: "qrc:/qt/qml/FM/qml/assets/icons/folder.svg"
-                iconColor: Theme.categoryUtility
-                title: "No frequent folders yet"
-                subtitle: "Open folders and they will appear here."
             }
         }
 
@@ -896,8 +1126,6 @@ FocusScope {
                 text: "Save"
                 highlighted: true
                 primaryColor: Theme.accent
-                primaryHoverColor: Theme.activeAccent
-                primaryPressedColor: Theme.activeAccent
                 onClicked: root.applyPinnedLabelEdit()
             }
         }
@@ -979,8 +1207,6 @@ FocusScope {
                 text: "Save"
                 highlighted: true
                 primaryColor: root.tagAccent
-                primaryHoverColor: Theme.activeAccent
-                primaryPressedColor: Theme.activeAccent
                 onClicked: root.applyPinnedTagsEdit()
             }
         }

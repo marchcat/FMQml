@@ -6,7 +6,7 @@ Rectangle {
     id: root
 
     property color shellColor: Theme.panelSurface
-    property color shellBorderColor: Theme.panelBorder
+    property color shellBorderColor: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.42 : 0.30)
     property color accentColor: Theme.accent
     property bool accentVisible: true
     property int shellRadius: Theme.radiusLg
@@ -24,10 +24,13 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 2
-        radius: root.shellRadius
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        anchors.topMargin: 1
+        height: 1
+        radius: 0.5
         visible: root.accentVisible
-        color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.75 : 0.55)
+        color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.42 : 0.30)
     }
 
     layer.enabled: root.shadowEnabled

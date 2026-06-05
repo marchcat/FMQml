@@ -18,18 +18,9 @@ ToolButton {
     readonly property color baseTone: Theme.actionIconColor(btn.iconTone)
     readonly property color iconColor: svgRecolorEnabled ? svgRecolorColor : baseTone
     readonly property bool useSvgRecolor: svgRecolorEnabled && iconSource.toLowerCase().endsWith(".svg")
-    readonly property color hoverFill: {
-        if (btn.pressed) {
-            return Theme.surfaceActive
-        }
-        if (btn.hovered || btn.isHighlighted) {
-            return Theme.withAlpha(iconColor, themeController.isDark ? 0.22 : 0.18)
-        }
-        return "transparent"
-    }
-    readonly property color hoverBorder: (btn.hovered || btn.isHighlighted)
-        ? Theme.withAlpha(iconColor, themeController.isDark ? 0.52 : 0.40)
-        : "transparent"
+    readonly property bool activeVisual: btn.enabled && btn.isHighlighted
+    readonly property color hoverFill: Theme.toolbarButtonFill(iconColor, btn.hovered, btn.pressed, btn.activeVisual)
+    readonly property color hoverBorder: Theme.toolbarButtonBorder(iconColor, btn.hovered, btn.activeVisual)
     clip: true
     padding: 0
     
@@ -39,10 +30,22 @@ ToolButton {
     background: Rectangle {
         anchors.fill: parent
         anchors.margins: 1
-        radius: Theme.radiusSm
+        radius: Theme.radiusForSide(Math.min(width, height))
         color: btn.hoverFill
         border.color: btn.hoverBorder
-        border.width: btn.hovered || btn.isHighlighted || btn.pressed ? 1 : 0
+        border.width: btn.hovered || btn.activeVisual || btn.pressed ? 1 : 0
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 3
+            width: parent.width - 13
+            height: 2
+            radius: 1
+            visible: btn.activeVisual
+            color: Theme.toolbarButtonIndicator(btn.activeVisual)
+            opacity: btn.hovered ? 1.0 : 0.88
+        }
     }
     
     contentItem: Item {

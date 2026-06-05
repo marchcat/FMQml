@@ -41,7 +41,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             anchors.margins: 0
-            radius: Theme.radiusMd
+            radius: Theme.panelRadius
             color: Theme.withAlpha(Theme.secondaryAccent, themeController.isDark ? 0.12 : 0.09)
             border.color: Theme.withAlpha(Theme.secondaryAccent, themeController.isDark ? 0.34 : 0.26)
             border.width: 1
@@ -57,7 +57,7 @@ Item {
                     Layout.preferredHeight: width
                     Layout.maximumWidth: Math.min(parent.width * 0.34, root.compact ? 62 : 116)
                     Layout.maximumHeight: Layout.maximumWidth
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusLg
                     color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.12)
                     border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.42 : 0.30)
                     border.width: 1

@@ -235,6 +235,7 @@ private:
     void previewPath(const QString &path, bool forceReload);
     bool imageMetadataRequested() const;
     void requestImageMetadata();
+    void requestMetadata(const QString &path, int previewGeneration, int retryAttempt = 0);
     void resetAudioProperties();
     void syncAudioProperties(const QVariantList &properties);
     void resetImageInfo();

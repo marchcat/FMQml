@@ -10,11 +10,24 @@
 #include <QDir>
 #include <QDebug>
 #include <QFileInfo>
+#include <QFutureWatcher>
+#include <QHash>
 #include <QLocale>
 #include <QStandardPaths>
+#include <QtConcurrent>
 #include <QtGlobal>
 #include <algorithm>
 #include <utility>
+
+#ifdef Q_OS_WIN
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 const QSet<QString> kExecutableSuffixes = {
@@ -113,6 +126,14 @@ const QSet<QString> kDocumentSuffixes = {
     QStringLiteral("fb2")
 };
 
+#ifdef Q_OS_WIN
+DWORD entryAttributesWindows(const QFileInfo &fileInfo)
+{
+    const QString nativePath = QDir::toNativeSeparators(fileInfo.absoluteFilePath());
+    return GetFileAttributesW(reinterpret_cast<LPCWSTR>(nativePath.utf16()));
+}
+#endif
+
 QString categoryFilterLabel(DirectoryModel::CategoryFilter filter)
 {
     switch (filter) {
@@ -143,10 +164,35 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     entry.size = fileInfo.size();
     entry.modified = fileInfo.lastModified();
     entry.created = fileInfo.birthTime().isValid() ? fileInfo.birthTime() : fileInfo.lastModified();
+#ifdef Q_OS_WIN
+    const DWORD attributes = entryAttributesWindows(fileInfo);
+    const bool hasNativeAttributes = attributes != INVALID_FILE_ATTRIBUTES;
+    const bool isDirectory = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+        : fileInfo.isDir();
+    const bool isHidden = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_HIDDEN) != 0 || entry.name.startsWith(QLatin1Char('.')))
+        : (fileInfo.isHidden() || entry.name.startsWith(QLatin1Char('.')));
+    const bool isReadOnly = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_READONLY) != 0)
+        : !fileInfo.isWritable();
+    const bool isSystem = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_SYSTEM) != 0)
+        : false;
+    const bool isLink = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+        : fileInfo.isSymLink();
+    entry.isDirectory = isDirectory;
+    entry.isHidden = isHidden;
+    entry.isReadOnly = isReadOnly;
+    entry.isSystem = isSystem;
+#else
     entry.isDirectory = fileInfo.isDir();
     entry.isHidden = fileInfo.isHidden() || fileInfo.fileName().startsWith(QLatin1Char('.'));
     entry.isReadOnly = !fileInfo.isWritable();
-    entry.isSystem = fileInfo.isSymLink();
+    entry.isSystem = false;
+    const bool isLink = fileInfo.isSymLink();
+#endif
 
     QLocale loc;
     entry.sizeText = entry.isDirectory
@@ -160,7 +206,8 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     if (entry.isDirectory) attrs += QLatin1Char('D');
     if (entry.isHidden)    attrs += QLatin1Char('H');
     if (entry.isReadOnly)  attrs += QLatin1Char('R');
-    if (fileInfo.isSymLink()) attrs += QLatin1Char('L');
+    if (entry.isSystem)    attrs += QLatin1Char('S');
+    if (isLink)            attrs += QLatin1Char('L');
     entry.attributesText = attrs;
 
     static const QStringList imageSuffixes = kImageSuffixes.values();
@@ -228,10 +275,12 @@ void traceDirectoryWatch(const char *stage, const QString &path, const QString &
 
 bool sameFilesystemPath(const QString &left, const QString &right)
 {
+    const QString normalizedLeft = QDir::cleanPath(QDir::fromNativeSeparators(left));
+    const QString normalizedRight = QDir::cleanPath(QDir::fromNativeSeparators(right));
 #ifdef Q_OS_WIN
-    return left.compare(right, Qt::CaseInsensitive) == 0;
+    return normalizedLeft.compare(normalizedRight, Qt::CaseInsensitive) == 0;
 #else
-    return left == right;
+    return normalizedLeft == normalizedRight;
 #endif
 }
 
@@ -310,6 +359,189 @@ QString failedNavigationSelectionPath(const QString &failedPath)
         return QStringLiteral("archive://") + tokens.mid(0, tokens.size() - 1).join(QLatin1Char('|'));
     }
     return normalized;
+}
+
+struct AsyncFreshLoadResult {
+    int generation = 0;
+    QString path;
+    QList<FileEntry> entries;
+    QList<int> filteredIndices;
+    QHash<QString, int> pathIndex;
+    QSet<QString> foundPaths;
+    bool showHidden = false;
+    bool mixFilesAndFolders = false;
+    QString searchText;
+    DirectoryModel::CategoryFilter categoryFilter = DirectoryModel::FilterAll;
+    DirectoryModel::SortRole sortRole = DirectoryModel::SortByName;
+    Qt::SortOrder sortOrder = Qt::AscendingOrder;
+};
+
+bool entryMatchesFilterSnapshot(const FileEntry &entry,
+                                const QString &searchText,
+                                DirectoryModel::CategoryFilter categoryFilter)
+{
+    if (!searchText.isEmpty()
+        && !entry.name.contains(searchText, Qt::CaseInsensitive)) {
+        return false;
+    }
+
+    if (categoryFilter == DirectoryModel::FilterAll) {
+        return true;
+    }
+
+    if (entry.isDirectory) {
+        return false;
+    }
+
+    const QString suffix = entry.suffix.toLower();
+    switch (categoryFilter) {
+    case DirectoryModel::FilterExecutables:
+        return kExecutableSuffixes.contains(suffix);
+    case DirectoryModel::FilterLibraries:
+        return kLibrarySuffixes.contains(suffix);
+    case DirectoryModel::FilterImages:
+        return kImageSuffixes.contains(suffix);
+    case DirectoryModel::FilterArchives:
+        return ArchiveSupport::isArchiveExtension(suffix) || IsoSupport::isIsoImageExtension(suffix);
+    case DirectoryModel::FilterMedia:
+        return kAudioSuffixes.contains(suffix) || kVideoSuffixes.contains(suffix);
+    case DirectoryModel::FilterDocuments:
+        return kDocumentSuffixes.contains(suffix)
+            || entry.name.endsWith(QStringLiteral(".fb2.zip"), Qt::CaseInsensitive);
+    case DirectoryModel::FilterAll:
+        break;
+    }
+
+    return true;
+}
+
+bool compareEntriesForPolicy(const FileEntry &a,
+                             const FileEntry &b,
+                             bool mixFilesAndFolders,
+                             DirectoryModel::SortRole sortRole,
+                             Qt::SortOrder sortOrder)
+{
+    if (!mixFilesAndFolders && a.isDirectory != b.isDirectory) {
+        return a.isDirectory;
+    }
+
+    switch (sortRole) {
+    case DirectoryModel::SortByName: {
+        const int comp = a.name.compare(b.name, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        break;
+    }
+    case DirectoryModel::SortBySize:
+        if (a.size != b.size) {
+            return sortOrder == Qt::AscendingOrder ? (a.size < b.size) : (a.size > b.size);
+        }
+        break;
+    case DirectoryModel::SortByType: {
+        const int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        break;
+    }
+    case DirectoryModel::SortByDate:
+        if (a.modified != b.modified) {
+            return sortOrder == Qt::AscendingOrder ? (a.modified < b.modified) : (a.modified > b.modified);
+        }
+        break;
+    case DirectoryModel::SortByDateCreated:
+        if (a.created != b.created) {
+            return sortOrder == Qt::AscendingOrder ? (a.created < b.created) : (a.created > b.created);
+        }
+        break;
+    case DirectoryModel::SortByExtension: {
+        const int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
+        if (comp != 0) {
+            return sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
+        }
+        const int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
+        if (nameComp != 0) {
+            return sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
+        }
+        break;
+    }
+    }
+
+    const int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
+    if (nameComp != 0) {
+        return sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
+    }
+    const int pathComp = a.path.compare(b.path, Qt::CaseInsensitive);
+    return sortOrder == Qt::AscendingOrder ? (pathComp < 0) : (pathComp > 0);
+}
+
+AsyncFreshLoadResult buildAsyncFreshLoadResult(int generation,
+                                               const QString &path,
+                                               QList<FileEntry> baseEntries,
+                                               QList<FileEntry> pendingEntries,
+                                               qsizetype pendingOffset,
+                                               bool showHidden,
+                                               const QString &searchText,
+                                               DirectoryModel::CategoryFilter categoryFilter,
+                                               bool mixFilesAndFolders,
+                                               DirectoryModel::SortRole sortRole,
+                                               Qt::SortOrder sortOrder)
+{
+    AsyncFreshLoadResult result;
+    result.generation = generation;
+    result.path = path;
+    result.showHidden = showHidden;
+    result.searchText = searchText;
+    result.categoryFilter = categoryFilter;
+    result.mixFilesAndFolders = mixFilesAndFolders;
+    result.sortRole = sortRole;
+    result.sortOrder = sortOrder;
+
+    const qsizetype normalizedOffset = std::clamp(pendingOffset, qsizetype(0), pendingEntries.size());
+    result.entries.reserve(baseEntries.size() + pendingEntries.size() - normalizedOffset);
+    result.pathIndex.reserve(baseEntries.size() + pendingEntries.size() - normalizedOffset);
+    result.foundPaths.reserve(baseEntries.size() + pendingEntries.size() - normalizedOffset);
+
+    auto appendEntry = [&result](FileEntry entry) {
+        const QString normalizedPath = modelPathKey(entry.path);
+        result.foundPaths.insert(normalizedPath);
+        if (result.pathIndex.contains(normalizedPath)) {
+            return;
+        }
+
+        entry.isSelected = false;
+        const int newAbsoluteIdx = result.entries.size();
+        result.entries.append(std::move(entry));
+        result.pathIndex.insert(normalizedPath, newAbsoluteIdx);
+    };
+
+    for (FileEntry &entry : baseEntries) {
+        appendEntry(std::move(entry));
+    }
+    for (qsizetype i = normalizedOffset; i < pendingEntries.size(); ++i) {
+        appendEntry(std::move(pendingEntries[i]));
+    }
+
+    result.filteredIndices.reserve(result.entries.size());
+    for (int i = 0; i < result.entries.size(); ++i) {
+        const FileEntry &entry = result.entries.at(i);
+        if ((showHidden || !entry.isHidden)
+                && entryMatchesFilterSnapshot(entry, searchText, categoryFilter)) {
+            result.filteredIndices.append(i);
+        }
+    }
+
+    std::sort(result.filteredIndices.begin(), result.filteredIndices.end(),
+        [&result](int aIdx, int bIdx) {
+            return compareEntriesForPolicy(result.entries.at(aIdx),
+                                           result.entries.at(bIdx),
+                                           result.mixFilesAndFolders,
+                                           result.sortRole,
+                                           result.sortOrder);
+        });
+
+    return result;
 }
 }
 
@@ -741,6 +973,12 @@ void DirectoryModel::onScannerBatchReady(const QList<FileEntry> &entries, int ge
     }
 
     m_pendingInserts.append(entries);
+    if (m_freshLoad && m_provider && m_provider->scheme() == QStringLiteral("file")) {
+        if (!m_freshLoadCommitted) {
+            commitFreshLoad(m_pendingFreshLoadPath);
+        }
+        return;
+    }
     if (!m_insertTimer.isActive()) {
         m_insertTimer.start();
     }
@@ -875,6 +1113,15 @@ void DirectoryModel::onScannerFinished(const QString &path, bool success, int ge
     }
 
     const qsizetype pendingCount = m_pendingInserts.size() - m_pendingInsertOffset;
+    if (success
+        && m_freshLoad
+        && m_provider
+        && m_provider->scheme() == QStringLiteral("file")
+        && pendingCount >= AsyncFreshLoadThreshold) {
+        startAsyncFreshLoad(path);
+        return;
+    }
+
     if (success
         && pendingCount > 0
         && (pendingCount <= SmallDirectoryThreshold
@@ -1025,6 +1272,100 @@ void DirectoryModel::commitFreshLoad(const QString &path)
     emit currentPathChanged();
     emit countChanged();
     emit selectionChanged();
+}
+
+void DirectoryModel::startAsyncFreshLoad(const QString &path)
+{
+    const int generation = m_currentScanGeneration;
+    const bool showHidden = m_showHidden;
+    const bool mixFilesAndFolders = m_mixFilesAndFolders;
+    const QString searchText = m_searchText;
+    const CategoryFilter categoryFilter = m_categoryFilter;
+    const SortRole sortRole = m_sortRole;
+    const Qt::SortOrder sortOrder = m_sortOrder;
+
+    QList<FileEntry> baseEntries;
+    if (m_freshLoadCommitted) {
+        baseEntries = m_entries;
+    }
+
+    QList<FileEntry> pendingEntries = std::move(m_pendingInserts);
+    const qsizetype pendingOffset = m_pendingInsertOffset;
+    m_pendingInserts.clear();
+    m_pendingInsertOffset = 0;
+    m_insertTimer.stop();
+    m_pendingScannerFinish = false;
+    m_pendingScannerPath.clear();
+    m_pendingScannerError.clear();
+    m_pendingScannerSuccess = false;
+
+    if (!m_freshLoadCommitted) {
+        commitFreshLoad(path);
+    }
+
+    auto *watcher = new QFutureWatcher<AsyncFreshLoadResult>(this);
+    connect(watcher, &QFutureWatcher<AsyncFreshLoadResult>::finished, this, [this, watcher]() {
+        AsyncFreshLoadResult result = watcher->result();
+        watcher->deleteLater();
+
+        if (result.generation != m_currentScanGeneration || !m_freshLoad) {
+            return;
+        }
+        if (!sameFilesystemPath(QDir::fromNativeSeparators(result.path),
+                                QDir::fromNativeSeparators(m_currentPath))) {
+            return;
+        }
+
+        const bool policyChanged = result.showHidden != m_showHidden
+            || result.mixFilesAndFolders != m_mixFilesAndFolders
+            || result.searchText != m_searchText
+            || result.categoryFilter != m_categoryFilter
+            || result.sortRole != m_sortRole
+            || result.sortOrder != m_sortOrder;
+        if (policyChanged) {
+            m_pendingInserts = std::move(result.entries);
+            m_pendingInsertOffset = 0;
+            startAsyncFreshLoad(result.path);
+            return;
+        }
+
+        emit visualStructureAboutToChange();
+        beginResetModel();
+        m_entries = std::move(result.entries);
+        m_filteredIndices = std::move(result.filteredIndices);
+        m_pathIndex = std::move(result.pathIndex);
+        m_foundPaths = std::move(result.foundPaths);
+        m_selectedCount = 0;
+        endResetModel();
+
+        emit countChanged();
+        emit selectionChanged();
+        finalizeScannerFinished(result.path, true, {});
+    });
+
+    watcher->setFuture(QtConcurrent::run([generation,
+                                          path,
+                                          baseEntries = std::move(baseEntries),
+                                          pendingEntries = std::move(pendingEntries),
+                                          pendingOffset,
+                                          showHidden,
+                                          searchText,
+                                          categoryFilter,
+                                          mixFilesAndFolders,
+                                          sortRole,
+                                          sortOrder]() mutable {
+        return buildAsyncFreshLoadResult(generation,
+                                         path,
+                                         std::move(baseEntries),
+                                         std::move(pendingEntries),
+                                         pendingOffset,
+                                         showHidden,
+                                         searchText,
+                                         categoryFilter,
+                                         mixFilesAndFolders,
+                                         sortRole,
+                                         sortOrder);
+    }));
 }
 
 bool DirectoryModel::selectFailedNavigationTarget(const QString &failedPath)
@@ -1343,39 +1684,7 @@ void DirectoryModel::applyFilter()
 
 bool DirectoryModel::matchesFilter(const FileEntry &entry) const
 {
-    if (!m_searchText.isEmpty()
-        && !entry.name.contains(m_searchText, Qt::CaseInsensitive)) {
-        return false;
-    }
-
-    if (m_categoryFilter == FilterAll) {
-        return true;
-    }
-
-    if (entry.isDirectory) {
-        return false;
-    }
-
-    const QString suffix = entry.suffix.toLower();
-    switch (m_categoryFilter) {
-    case FilterExecutables:
-        return kExecutableSuffixes.contains(suffix);
-    case FilterLibraries:
-        return kLibrarySuffixes.contains(suffix);
-    case FilterImages:
-        return kImageSuffixes.contains(suffix);
-    case FilterArchives:
-        return ArchiveSupport::isArchiveExtension(suffix) || IsoSupport::isIsoImageExtension(suffix);
-    case FilterMedia:
-        return kAudioSuffixes.contains(suffix) || kVideoSuffixes.contains(suffix);
-    case FilterDocuments:
-        return kDocumentSuffixes.contains(suffix)
-            || entry.name.endsWith(QStringLiteral(".fb2.zip"), Qt::CaseInsensitive);
-    case FilterAll:
-        break;
-    }
-
-    return true;
+    return entryMatchesFilterSnapshot(entry, m_searchText, m_categoryFilter);
 }
 
 void DirectoryModel::notifyFiltersChanged()
@@ -1604,9 +1913,15 @@ bool DirectoryModel::insertPath(const QString &path)
     }
 
     const QFileInfo info(path);
+#ifdef Q_OS_WIN
+    if (!info.exists() && entryAttributesWindows(info) == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+#else
     if (!info.exists()) {
         return false;
     }
+#endif
 
     const QString normPath = modelPathKey(info.absoluteFilePath());
     if (!sameFilesystemPath(QDir::fromNativeSeparators(info.absolutePath()),
@@ -2174,64 +2489,29 @@ void DirectoryModel::setSortOrder(Qt::SortOrder order)
     emit sortOrderChanged();
 }
 
+void DirectoryModel::setSortPolicy(SortRole role, Qt::SortOrder order)
+{
+    const bool roleChanged = m_sortRole != role;
+    const bool orderChanged = m_sortOrder != order;
+    if (!roleChanged && !orderChanged) {
+        return;
+    }
+
+    m_sortRole = role;
+    m_sortOrder = order;
+    sortModel();
+
+    if (roleChanged) {
+        emit sortRoleChanged();
+    }
+    if (orderChanged) {
+        emit sortOrderChanged();
+    }
+}
+
 bool DirectoryModel::compareEntries(const FileEntry &a, const FileEntry &b) const
 {
-    if (!m_mixFilesAndFolders && a.isDirectory != b.isDirectory) {
-        return a.isDirectory; // Directories always come first unless mixing is enabled
-    }
-
-    switch (m_sortRole) {
-    case SortByName: {
-        int comp = a.name.compare(b.name, Qt::CaseInsensitive);
-        if (comp != 0) {
-            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
-        }
-        break;
-    }
-    case SortBySize: {
-        if (a.size != b.size) {
-            return m_sortOrder == Qt::AscendingOrder ? (a.size < b.size) : (a.size > b.size);
-        }
-        break;
-    }
-    case SortByType: {
-        int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
-        if (comp != 0) {
-            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
-        }
-        break;
-    }
-    case SortByDate: {
-        if (a.modified != b.modified) {
-            return m_sortOrder == Qt::AscendingOrder ? (a.modified < b.modified) : (a.modified > b.modified);
-        }
-        break;
-    }
-    case SortByDateCreated: {
-        if (a.created != b.created) {
-            return m_sortOrder == Qt::AscendingOrder ? (a.created < b.created) : (a.created > b.created);
-        }
-        break;
-    }
-    case SortByExtension: {
-        int comp = a.suffix.compare(b.suffix, Qt::CaseInsensitive);
-        if (comp != 0) {
-            return m_sortOrder == Qt::AscendingOrder ? (comp < 0) : (comp > 0);
-        }
-        int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
-        if (nameComp != 0) {
-            return m_sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
-        }
-        break;
-    }
-    }
-
-    int nameComp = a.name.compare(b.name, Qt::CaseInsensitive);
-    if (nameComp != 0) {
-        return m_sortOrder == Qt::AscendingOrder ? (nameComp < 0) : (nameComp > 0);
-    }
-    const int pathComp = a.path.compare(b.path, Qt::CaseInsensitive);
-    return m_sortOrder == Qt::AscendingOrder ? (pathComp < 0) : (pathComp > 0);
+    return compareEntriesForPolicy(a, b, m_mixFilesAndFolders, m_sortRole, m_sortOrder);
 }
 
 void DirectoryModel::sortModel()

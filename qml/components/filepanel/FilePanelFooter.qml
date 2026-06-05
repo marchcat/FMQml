@@ -92,8 +92,20 @@ Rectangle {
 
     implicitHeight: 32
     color: Theme.panelSurfaceStrong
-    border.color: active ? Theme.withAlpha(Theme.activeAccent, 0.34) : Theme.panelBorder
-    border.width: 1
+    radius: Theme.innerRadius(Theme.panelRadius, 1)
+    topLeftRadius: 0
+    topRightRadius: 0
+    border.width: 0
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 1
+        color: root.active
+               ? Theme.activePanelStrokeSoft
+               : Theme.panelStrokeSubtle
+    }
 
     function normalizePath(path) {
         let value = String(path || "").replace(/\\/g, "/")
@@ -234,8 +246,12 @@ Rectangle {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 3
+            anchors.topMargin: 8
+            anchors.bottomMargin: 8
+            width: 2
+            radius: 1
             color: root.panelAccent
+            opacity: themeController.isDark ? 0.88 : 0.96
             visible: root.active
         }
 
@@ -292,8 +308,8 @@ Rectangle {
             Layout.fillHeight: true
             Layout.topMargin: 6
             Layout.bottomMargin: 6
-            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.65 : 0.85)
-            opacity: 0.9
+            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.85)
+            opacity: themeController.isDark ? 0.78 : 0.9
         }
 
         RowLayout {
@@ -322,7 +338,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     height: 4
                     radius: 2
-                    color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.55 : 0.65)
+                    color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.65)
                 }
 
                 Rectangle {
@@ -391,8 +407,8 @@ Rectangle {
             Layout.bottomMargin: 6
             visible: root.zoomVisible
                      && !root.favoritesRootMode
-            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.65 : 0.85)
-            opacity: 0.9
+            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.85)
+            opacity: themeController.isDark ? 0.78 : 0.9
         }
 
         Slider {
@@ -426,7 +442,7 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     height: 4
                     radius: 2
-                    color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.58 : 0.62)
+                    color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.36 : 0.62)
                 }
 
                 Rectangle {

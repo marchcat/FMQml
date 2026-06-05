@@ -6,8 +6,8 @@ Button {
     id: root
 
     property color primaryColor: Theme.accent
-    property color primaryHoverColor: Theme.accent
-    property color primaryPressedColor: Theme.accent
+    property color primaryHoverColor: root.primaryColor
+    property color primaryPressedColor: root.primaryColor
     property color textColor: Theme.accentText
     property color secondaryTextColor: Theme.textSecondary
     property bool enforceTextContrast: true

@@ -15,20 +15,25 @@ Popup {
 
     // ── Visual container ─────────────────────────────────────────────────────
     background: Rectangle {
-        radius: 12
+        radius: Theme.radiusLg
         color: Theme.menuSurface
-        border.color: Theme.menuBorder
+        border.color: Theme.withAlpha(Theme.menuBorder, themeController.isDark ? 0.40 : 0.28)
         border.width: 1
+        antialiasing: true
 
         layer.enabled: true
         layer.effect: null  // shadow via drop shadow if available
 
         Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: "transparent"
-            border.color: Qt.rgba(1, 1, 1, themeController.isDark ? 0.06 : 0.5)
-            border.width: 1
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.topMargin: 1
+            anchors.leftMargin: 7
+            anchors.rightMargin: 7
+            height: 1
+            radius: 0.5
+            color: Theme.withAlpha(Theme.accentText, themeController.isDark ? 0.045 : 0.14)
         }
     }
 
@@ -252,16 +257,6 @@ Popup {
 
                 // ── Group: TABLE STYLE ────────────────────────────────────────
                 GroupHeader { text: "TABLE STYLE" }
-
-                ColumnRow {
-                    label: "Mixed Sorting"
-                    iconSource: "../assets/icons/sort-mixed.svg"
-                    iconColor: Theme.actionIconColor("sort")
-                    sortRole: -1
-                    checked: root.panel.controller.directoryModel.mixFilesAndFolders
-                    onToggled: root.panel.controller.directoryModel.mixFilesAndFolders = !root.panel.controller.directoryModel.mixFilesAndFolders
-                    panel: root.panel
-                }
 
                 ColumnRow {
                     label: "Zebra Striping"

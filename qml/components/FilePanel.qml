@@ -13,8 +13,13 @@ Pane {
     required property var controller
     required property var workspaceController
     property var propertiesController
+    property var quickLookPopup
     property bool active: false
     property bool liveResizeActive: false
+    property bool externalScrollActive: false
+    property int externalScrollSuppressFileCountThreshold: 25
+    property bool externalScrollOptimizationEnabled: false
+    property int externalScrollFileCountThreshold: 96
     signal detailsVisualStateChanged()
     readonly property bool showActiveHighlight: root.active && root.workspaceController.splitEnabled
     readonly property int viewMode: root.controller.viewMode
@@ -44,6 +49,9 @@ Pane {
     readonly property int briefRowMinHeight: 22
     readonly property int briefRowMaxHeight: 64
     readonly property int footerHeight: 32
+    readonly property int panelToolbarHeight: 42
+    readonly property int panelToolbarDividerHeight: 1
+    readonly property int topChromeHeight: root.panelToolbarHeight + root.panelToolbarDividerHeight
     property bool showActionBar: true
     property bool isRenaming: false
     readonly property int selectionActionsHeight: 44
@@ -157,7 +165,9 @@ Pane {
 
     property bool scrolling: false
     property bool hoverSuppressed: false
-    property bool previewScrollActive: false
+    property bool fileViewPreviewScrollActive: false
+    readonly property bool previewScrollActive: root.fileViewPreviewScrollActive
+                                                || (favoritesView && favoritesView.previewScrollActive)
     property bool rubberBandPressed: false
     property bool rubberBandActive: false
     property bool rubberBandMoved: false
@@ -219,9 +229,22 @@ Pane {
     property real resizeFrozenGridCellWidth: 0
     property bool showPanelBreadcrumbs: true
     readonly property bool resizeOptimized: root.liveResizeActive
+    readonly property int externalScrollFileCount: root.controller && root.controller.directoryModel
+                                                   ? root.controller.directoryModel.count
+                                                   : 0
+    readonly property bool externalScrollSuppressActive: root.externalScrollActive
+                                                         && root.active
+                                                         && root.externalScrollFileCount >= root.externalScrollSuppressFileCountThreshold
+    readonly property bool externalScrollOptimizationActive: root.externalScrollOptimizationEnabled
+                                                             && root.externalScrollActive
+                                                             && root.active
+                                                             && root.externalScrollFileCount >= root.externalScrollFileCountThreshold
+    readonly property bool externalScrollAnySuppressionActive: root.externalScrollSuppressActive || root.externalScrollOptimizationActive
+    readonly property bool thumbnailSchedulingPaused: root.externalScrollOptimizationActive
+    readonly property bool thumbnailLoadingPaused: root.resizeOptimized || root.externalScrollOptimizationActive || root.ultraLightMode
     readonly property bool effectsReduced: root.resizeOptimized || root.ultraLightMode
     readonly property bool lightweightDelegates: root.resizeOptimized || root.ultraLightMode
-    readonly property int activeViewCacheBuffer: root.effectsReduced || root.loadingDirectory ? 0 : 1600
+    readonly property int activeViewCacheBuffer: root.effectsReduced || root.externalScrollAnySuppressionActive || root.loadingDirectory ? 0 : 1600
     onResizeOptimizedChanged: {
         if (root.resizeOptimized) {
             root.resizeFrozenListWidth = horizontalFlick ? horizontalFlick.width : root.width
@@ -231,6 +254,15 @@ Pane {
             root.resizeFrozenListWidth = 0
             root.resizeFrozenBriefCellWidth = 0
             root.resizeFrozenGridCellWidth = 0
+        }
+    }
+    onExternalScrollAnySuppressionActiveChanged: {
+        if (root.externalScrollAnySuppressionActive) {
+            hoverSuppressTimer.stop()
+            root.hoverSuppressed = true
+            root.controller.hoveredPath = ""
+        } else if (!hoverSuppressTimer.running) {
+            hoverSuppressTimer.restart()
         }
     }
     focus: root.active
@@ -585,7 +617,7 @@ Pane {
         id: previewScrollStopTimer
         interval: 220
         repeat: false
-        onTriggered: root.previewScrollActive = false
+        onTriggered: root.fileViewPreviewScrollActive = false
     }
 
     // Delayed loading rail: only show "Scanning folder" after 150ms of
@@ -900,7 +932,7 @@ Pane {
 
     function viewMotionActive() {
         const view = root.viewMode === 2 ? briefView : root.viewMode === 0 ? listView : gridView
-        return Boolean(view && (view.moving || view.flicking))
+        return Boolean(view && (view.moving || view.flicking || root.fileViewsReuseScrollbarPressed))
     }
 
     function suppressHoverBriefly() {
@@ -937,7 +969,7 @@ Pane {
         if (root.resizeOptimized || root.virtualRootMode) {
             return
         }
-        root.previewScrollActive = true
+        root.fileViewPreviewScrollActive = true
         previewScrollStopTimer.restart()
     }
 
@@ -1760,44 +1792,52 @@ Pane {
     padding: 0
     background: Item {
         id: backgroundWrapper
-        
-        layer.enabled: root.showActiveHighlight && !root.effectsReduced
-        layer.effect: MultiEffect {
-            shadowEnabled: true
-            shadowColor: Theme.activeGlow
-            shadowBlur: 12
-            shadowVerticalOffset: 0
-            shadowHorizontalOffset: 0
-        }
 
         Rectangle {
             id: panelBg
             anchors.fill: parent
-            radius: Theme.radiusMd
+            radius: Theme.panelRadius
             color: Theme.panelSurface
-            border.color: root.showActiveHighlight ? Theme.activeAccent : Theme.panelBorder
-            border.width: root.showActiveHighlight ? 1.5 : 1
+            border.color: Theme.panelStrokeSubtle
+            border.width: 1
             antialiasing: true
 
-            // Subtle overlay for the whole panel
             Rectangle {
                 anchors.fill: parent
-                radius: Theme.radiusMd
+                radius: Theme.innerRadius(panelBg.radius, 1)
                 color: root.showActiveHighlight 
-                       ? Theme.withAlpha(Theme.activeAccent, themeController.isDark ? 0.03 : 0.05)
-                       : Theme.withAlpha(Theme.accent, themeController.isDark ? 0.015 : 0.03)
+                       ? Theme.withAlpha(Theme.activeAccent, themeController.isDark ? 0.040 : 0.082)
+                       : Theme.withAlpha(Theme.accent, themeController.isDark ? 0.010 : 0.016)
             }
 
-            // --- ELEGANT CENTERED ACTIVE PILL ---
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.topMargin: root.topChromeHeight
+                anchors.bottomMargin: root.bottomChromeHeight
+                radius: 0
+                topLeftRadius: 0
+                topRightRadius: 0
+                bottomLeftRadius: 0
+                bottomRightRadius: 0
+                color: "transparent"
+                border.width: 1
+                border.color: Theme.activePanelStroke
+                opacity: root.showActiveHighlight ? 1.0 : 0.0
+                antialiasing: true
+            }
+
             Rectangle {
                 anchors.top: parent.top
-                anchors.topMargin: 4
+                anchors.topMargin: root.topChromeHeight + 2
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: 48
+                width: 84
                 height: 3
                 radius: 1.5
                 color: Theme.activeAccent
-                opacity: root.showActiveHighlight ? 1.0 : 0.0
+                opacity: root.showActiveHighlight ? (themeController.isDark ? 0.72 : 0.96) : 0.0
                 antialiasing: true
                 
                 Behavior on opacity {
@@ -1807,7 +1847,6 @@ Pane {
             }
 
             Behavior on border.color { enabled: !root.effectsReduced; ColorAnimation { duration: Theme.motionFast } }
-            Behavior on border.width { enabled: !root.effectsReduced; NumberAnimation { duration: Theme.motionFast } }
         }
     }
 
@@ -1878,6 +1917,13 @@ Pane {
             gridView.forceActiveFocus()
         }
         return true
+    }
+
+    function quickLookCurrentFavorite() {
+        if (!root.controller.isFavoritesRoot || !favoritesView) {
+            return false
+        }
+        return favoritesView.openQuickLookForCurrentFavorite()
     }
 
     function panelKeysBlockedByOverlay() {
@@ -2453,17 +2499,13 @@ Pane {
 
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: 42
-            color: "transparent"
-
-                Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    height: 1
-                    color: root.showActiveHighlight ? Theme.withAlpha(Theme.activeAccent, 0.34)
-                                  : Theme.panelBorder
-                }
+            implicitHeight: root.panelToolbarHeight
+            color: root.showActiveHighlight
+                   ? Theme.panelSurfaceStrong
+                   : Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.18 : 0.32)
+            radius: Theme.innerRadius(Theme.panelRadius, 1)
+            bottomLeftRadius: 0
+            bottomRightRadius: 0
 
             MouseArea {
                 anchors.fill: parent
@@ -2511,8 +2553,8 @@ Pane {
 
         Rectangle {
             Layout.fillWidth: true
-            height: 1
-            color: Theme.panelBorder
+            height: root.panelToolbarDividerHeight
+            color: Theme.panelStrokeSubtle
         }
 
         Item {
@@ -2862,6 +2904,8 @@ Pane {
                         panelActive: root.active
                         scrolling: root.hoverSuppressed
                         resizeOptimized: root.lightweightDelegates
+                        thumbnailSchedulingPaused: root.thumbnailSchedulingPaused
+                        thumbnailLoadingPaused: root.thumbnailLoadingPaused
 
                         onClicked: (mouse) => root.handleItemClick(index, mouse)
                         onRightClicked: root.handleItemRightClick(index, path, isArchiveFile, isIsoImageFile)
@@ -3040,9 +3084,12 @@ Pane {
                     readonly property int renameEditorAvailableHeight: Math.max(30, height - renameEditorTop - contentMargin)
                     readonly property bool canLoadThumbnail: root.useNativeIcons
                                                               && root.effectiveShowThumbnails
+                                                              && !root.thumbnailLoadingPaused
                                                               && !gridDelegate.lightweightActive
                                                               && !isDirectory
                                                               && hasThumbnail
+                    readonly property bool canScheduleThumbnail: gridDelegate.canLoadThumbnail
+                                                                 && !root.thumbnailSchedulingPaused
                     property bool thumbnailLoadEnabled: false
                     readonly property bool thumbnailRequestActive: thumbnailLoadEnabled && canLoadThumbnail
                     property real visualOffsetY: 0
@@ -3052,7 +3099,7 @@ Pane {
                     onPathChanged: {
                         isRenaming = false
                         visualOffsetY = 0
-                        queueThumbnailLoad()
+                        queueThumbnailLoad(true)
                         if (gridDelegate.lightweightActive) {
                             return
                         }
@@ -3065,7 +3112,7 @@ Pane {
                     }
 
                     Component.onCompleted: {
-                        queueThumbnailLoad()
+                        queueThumbnailLoad(true)
                         if (gridDelegate.lightweightActive) {
                             return
                         }
@@ -3089,7 +3136,7 @@ Pane {
                     GridView.onReused: {
                         isRenaming = false
                         visualOffsetY = 0
-                        queueThumbnailLoad()
+                        queueThumbnailLoad(true)
                         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
                         if (gridDelegate.lightweightActive) {
                             return
@@ -3128,9 +3175,11 @@ Pane {
                         return Boolean(gridRenameLoader.item && gridRenameLoader.item.activeFocus)
                     }
 
-                    function queueThumbnailLoad() {
-                        thumbnailLoadEnabled = false
-                        if (canLoadThumbnail) {
+                    function queueThumbnailLoad(clearExisting) {
+                        if (clearExisting === true || !canLoadThumbnail) {
+                            thumbnailLoadEnabled = false
+                        }
+                        if (canScheduleThumbnail && !thumbnailLoadEnabled) {
                             thumbnailDelayTimer.restart()
                         } else {
                             thumbnailDelayTimer.stop()
@@ -3145,33 +3194,41 @@ Pane {
                         function onUltraLightModeChanged() {
                             gridDelegate.queueThumbnailLoad()
                         }
+                        function onThumbnailLoadingPausedChanged() {
+                            gridDelegate.queueThumbnailLoad()
+                        }
+                        function onThumbnailSchedulingPausedChanged() {
+                            gridDelegate.queueThumbnailLoad()
+                        }
                     }
 
                     Timer {
                         id: thumbnailDelayTimer
                         interval: 100 + (Math.max(0, index) % 16) * 28
                         repeat: false
-                        onTriggered: gridDelegate.thumbnailLoadEnabled = gridDelegate.canLoadThumbnail
+                        onTriggered: gridDelegate.thumbnailLoadEnabled = gridDelegate.canScheduleThumbnail
                     }
 
                     Rectangle {
                         anchors.fill: parent
                         anchors.margins: 4
                         visible: !gridDelegate.lightweightActive
-                        radius: Theme.radiusSm
+                        radius: Theme.radiusMd
                         color: isSelected
                                ? (root.active ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                                : ((hoverGrid.hovered && !root.hoverSuppressed) ? Theme.itemHoverFill : "transparent")
                         border.color: isSelected
-                                      ? (root.active ? Theme.itemSelectedBorder : Theme.itemSelectedBorderInactive)
-                                      : (currentItem ? Theme.withAlpha(Theme.focusRing, root.active ? 0.82 : 0.38) : "transparent")
+                                      ? (root.active
+                                         ? Theme.withAlpha(Theme.itemSelectedBorder, 0.72)
+                                         : Theme.withAlpha(Theme.itemSelectedBorderInactive, 0.58))
+                                      : (currentItem ? Theme.withAlpha(Theme.focusRing, root.active ? 0.62 : 0.30) : "transparent")
                         border.width: isSelected || currentItem ? 1 : 0
                         transform: Translate { y: gridDelegate.visualOffsetY }
                     }
 
                     HoverHandler { 
                         id: hoverGrid 
-                        enabled: !gridDelegate.lightweightActive
+                        enabled: !gridDelegate.lightweightActive && !root.externalScrollAnySuppressionActive
                         onHoveredChanged: {
                             if (root.hoverSuppressed) return
                             if (hovered) {
@@ -3263,7 +3320,7 @@ Pane {
 
                             background: Rectangle {
                                 color: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.92 : 0.96)
-                                radius: 10
+                                radius: Theme.controlRadius
                                 border.color: gridRenameInput.activeFocus
                                               ? Theme.withAlpha(Theme.focusRing, 0.9)
                                               : Theme.withAlpha(Theme.panelBorder, 0.7)
@@ -3437,14 +3494,14 @@ Pane {
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 10
+                            radius: Theme.radiusLg
                             visible: gridDelegate.thumbnailRequestActive && thumbnail.status !== Image.Ready
                             color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, themeController.isDark ? 0.18 : 0.12)
                         }
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 10
+                            radius: Theme.radiusLg
                             color: "#ffffff"
                             visible: gridDelegate.thumbnailRequestActive
                                      && String(suffix || "").toLowerCase() === "pdf"
@@ -3680,6 +3737,7 @@ Pane {
                 controller: root.controller
                 panel: root
                 favoritesBackend: root.favoritesBackend
+                quickLookPopup: root.quickLookPopup
                 liveResizeActive: root.liveResizeActive
                 visible: root.controller.isFavoritesRoot
                 enabled: visible
@@ -3780,6 +3838,11 @@ Pane {
                     root.activated()
                     if (!root.favoritesBackend || !paths || paths.length === 0) {
                         return
+                    }
+                    for (let i = 0; i < paths.length; ++i) {
+                        if (String(paths[i]).toLowerCase().startsWith("archive://")) {
+                            return
+                        }
                     }
                     const changed = allPinned
                                   ? root.favoritesBackend.unpinPaths(paths)

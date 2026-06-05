@@ -36,7 +36,7 @@ ToolbarSegment {
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: viewBtn.pressed ? Theme.surfaceActive : (viewBtn.hovered ? Theme.withAlpha(viewBtn.baseTone, themeController.isDark ? 0.20 : 0.14) : "transparent")
             anchors.fill: parent
             anchors.margins: 1
@@ -48,8 +48,7 @@ ToolbarSegment {
         Layout.fillHeight: true
         Layout.topMargin: 6
         Layout.bottomMargin: 6
-        color: Theme.border
-        opacity: 0.35
+        color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
     }
 
     IconButton {
@@ -68,13 +67,30 @@ ToolbarSegment {
         }
         ToolTip.visible: hovered
         ToolTip.text: root.controller && root.controller.directoryModel.showHidden ? "Hide Hidden Files" : "Show Hidden Files"
+        isHighlighted: root.controller && root.controller.directoryModel.showHidden
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
-            color: eyeBtn.pressed ? Theme.surfaceActive : (eyeBtn.hovered ? Theme.withAlpha(eyeBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
+            readonly property bool active: eyeBtn.isHighlighted
+
+            radius: Theme.radiusForSide(Math.min(width, height))
+            color: Theme.toolbarButtonFill(eyeBtn.baseTone, eyeBtn.hovered, eyeBtn.pressed, active)
+            border.color: Theme.toolbarButtonBorder(eyeBtn.baseTone, eyeBtn.hovered, active)
+            border.width: eyeBtn.hovered || eyeBtn.pressed || active ? 1 : 0
             anchors.fill: parent
             anchors.margins: 1
+
+            Rectangle {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 3
+                width: parent.width - 13
+                height: 2
+                radius: 1
+                visible: parent.active
+                color: Theme.toolbarButtonIndicator(parent.active)
+                opacity: eyeBtn.hovered ? 1.0 : 0.88
+            }
         }
     }
 
@@ -83,8 +99,7 @@ ToolbarSegment {
         Layout.fillHeight: true
         Layout.topMargin: 6
         Layout.bottomMargin: 6
-        color: Theme.border
-        opacity: 0.35
+        color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
     }
 
     IconButton {
@@ -98,7 +113,7 @@ ToolbarSegment {
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: refreshBtn.pressed ? Theme.surfaceActive : (refreshBtn.hovered ? Theme.withAlpha(refreshBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
             anchors.fill: parent
             anchors.margins: 1

@@ -62,7 +62,7 @@ ToolbarSegment {
         background: Rectangle {
             anchors.fill: parent
             anchors.margins: 1
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: searchResultsBtn.pressed
                    ? Theme.withAlpha(Theme.accent, 0.78)
                    : searchResultsBtn.hovered
@@ -79,7 +79,7 @@ ToolbarSegment {
         Layout.fillHeight: true
         Layout.topMargin: 6
         Layout.bottomMargin: 6
-        color: Theme.withAlpha(Theme.border, 0.35)
+        color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
     }
 
     IconButton {
@@ -93,7 +93,7 @@ ToolbarSegment {
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: backBtn.pressed ? Theme.surfaceActive : (backBtn.hovered ? Theme.withAlpha(backBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
             anchors.fill: parent
             anchors.margins: 1
@@ -105,7 +105,7 @@ ToolbarSegment {
         Layout.fillHeight: true
         Layout.topMargin: 6
         Layout.bottomMargin: 6
-        color: Theme.withAlpha(Theme.border, 0.35)
+        color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
     }
 
     IconButton {
@@ -119,7 +119,7 @@ ToolbarSegment {
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: forwardBtn.pressed ? Theme.surfaceActive : (forwardBtn.hovered ? Theme.withAlpha(forwardBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
             anchors.fill: parent
             anchors.margins: 1
@@ -131,7 +131,7 @@ ToolbarSegment {
         Layout.fillHeight: true
         Layout.topMargin: 6
         Layout.bottomMargin: 6
-        color: Theme.withAlpha(Theme.border, 0.35)
+        color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
     }
 
     IconButton {
@@ -145,7 +145,7 @@ ToolbarSegment {
         Layout.fillWidth: true
         Layout.fillHeight: true
         background: Rectangle {
-            radius: Theme.radiusSm
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: upBtn.pressed ? Theme.surfaceActive : (upBtn.hovered ? Theme.withAlpha(upBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
             anchors.fill: parent
             anchors.margins: 1

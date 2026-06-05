@@ -102,6 +102,7 @@ public:
 
     Qt::SortOrder sortOrder() const;
     void setSortOrder(Qt::SortOrder order);
+    void setSortPolicy(SortRole role, Qt::SortOrder order);
 
     bool showHidden() const;
     void setShowHidden(bool show);
@@ -176,6 +177,7 @@ private:
     void updatePathIndex();
     void finalizeScannerFinished(const QString &path, bool success, const QString &error);
     void commitFreshLoad(const QString &path);
+    void startAsyncFreshLoad(const QString &path);
     bool selectFailedNavigationTarget(const QString &failedPath);
     void restoreProviderForCurrentPathLater();
     void processAllPendingInsertsFast();
@@ -238,6 +240,7 @@ private:
 
     static constexpr int SmallDirectoryThreshold = 100;
     static constexpr int LargeDirectoryBulkFinishThreshold = 1000;
+    static constexpr int AsyncFreshLoadThreshold = SmallDirectoryThreshold + 1;
 
 #ifdef FM_DEBUG_LOAD_TIMING
     QElapsedTimer m_loadTimingTimer;

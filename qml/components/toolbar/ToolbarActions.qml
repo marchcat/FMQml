@@ -48,7 +48,7 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: copyBtn.pressed ? Theme.surfaceActive : (copyBtn.hovered ? Theme.withAlpha(copyBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1
@@ -60,8 +60,7 @@ RowLayout {
             Layout.fillHeight: true
             Layout.topMargin: 6
             Layout.bottomMargin: 6
-            color: Theme.border
-            opacity: 0.35
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
         }
 
         IconButton {
@@ -80,7 +79,7 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: moveBtn.pressed ? Theme.surfaceActive : (moveBtn.hovered ? Theme.withAlpha(moveBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1
@@ -123,12 +122,26 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
-                color: layoutSplitBtn.pressed ? Theme.surfaceActive : (layoutSplitBtn.hovered || layoutSplitBtn.isHighlighted ? Theme.withAlpha(layoutSplitBtn.baseTone, themeController.isDark ? 0.16 : 0.12) : "transparent")
-                border.color: layoutSplitBtn.isHighlighted ? Theme.accent : "transparent"
-                border.width: layoutSplitBtn.isHighlighted ? 1 : 0
+                readonly property bool active: layoutSplitBtn.isHighlighted
+
+                radius: Theme.radiusForSide(Math.min(width, height))
+                color: Theme.toolbarButtonFill(layoutSplitBtn.baseTone, layoutSplitBtn.hovered, layoutSplitBtn.pressed, active)
+                border.color: Theme.toolbarButtonBorder(layoutSplitBtn.baseTone, layoutSplitBtn.hovered, active)
+                border.width: layoutSplitBtn.hovered || layoutSplitBtn.pressed || active ? 1 : 0
                 anchors.fill: parent
                 anchors.margins: 1
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    width: parent.width - 13
+                    height: 2
+                    radius: 1
+                    visible: parent.active
+                    color: Theme.toolbarButtonIndicator(parent.active)
+                    opacity: layoutSplitBtn.hovered ? 1.0 : 0.88
+                }
             }
         }
 
@@ -137,8 +150,7 @@ RowLayout {
             Layout.fillHeight: true
             Layout.topMargin: 6
             Layout.bottomMargin: 6
-            color: Theme.border
-            opacity: 0.35
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
         }
 
         IconButton {
@@ -158,7 +170,7 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: mirrorPanelBtn.pressed ? Theme.surfaceActive : (mirrorPanelBtn.hovered ? Theme.withAlpha(mirrorPanelBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1
@@ -170,8 +182,7 @@ RowLayout {
             Layout.fillHeight: true
             Layout.topMargin: 6
             Layout.bottomMargin: 6
-            color: Theme.border
-            opacity: 0.35
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
         }
 
         IconButton {
@@ -185,12 +196,26 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
-                color: layoutPreviewBtn.pressed ? Theme.surfaceActive : (layoutPreviewBtn.hovered || layoutPreviewBtn.isHighlighted ? Theme.withAlpha(layoutPreviewBtn.baseTone, themeController.isDark ? 0.16 : 0.12) : "transparent")
-                border.color: layoutPreviewBtn.isHighlighted ? Theme.accent : "transparent"
-                border.width: layoutPreviewBtn.isHighlighted ? 1 : 0
+                readonly property bool active: layoutPreviewBtn.isHighlighted
+
+                radius: Theme.radiusForSide(Math.min(width, height))
+                color: Theme.toolbarButtonFill(layoutPreviewBtn.baseTone, layoutPreviewBtn.hovered, layoutPreviewBtn.pressed, active)
+                border.color: Theme.toolbarButtonBorder(layoutPreviewBtn.baseTone, layoutPreviewBtn.hovered, active)
+                border.width: layoutPreviewBtn.hovered || layoutPreviewBtn.pressed || active ? 1 : 0
                 anchors.fill: parent
                 anchors.margins: 1
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    width: parent.width - 13
+                    height: 2
+                    radius: 1
+                    visible: parent.active
+                    color: Theme.toolbarButtonIndicator(parent.active)
+                    opacity: layoutPreviewBtn.hovered ? 1.0 : 0.88
+                }
             }
         }
     }
@@ -209,7 +234,7 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: themeBtn.pressed ? Theme.surfaceActive : (themeBtn.hovered ? Theme.withAlpha(themeBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1
@@ -225,8 +250,7 @@ RowLayout {
             Layout.fillHeight: true
             Layout.topMargin: 6
             Layout.bottomMargin: 6
-            color: Theme.border
-            opacity: 0.35
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
         }
 
         IconButton {
@@ -239,7 +263,7 @@ RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             background: Rectangle {
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: helpBtn.pressed ? Theme.surfaceActive : (helpBtn.hovered ? Theme.withAlpha(helpBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1

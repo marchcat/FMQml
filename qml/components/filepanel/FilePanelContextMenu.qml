@@ -81,6 +81,25 @@ Item {
         return root.contextPathValue.length > 0 ? [root.contextPathValue] : []
     }
 
+    function pathsCanBeFavorited(paths) {
+        if (!paths || paths.length === 0) {
+            return false
+        }
+        for (let i = 0; i < paths.length; ++i) {
+            if (String(paths[i]).toLowerCase().startsWith("archive://")) {
+                return false
+            }
+        }
+        return true
+    }
+
+    function favoriteMenuAvailable() {
+        return Boolean(root.favoritesController
+               && root.controller
+               && !root.controller.isVirtualRoot
+               && root.pathsCanBeFavorited(root.favoriteMenuPaths()))
+    }
+
     function favoriteMenuAllPinned() {
         if (!root.favoritesController) {
             return false
@@ -186,10 +205,8 @@ Item {
             text: root.favoriteMenuAllPinned() ? "Unpin from Favorites" : "Pin to Favorites"
             icon.source: "../assets/icons/star.svg"
             iconColor: Theme.actionIconColor("favorite")
-            enabled: Boolean(root.favoritesController
-                     && root.controller
-                     && root.favoriteMenuPaths().length > 0
-                     && !root.controller.isVirtualRoot)
+            visible: root.favoriteMenuAvailable()
+            enabled: visible
             onTriggered: {
                 if (!root.favoritesController || !root.controller) return
                 const selected = root.favoriteMenuPaths()

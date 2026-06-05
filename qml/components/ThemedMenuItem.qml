@@ -13,6 +13,8 @@ MenuItem {
     clip: true
 
     property bool destructive: false
+    property bool active: false
+    property string shortcut: ""
     property color iconColor: destructive ? Theme.danger : Theme.textSecondary
 
     readonly property string displayText: {
@@ -20,8 +22,7 @@ MenuItem {
         return (t === undefined || t === null) ? "" : String(t)
     }
     readonly property string displayShortcut: {
-        const s = root["shortcut"]
-        return (s === undefined || s === null) ? "" : String(s)
+        return root.shortcut
     }
 
     readonly property color hoverFill: Theme.menuItemHover
@@ -64,7 +65,7 @@ MenuItem {
             anchors.leftMargin: 2
             anchors.verticalCenter: parent.verticalCenter
             color: root.destructive ? Theme.danger : Theme.accent
-            opacity: root.enabled && (root.hovered || root.down) ? 1 : 0
+            opacity: root.enabled && root.active ? 0.85 : (root.enabled && (root.hovered || root.down) ? 1 : 0)
         }
     }
 
@@ -114,8 +115,8 @@ MenuItem {
             color: !root.enabled ? Theme.textSecondary
                    : (root.destructive && root.hovered) ? Theme.danger : Theme.textPrimary
             font.pixelSize: 12
-            font.letterSpacing: -0.2
-            font.weight: root.highlighted ? Font.DemiBold : Font.Normal
+            font.letterSpacing: 0
+            font.weight: root.highlighted || root.active ? Font.DemiBold : Font.Normal
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
             Layout.fillWidth: true
@@ -125,7 +126,7 @@ MenuItem {
             text: root.displayShortcut
             color: Theme.textSecondary
             font.pixelSize: 10
-            font.letterSpacing: -0.1
+            font.letterSpacing: 0
             font.italic: true
             verticalAlignment: Text.AlignVCenter
             visible: root.displayShortcut.length > 0

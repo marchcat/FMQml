@@ -12,9 +12,9 @@ Rectangle {
 
     implicitWidth: segmentWidth
     implicitHeight: segmentHeight
-    radius: Theme.radiusSm
-    color: Theme.withAlpha(Theme.surface, themeController.isDark ? 0.32 : 0.18)
-    border.color: Theme.withAlpha(Theme.border, 0.85)
+    radius: Theme.radiusForSide(Math.min(width, height))
+    color: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.34 : 0.30)
+    border.color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.36 : 0.24)
     border.width: 1
 
     RowLayout {

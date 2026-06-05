@@ -114,6 +114,29 @@ QtObject {
         }
     }
 
+    function toolbarButtonFill(tone, hovered, pressed, active) {
+        if (pressed) {
+            return surfaceActive
+        }
+        if (active) {
+            return withAlpha(activeAccent, themeController.isDark
+                             ? (hovered ? 0.20 : 0.15)
+                             : (hovered ? 0.14 : 0.095))
+        }
+        return hovered ? withAlpha(tone, themeController.isDark ? 0.13 : 0.09) : "transparent"
+    }
+
+    function toolbarButtonBorder(tone, hovered, active) {
+        if (active) {
+            return withAlpha(activeAccent, themeController.isDark ? 0.58 : 0.44)
+        }
+        return hovered ? withAlpha(tone, themeController.isDark ? 0.34 : 0.24) : "transparent"
+    }
+
+    function toolbarButtonIndicator(active) {
+        return active ? withAlpha(activeAccent, themeController.isDark ? 0.95 : 0.86) : "transparent"
+    }
+
     readonly property color bg: themeController.bg
     readonly property color surface: themeController.surface
     readonly property color surfaceHover: themeController.surfaceHover
@@ -141,6 +164,11 @@ QtObject {
     readonly property color panelSurfaceSoft: themeController.panelSurfaceSoft
     readonly property color panelSurfaceStrong: themeController.panelSurfaceStrong
     readonly property color panelBorder: themeController.panelBorder
+    readonly property color panelStrokeSubtle: withAlpha(panelBorder, themeController.isDark ? 0.22 : 0.28)
+    readonly property color panelStroke: withAlpha(panelBorder, themeController.isDark ? 0.28 : 0.36)
+    readonly property color panelStrokeStrong: withAlpha(panelBorder, themeController.isDark ? 0.34 : 0.42)
+    readonly property color activePanelStroke: withAlpha(activeAccent, themeController.isDark ? 0.56 : 0.82)
+    readonly property color activePanelStrokeSoft: withAlpha(activeAccent, themeController.isDark ? 0.34 : 0.58)
     readonly property color controlSurface: themeController.controlSurface
     readonly property color controlSurfaceActive: themeController.controlSurfaceActive
     readonly property color controlBorder: themeController.controlBorder
@@ -160,9 +188,11 @@ QtObject {
     readonly property color menuBorder: themeController.menuBorder
     readonly property color menuSeparator: themeController.menuSeparator
     readonly property color menuItemPressed: themeController.menuItemPressed
+    readonly property color chromeGradientStart: themeController.chromeGradientStart
+    readonly property color chromeGradientMid: themeController.chromeGradientMid
+    readonly property color chromeGradientEnd: themeController.chromeGradientEnd
     readonly property color shadow: themeController.shadow
 
-    readonly property int radius: 10
     readonly property int rowHeight: 38
     readonly property int spacing: 8
     readonly property int motionFast: 100
@@ -191,13 +221,27 @@ QtObject {
 
     readonly property color menuItemHover: surfaceHover
 
-    readonly property int radiusSm: 8
-    readonly property int radiusMd: 10
-    readonly property int radiusLg: 14
-    readonly property int radiusXl: 20
+    readonly property int radiusXs: 3
+    readonly property int radiusSm: 6
+    readonly property int radiusMd: 8
+    readonly property int radiusLg: 12
+    readonly property int radiusXl: 16
+    readonly property int radius: radiusMd
 
-    readonly property int controlRadius: 12
-    readonly property int panelRadius: 20
+    readonly property int controlRadius: radiusLg
+    readonly property int panelRadius: radiusXl
+
+    function innerRadius(outerRadius, padding) {
+        return Math.max(0, outerRadius - padding)
+    }
+
+    function radiusForSide(shortSide) {
+        if (shortSide <= 12) return radiusXs
+        if (shortSide <= 28) return radiusSm
+        if (shortSide <= 48) return radiusMd
+        if (shortSide <= 96) return radiusLg
+        return radiusXl
+    }
 
     readonly property int spacingXs: 4
     readonly property int spacingSm: 8

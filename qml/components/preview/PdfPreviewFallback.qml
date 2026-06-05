@@ -23,7 +23,7 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             width: root.cardSize
             height: root.cardSize
-            radius: 16
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.18 : 0.12)
             border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.34 : 0.24)
             border.width: 1

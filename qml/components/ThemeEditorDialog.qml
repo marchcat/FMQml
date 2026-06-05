@@ -87,6 +87,9 @@ Dialog {
         { key: "menuBorder", title: "Menu Border", hint: "Menu and popup outlines" },
         { key: "menuSeparator", title: "Menu Separator", hint: "Menu dividers" },
         { key: "menuItemPressed", title: "Menu Item Pressed", hint: "Pressed menu row state" },
+        { key: "chromeGradientStart", title: "Chrome Gradient Start", hint: "Window and toolbar gradient start" },
+        { key: "chromeGradientMid", title: "Chrome Gradient Mid", hint: "Window and toolbar gradient middle" },
+        { key: "chromeGradientEnd", title: "Chrome Gradient End", hint: "Window and toolbar gradient end" },
         { key: "glassShadow", title: "Glass Shadow", hint: "Elevated popup shadow" },
         { key: "shadow", title: "Base Shadow", hint: "Generic soft shadow tone" }
     ]
@@ -281,6 +284,9 @@ Dialog {
         case "menuBorder":
         case "menuSeparator":
         case "menuItemPressed":
+        case "chromeGradientStart":
+        case "chromeGradientMid":
+        case "chromeGradientEnd":
         case "glassShadow":
         case "shadow":
             return "chrome"
@@ -1469,6 +1475,9 @@ Dialog {
         readonly property color pMenuBrd:    root.previewColor("menuBorder",           Theme.menuBorder)
         readonly property color pMenuSep:    root.previewColor("menuSeparator",        Theme.menuSeparator)
         readonly property color pMenuPress:  root.previewColor("menuItemPressed",      Theme.menuItemPressed)
+        readonly property color pChromeStart: root.previewColor("chromeGradientStart", Theme.chromeGradientStart)
+        readonly property color pChromeMid:   root.previewColor("chromeGradientMid",   Theme.chromeGradientMid)
+        readonly property color pChromeEnd:   root.previewColor("chromeGradientEnd",   Theme.chromeGradientEnd)
         readonly property color pGlassShadow: root.previewColor("glassShadow",         Theme.glassShadow)
         readonly property color pShadow:     root.previewColor("shadow",               Theme.shadow)
         readonly property color pOverlayScrim: root.previewColor("overlayScrim",       Theme.overlayScrim)
@@ -1662,7 +1671,7 @@ Dialog {
                     }
                 }
 
-                TokenHighlight { keys: ["menuBorder", "menuSeparator", "menuItemPressed", "panelSurfaceStrong", "glassShadow", "shadow"] }
+                TokenHighlight { keys: ["menuBorder", "menuSeparator", "menuItemPressed", "chromeGradientStart", "chromeGradientMid", "chromeGradientEnd", "panelSurfaceStrong", "glassShadow", "shadow"] }
             }
         }
 

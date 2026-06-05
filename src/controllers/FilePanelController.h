@@ -19,6 +19,8 @@
 class FilePanelController final : public QObject {
     Q_OBJECT
     Q_PROPERTY(int viewMode READ viewMode WRITE setViewMode NOTIFY viewModeChanged)
+    Q_PROPERTY(DirectoryModel::SortRole panelSortRole READ panelSortRole WRITE setPanelSortRole NOTIFY panelSortRoleChanged)
+    Q_PROPERTY(Qt::SortOrder panelSortOrder READ panelSortOrder WRITE setPanelSortOrder NOTIFY panelSortOrderChanged)
     Q_PROPERTY(DirectoryModel::SortRole detailsSortRole READ detailsSortRole WRITE setDetailsSortRole NOTIFY detailsSortRoleChanged)
     Q_PROPERTY(Qt::SortOrder detailsSortOrder READ detailsSortOrder WRITE setDetailsSortOrder NOTIFY detailsSortOrderChanged)
     Q_PROPERTY(DirectoryModel *directoryModel READ directoryModel CONSTANT)
@@ -55,6 +57,11 @@ public:
 
     int viewMode() const;
     void setViewMode(int mode);
+    DirectoryModel::SortRole panelSortRole() const;
+    void setPanelSortRole(DirectoryModel::SortRole role);
+    Qt::SortOrder panelSortOrder() const;
+    void setPanelSortOrder(Qt::SortOrder order);
+    Q_INVOKABLE void setPanelSortPolicy(int role, int order);
     DirectoryModel::SortRole detailsSortRole() const;
     void setDetailsSortRole(DirectoryModel::SortRole role);
     Qt::SortOrder detailsSortOrder() const;
@@ -150,6 +157,8 @@ signals:
     void hoveredPathChanged();
     void currentItemPathChanged();
     void viewModeChanged();
+    void panelSortRoleChanged();
+    void panelSortOrderChanged();
     void detailsSortRoleChanged();
     void detailsSortOrderChanged();
     void isDeviceRootChanged();
@@ -198,7 +207,6 @@ private:
     bool requestOpenPath(const QString &path, bool addToHistory, bool preserveScroll = false);
     void setNavigationPending(bool pending, const QString &path = {});
     void recoverFromMissingPath(const QString &path, const QString &error);
-    void applySortPolicyForCurrentView();
     void scheduleCreatedEntryReveal(const QString &path);
 
     DirectoryModel m_directoryModel;
@@ -211,8 +219,8 @@ private:
     QStringList m_backStack;
     QStringList m_forwardStack;
     int m_viewMode = 0;
-    DirectoryModel::SortRole m_detailsSortRole = DirectoryModel::SortByName;
-    Qt::SortOrder m_detailsSortOrder = Qt::AscendingOrder;
+    DirectoryModel::SortRole m_panelSortRole = DirectoryModel::SortByName;
+    Qt::SortOrder m_panelSortOrder = Qt::AscendingOrder;
     bool m_scrolling = false;
     bool m_isDeviceRoot = false;
     bool m_isFavoritesRoot = false;

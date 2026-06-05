@@ -158,18 +158,20 @@ Item {
     Rectangle {
         id: bgRect
         anchors.fill: parent
-        anchors.leftMargin: 4
-        anchors.rightMargin: 4
-        anchors.topMargin: 1
-        anchors.bottomMargin: 1
-        radius: Theme.radiusSm
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
+        anchors.topMargin: 2
+        anchors.bottomMargin: 2
+        radius: Theme.radiusMd
 
         color: isSelected
                ? (root.panelActive ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                : ((hover.hovered && !root.scrolling) ? Theme.itemHoverFill : "transparent")
         border.color: isSelected
-                      ? (root.panelActive ? Theme.itemSelectedBorder : Theme.itemSelectedBorderInactive)
-                      : (root.currentItem ? Theme.withAlpha(Theme.focusRing, root.panelActive ? 0.82 : 0.38) : "transparent")
+                      ? (root.panelActive
+                         ? Theme.withAlpha(Theme.itemSelectedBorder, 0.72)
+                         : Theme.withAlpha(Theme.itemSelectedBorderInactive, 0.58))
+                      : (root.currentItem ? Theme.withAlpha(Theme.focusRing, root.panelActive ? 0.62 : 0.30) : "transparent")
         border.width: isSelected || root.currentItem ? 1 : 0
         transform: Translate { x: root.visualOffsetX }
 
@@ -178,11 +180,11 @@ Item {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.topMargin: 4
-            anchors.bottomMargin: 4
+            anchors.topMargin: 6
+            anchors.bottomMargin: 6
             anchors.leftMargin: 4
-            width: isSelected ? 3 : 0
-            radius: 1.5
+            width: isSelected ? 2 : 0
+            radius: 1
             color: Theme.accent
             
             Behavior on width {

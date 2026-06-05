@@ -29,7 +29,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: root.compact ? 8 : 18
-        radius: Theme.radiusMd
+        radius: Theme.panelRadius
         color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.11 : 0.08)
         border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.30 : 0.22)
         border.width: 1
@@ -43,7 +43,7 @@ Item {
             Rectangle {
                 Layout.preferredWidth: root.compact ? 58 : 112
                 Layout.preferredHeight: width
-                radius: Theme.radiusSm
+                radius: Theme.radiusLg
                 color: Theme.withAlpha(Theme.bg, themeController.isDark ? 0.30 : 0.46)
                 border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.38 : 0.28)
                 border.width: 1

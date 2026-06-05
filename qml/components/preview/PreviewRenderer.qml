@@ -577,7 +577,7 @@ Item {
         id: previewCardComponent
 
         Rectangle {
-            radius: 16
+            radius: Theme.panelRadius
             color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
             border.color: Theme.border
             border.width: 1

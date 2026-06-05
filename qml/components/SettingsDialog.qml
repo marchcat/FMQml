@@ -25,7 +25,6 @@ Dialog {
     property bool highQualitySystemIconsEnabled: true
     property bool thumbnailsEnabled: true
     property bool ultraLightModeEnabled: false
-    property bool nativeFileEnumeratorsEnabled: Qt.platform.os === "windows"
     signal themeEditorRequested()
     readonly property string appDataLocation: typeof appSettings !== "undefined" && appSettings
                                               ? appSettings.appDataLocation
@@ -87,9 +86,6 @@ Dialog {
         ultraLightModeEnabled = typeof appSettings !== "undefined" && appSettings
                                 ? appSettings.ultraLightMode
                                 : false
-        nativeFileEnumeratorsEnabled = typeof appSettings !== "undefined" && appSettings
-                                       ? appSettings.useNativeFileEnumerators
-                                       : Qt.platform.os === "windows"
     }
 
     function setSplitViewEnabled(enabled) {
@@ -145,14 +141,6 @@ Dialog {
         if (typeof appSettings !== "undefined" && appSettings
                 && appSettings.ultraLightMode !== enabled) {
             appSettings.ultraLightMode = enabled
-        }
-    }
-
-    function setNativeFileEnumeratorsEnabled(enabled) {
-        nativeFileEnumeratorsEnabled = enabled
-        if (typeof appSettings !== "undefined" && appSettings
-                && appSettings.useNativeFileEnumerators !== enabled) {
-            appSettings.useNativeFileEnumerators = enabled
         }
     }
 
@@ -345,14 +333,6 @@ Dialog {
                             onToggled: (checked) => root.setUltraLightModeEnabled(checked)
                         }
 
-                        SettingsToggleRow {
-                            title: "Native file enumerators"
-                            subtitle: "Use Windows directory scanning; switch off to fall back to Qt scanning"
-                            checked: root.nativeFileEnumeratorsEnabled
-                            toggleEnabled: Qt.platform.os === "windows"
-                            accentColor: root.dialogAccent
-                            onToggled: (checked) => root.setNativeFileEnumeratorsEnabled(checked)
-                        }
                     }
 
                     DialogSection {
@@ -641,9 +621,6 @@ Dialog {
         }
         function onUltraLightModeChanged() {
             root.ultraLightModeEnabled = appSettings ? appSettings.ultraLightMode : false
-        }
-        function onUseNativeFileEnumeratorsChanged() {
-            root.nativeFileEnumeratorsEnabled = appSettings ? appSettings.useNativeFileEnumerators : Qt.platform.os === "windows"
         }
         function onSettingsMaintenanceStatusChanged() {
             if (root.workspaceResetPending && appSettings

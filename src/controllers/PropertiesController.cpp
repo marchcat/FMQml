@@ -197,10 +197,17 @@ void PropertiesController::rebuildPropertyGroups()
             const QString label = prop.value(QStringLiteral("label")).toString();
             const QString value = prop.value(QStringLiteral("value")).toString();
             const bool allowed = prop.value(QStringLiteral("allowed")).toBool();
+            const QString state = prop.value(QStringLiteral("state"),
+                                             allowed ? QStringLiteral("allowed") : QStringLiteral("denied")).toString();
+            const QString reason = prop.value(QStringLiteral("reason")).toString();
             accessRows.append(makePropertyRow(stableKey(QStringLiteral("access"), label), label, value, QStringLiteral("access"), false, false,
                                               QVariantMap{
                                                   {QStringLiteral("allowed"), allowed},
-                                                  {QStringLiteral("status"), allowed ? QStringLiteral("ok") : QStringLiteral("blocked")}
+                                                  {QStringLiteral("state"), state},
+                                                  {QStringLiteral("status"), state == QLatin1String("allowed")
+                                                       ? QStringLiteral("ok")
+                                                       : (state == QLatin1String("unknown") ? QStringLiteral("unknown") : QStringLiteral("blocked"))},
+                                                  {QStringLiteral("reason"), reason}
                                               }));
         }
         appendGroup(groups, QStringLiteral("access.capabilities"), QStringLiteral("Capabilities"), QStringLiteral("access"), accessRows);

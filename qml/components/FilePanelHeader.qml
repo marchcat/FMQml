@@ -10,21 +10,14 @@ Rectangle {
     required property var panel
     readonly property bool resizeOptimized: panel && panel.resizeOptimized
 
-    height: 32
-    color: Theme.panelSurfaceSoft
+    height: 31
+    color: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.36 : 0.62)
 
     Rectangle {
         anchors.bottom: parent.bottom
         width: parent.width
         height: 1
-        color: Theme.withAlpha(Theme.border, 0.7)
-        opacity: 0.7
-    }
-    Rectangle {
-        anchors.top: parent.top
-        width: parent.width
-        height: 1
-        color: Theme.withAlpha(Theme.accentText, themeController.isDark ? 0.07 : 0.55)
+        color: Theme.panelStroke
     }
 
     // ── Column Picker popup ───────────────────────────────────────────────────
@@ -104,8 +97,8 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: 1
-                color: Theme.withAlpha(Theme.border, 0.6)
-                opacity: 0.6
+                color: Theme.panelStrokeStrong
+                opacity: themeController.isDark ? 0.48 : 0.6
             }
 
             // Drop shadow-like gradient on the right of the sticky column
@@ -301,12 +294,19 @@ Rectangle {
     function setSort(role) {
         const model = headerRoot.controller.directoryModel
         if (model.sortRole === role) {
-            model.sortOrder = (model.sortOrder === Qt.AscendingOrder
-                               ? Qt.DescendingOrder : Qt.AscendingOrder)
+            headerRoot.controller.setPanelSortPolicy(role,
+                    model.sortOrder === Qt.AscendingOrder
+                            ? Qt.DescendingOrder
+                            : Qt.AscendingOrder)
         } else {
-            model.sortRole  = role
-            model.sortOrder = Qt.AscendingOrder
+            headerRoot.controller.setPanelSortPolicy(role, defaultSortOrder(role))
         }
+    }
+
+    function defaultSortOrder(role) {
+        return role === 1 || role === 3 || role === 4
+                ? Qt.DescendingOrder
+                : Qt.AscendingOrder
     }
 
     // ── HeaderCol component ───────────────────────────────────────────────────
@@ -406,13 +406,13 @@ Rectangle {
                     ctx.lineJoin = "round";
                     ctx.beginPath();
                     if (hcol.sortOrder === Qt.AscendingOrder) {
-                        ctx.moveTo(1, 5);
-                        ctx.lineTo(4, 2);
-                        ctx.lineTo(7, 5);
-                    } else {
                         ctx.moveTo(1, 3);
                         ctx.lineTo(4, 6);
                         ctx.lineTo(7, 3);
+                    } else {
+                        ctx.moveTo(1, 5);
+                        ctx.lineTo(4, 2);
+                        ctx.lineTo(7, 5);
                     }
                     ctx.stroke();
                 }
@@ -483,8 +483,12 @@ Rectangle {
                 height: parent.height - 8
                 radius: 0.5
                 color: resizerHover.hovered || dragHandler.active
-                       ? Theme.accent : Theme.panelBorder
-                opacity: resizerHover.hovered || dragHandler.active ? 0.85 : (headerRoot.panel.showGridlines ? 0.55 : 0.35)
+                       ? Theme.accent : Theme.panelStroke
+                opacity: resizerHover.hovered || dragHandler.active
+                         ? 0.85
+                         : (headerRoot.panel.showGridlines
+                            ? (themeController.isDark ? 0.42 : 0.55)
+                            : (themeController.isDark ? 0.22 : 0.35))
                 Behavior on color {
                     enabled: !headerRoot.resizeOptimized
                     ColorAnimation { duration: 100 }

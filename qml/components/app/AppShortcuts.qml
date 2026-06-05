@@ -98,6 +98,14 @@ Item {
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
             const controller = root.appRoot.activePanelController()
+            const panelView = root.shortcutActivePanelView
+            if (controller && controller.isFavoritesRoot) {
+                if (panelView && panelView.quickLookCurrentFavorite) {
+                    panelView.quickLookCurrentFavorite()
+                }
+                return
+            }
+
             if (!controller) {
                 return
             }

@@ -15,7 +15,7 @@ ApplicationWindow {
     minimumHeight: 480
     visible: false
     title: "FM"
-    color: Theme.bg
+    color: Theme.panelSurface
 
     function openDeleteConfirm(paths, label) {
         workspaceOverlays.openDeleteConfirm(paths, label)
@@ -157,10 +157,12 @@ ApplicationWindow {
             rightShowActionBar: fileWorkspace.rightPanelView.showActionBar,
             leftDetailsVisualState: fileWorkspace.leftPanelView.detailsVisualState(),
             rightDetailsVisualState: fileWorkspace.rightPanelView.detailsVisualState(),
-            leftSortRole: workspaceController.leftPanel.detailsSortRole,
-            rightSortRole: workspaceController.rightPanel.detailsSortRole,
-            leftSortOrder: workspaceController.leftPanel.detailsSortOrder,
-            rightSortOrder: workspaceController.rightPanel.detailsSortOrder,
+            leftSortRole: workspaceController.leftPanel.panelSortRole,
+            rightSortRole: workspaceController.rightPanel.panelSortRole,
+            leftSortOrder: workspaceController.leftPanel.panelSortOrder,
+            rightSortOrder: workspaceController.rightPanel.panelSortOrder,
+            leftMixFilesAndFolders: workspaceController.leftPanel.directoryModel.mixFilesAndFolders,
+            rightMixFilesAndFolders: workspaceController.rightPanel.directoryModel.mixFilesAndFolders,
             showHidden: activeCtrl ? activeCtrl.directoryModel.showHidden
                                    : workspaceController.leftPanel.directoryModel.showHidden
         }
@@ -209,10 +211,10 @@ ApplicationWindow {
             }
             workspaceController.leftPanel.viewMode = state.leftViewMode
             workspaceController.rightPanel.viewMode = state.rightViewMode
-            workspaceController.leftPanel.detailsSortRole = state.leftSortRole
-            workspaceController.rightPanel.detailsSortRole = state.rightSortRole
-            workspaceController.leftPanel.detailsSortOrder = state.leftSortOrder
-            workspaceController.rightPanel.detailsSortOrder = state.rightSortOrder
+            workspaceController.leftPanel.setPanelSortPolicy(state.leftSortRole, state.leftSortOrder)
+            workspaceController.rightPanel.setPanelSortPolicy(state.rightSortRole, state.rightSortOrder)
+            workspaceController.leftPanel.directoryModel.mixFilesAndFolders = state.leftMixFilesAndFolders === true
+            workspaceController.rightPanel.directoryModel.mixFilesAndFolders = state.rightMixFilesAndFolders === true
         }
 
         stopWorkspaceStatePersistenceTimers()
@@ -461,6 +463,11 @@ ApplicationWindow {
         const selected = ctrl.selectedPaths()
         if (!selected || selected.length === 0 || !favoritesController) {
             return
+        }
+        for (let i = 0; i < selected.length; ++i) {
+            if (String(selected[i]).toLowerCase().startsWith("archive://")) {
+                return
+            }
         }
         const changed = favoritesController.pinPaths(selected)
         showTransientInfo(changed > 0
@@ -741,11 +748,21 @@ ApplicationWindow {
             onSearchReturnRequested: workspaceOverlays.reopenFileSearchResults()
         }
 
-        SplitView {
-            id: mainSplitView
+        Item {
+            id: mainArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            orientation: Qt.Horizontal
+            clip: true
+
+            Rectangle {
+                anchors.fill: parent
+                color: Theme.panelSurface
+            }
+
+            SplitView {
+                id: mainSplitView
+                anchors.fill: parent
+                orientation: Qt.Horizontal
 
             Sidebar {
                 id: sidebar
@@ -767,8 +784,10 @@ ApplicationWindow {
                 id: fileWorkspace
                 SplitView.fillWidth: true
                 liveResizeActive: root.anyLiveResize
+                externalScrollActive: sidebar.treeScrollActive
                 workspaceController: root.workspaceService
                 propertiesController: root.propertiesService
+                quickLookPopup: quickLookPopup
                 onPanelVisualStateChanged: root.scheduleWorkspaceStateSave()
             }
 
@@ -803,47 +822,49 @@ ApplicationWindow {
                 Behavior on opacity { NumberAnimation { duration: Theme.motionNormal } }
             }
 
-            handle: Rectangle {
-                implicitWidth: 12
-                color: "transparent"
+                handle: Rectangle {
+                    implicitWidth: 4
+                    color: "transparent"
+                    readonly property bool handleActive: SplitHandle.hovered || SplitHandle.pressed
 
-                SplitHandle.onPressedChanged: {
-                    root.mainSplitResizing = SplitHandle.pressed
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 2
-                    radius: 5
-                    color: Theme.accent
-                    opacity: SplitHandle.pressed ? 0.16 : (SplitHandle.hovered ? 0.08 : 0)
-
-                    Behavior on opacity {
-                        NumberAnimation {
-                            duration: 120
-                            easing.type: Easing.OutQuad
-                        }
+                    SplitHandle.onPressedChanged: {
+                        root.mainSplitResizing = SplitHandle.pressed
                     }
-                }
 
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: (SplitHandle.hovered || SplitHandle.pressed) ? 3 : 2
-                    height: parent.height - 18
-                    radius: width / 2
-                    color: (SplitHandle.hovered || SplitHandle.pressed) ? Theme.accent : Theme.border
-                    opacity: SplitHandle.pressed ? 1.0 : (SplitHandle.hovered ? 0.9 : 0.58)
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radiusSm
+                        color: Theme.accent
+                        opacity: SplitHandle.pressed ? 0.10 : (SplitHandle.hovered ? 0.05 : 0.0)
 
-                    Behavior on width {
-                        NumberAnimation {
-                            duration: 100
-                            easing.type: Easing.OutQuad
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: 120
+                                easing.type: Easing.OutQuad
+                            }
                         }
                     }
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.handleActive ? 2 : 1
+                        height: Math.max(0, parent.height - Theme.panelRadius * 2)
+                        radius: width / 2
+                        color: parent.handleActive
+                               ? Theme.accent
+                               : Theme.panelStrokeSubtle
+                        opacity: SplitHandle.pressed ? 0.74 : (SplitHandle.hovered ? 0.36 : (themeController.isDark ? 0.08 : 0.20))
+
+                        Behavior on width {
+                            NumberAnimation {
+                                duration: 100
+                                easing.type: Easing.OutQuad
+                            }
+                        }
+
+                        Behavior on color { ColorAnimation { duration: 120 } }
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
+                    }
                 }
             }
         }
@@ -952,6 +973,7 @@ ApplicationWindow {
         quickLookController: root.quickLookService
         quickLookPopup: quickLookPopup
         propertiesController: root.propertiesService
+        previewSuppressed: fileWorkspace.externalPreviewScrollActive
     }
 
     Connections {
@@ -986,6 +1008,7 @@ ApplicationWindow {
         function onShowHiddenChanged() { root.scheduleWorkspaceStateSave() }
         function onSortRoleChanged() { root.scheduleWorkspaceStateSave() }
         function onSortOrderChanged() { root.scheduleWorkspaceStateSave() }
+        function onMixFilesAndFoldersChanged() { root.scheduleWorkspaceStateSave() }
     }
 
     Connections {
@@ -993,6 +1016,7 @@ ApplicationWindow {
         function onShowHiddenChanged() { root.scheduleWorkspaceStateSave() }
         function onSortRoleChanged() { root.scheduleWorkspaceStateSave() }
         function onSortOrderChanged() { root.scheduleWorkspaceStateSave() }
+        function onMixFilesAndFoldersChanged() { root.scheduleWorkspaceStateSave() }
     }
 
     function showBatchRename(paths) {

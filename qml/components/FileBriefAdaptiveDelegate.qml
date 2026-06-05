@@ -22,6 +22,8 @@ Item {
     property bool panelActive: true
     property bool scrolling: false
     property bool resizeOptimized: false
+    property bool thumbnailSchedulingPaused: false
+    property bool thumbnailLoadingPaused: false
     property bool pendingRename: false
     property string pendingRenamePath: ""
     property real visualOffsetX: 0
@@ -155,6 +157,8 @@ Item {
             panelActive: root.panelActive
             scrolling: root.scrolling
             resizeOptimized: root.lightweightActive
+            thumbnailSchedulingPaused: root.thumbnailSchedulingPaused
+            thumbnailLoadingPaused: root.thumbnailLoadingPaused
             visualOffsetX: root.visualOffsetX
             onClicked: (mouse) => root.clicked(mouse)
             onRightClicked: root.rightClicked()

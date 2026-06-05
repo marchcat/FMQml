@@ -27,6 +27,8 @@ Item {
     property bool panelActive:    true
     property bool scrolling:      false
     property bool resizeOptimized: false
+    property bool thumbnailSchedulingPaused: false
+    property bool thumbnailLoadingPaused: false
     property bool isRenaming:     false
     property real visualOffsetX:  0
     z: root.isRenaming ? 100 : 0
@@ -44,6 +46,7 @@ Item {
     readonly property int   fontSize: Math.max(11, Math.min(16, Math.round(12 * (1.0 + (scaleFactor - 1.0) * 0.5))))
     readonly property bool  canShowThumbnail: !isDirectory && hasThumbnail
     readonly property bool  thumbnailEligible: root.canShowThumbnail
+                                           && !root.thumbnailLoadingPaused
                                            && (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
                                            && (typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true)
                                            && !(typeof appSettings !== "undefined" && appSettings ? appSettings.ultraLightMode : false)
@@ -70,7 +73,7 @@ Item {
     onPathChanged: {
         isRenaming = false
         visualOffsetX = 0
-        queueThumbnailLoad()
+        queueThumbnailLoad(true)
         if (root.resizeOptimized) {
             return
         }
@@ -83,7 +86,7 @@ Item {
     }
 
     Component.onCompleted: {
-        queueThumbnailLoad()
+        queueThumbnailLoad(true)
         if (root.resizeOptimized) {
             return
         }
@@ -107,7 +110,7 @@ Item {
     GridView.onReused: {
         isRenaming = false
         visualOffsetX = 0
-        queueThumbnailLoad()
+        queueThumbnailLoad(true)
         opacity = Qt.binding(() => isHidden ? 0.55 : 1.0)
         if (root.resizeOptimized) {
             return
@@ -136,9 +139,11 @@ Item {
         return briefRenameEditor.editorHasFocus()
     }
 
-    function queueThumbnailLoad() {
-        root.thumbnailLoadEnabled = false
-        if (root.thumbnailEligible) {
+    function queueThumbnailLoad(clearExisting) {
+        if (clearExisting === true || !root.thumbnailEligible) {
+            root.thumbnailLoadEnabled = false
+        }
+        if (root.thumbnailEligible && !root.thumbnailSchedulingPaused && !root.thumbnailLoadEnabled) {
             thumbnailDelayTimer.restart()
         } else {
             thumbnailDelayTimer.stop()
@@ -151,12 +156,18 @@ Item {
     onThumbnailEligibleChanged: {
         queueThumbnailLoad()
     }
+    onThumbnailLoadingPausedChanged: {
+        queueThumbnailLoad()
+    }
+    onThumbnailSchedulingPausedChanged: {
+        queueThumbnailLoad()
+    }
 
     Timer {
         id: thumbnailDelayTimer
         interval: 90 + (Math.max(0, root.index) % 12) * 24
         repeat: false
-        onTriggered: root.thumbnailLoadEnabled = root.thumbnailEligible
+        onTriggered: root.thumbnailLoadEnabled = root.thumbnailEligible && !root.thumbnailSchedulingPaused
     }
 
     // ── Background ─────────────────────────────────────────────────────────────

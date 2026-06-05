@@ -68,7 +68,7 @@ Rectangle {
             background: Rectangle {
                 implicitWidth: 32
                 implicitHeight: 32
-                radius: Theme.radiusLg
+                radius: Theme.radiusForSide(Math.min(width, height))
                 color: closeBtn.hovered ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.10 : 0.06) : "transparent"
 
                 Behavior on color {

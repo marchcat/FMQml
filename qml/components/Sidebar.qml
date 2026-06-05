@@ -15,6 +15,8 @@ Pane {
     property bool lastFocusedTree: false
     property bool trapTabNavigation: false
     property bool liveResizeActive: false
+    property bool treeScrollActive: false
+    property string pendingTreePreviewPath: ""
     property int treeSyncRequestId: 0
     property string treeSyncTargetPath: ""
     readonly property bool ultraLightMode: typeof appSettings !== "undefined" && appSettings
@@ -53,6 +55,20 @@ Pane {
 
     function syncTreeToActivePath() {
         syncTimer.restart()
+    }
+
+    function treeScrollInputActive() {
+        return foldersTree.activeFocus
+            || foldersTreeHover.hovered
+            || foldersTreeVerticalScrollBar.pressed
+    }
+
+    function markTreeScrollActivity() {
+        if (!root.treeScrollInputActive()) {
+            return
+        }
+        root.treeScrollActive = true
+        treeScrollStopTimer.restart()
     }
 
     function clearTreeSelection() {
@@ -117,6 +133,10 @@ Pane {
 
     function previewPath(path) {
         if (!path || typeof quickLookController === "undefined" || !quickLookController) return
+        if (root.treeScrollActive) {
+            root.pendingTreePreviewPath = path
+            return
+        }
         quickLookController.preview(path)
     }
 
@@ -228,6 +248,20 @@ Pane {
         }
     }
 
+    Timer {
+        id: treeScrollStopTimer
+        interval: 160
+        repeat: false
+        onTriggered: {
+            root.treeScrollActive = false
+            if (root.pendingTreePreviewPath.length > 0) {
+                const path = root.pendingTreePreviewPath
+                root.pendingTreePreviewPath = ""
+                root.previewPath(path)
+            }
+        }
+    }
+
     function pathsEqual(lhs, rhs) {
         if (!lhs || !rhs) return false;
         
@@ -305,26 +339,34 @@ Pane {
     }
 
     background: Rectangle {
+        radius: Theme.panelRadius
+        topLeftRadius: 0
+        bottomLeftRadius: 0
         color: Theme.panelSurface
 
         Rectangle {
             anchors.fill: parent
-            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.05 : 0.03)
+            radius: Theme.innerRadius(parent.radius, 1)
+            topLeftRadius: 0
+            bottomLeftRadius: 0
+            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.028 : 0.018)
         }
 
         Rectangle {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 3
+            anchors.topMargin: Theme.panelRadius
+            anchors.bottomMargin: Theme.panelRadius
+            width: 1
             color: themeController.isDark
-                ? Theme.withAlpha(Theme.accent, 0.08)
-                : Theme.withAlpha(Theme.accentText, 0.18)
+                ? Theme.withAlpha(Theme.accent, 0.07)
+                : Theme.withAlpha(Theme.accentText, 0.20)
         }
 
         border.color: themeController.isDark
-            ? Theme.withAlpha(Theme.accent, 0.16)
-            : Theme.panelBorder
+            ? Theme.withAlpha(Theme.accent, 0.08)
+            : Theme.withAlpha(Theme.panelBorder, 0.38)
         border.width: 1
     }
 
@@ -445,26 +487,26 @@ Pane {
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
 
                     color: {
                         if (parent.isActive)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.11)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.13 : 0.085)
                         if (thisPcMouse.containsPress)
                             return Theme.surfaceActive
                         if (thisPcMouse.containsMouse)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.07 : 0.05)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.055 : 0.040)
                         return "transparent"
                     }
 
                     border.color: {
                         if (parent.isCurrent)
-                            return Theme.accent
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.58 : 0.46)
                         if (parent.isActive)
-                            return Theme.withAlpha(Theme.accent, 0.32)
-                        return thisPcMouse.containsMouse ? Theme.withAlpha(Theme.accent, 0.18) : "transparent"
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.34 : 0.28)
+                        return thisPcMouse.containsMouse ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.14) : "transparent"
                     }
-                    border.width: parent.isCurrent || parent.isActive || thisPcMouse.containsMouse ? (parent.isCurrent ? 2 : 1) : 0
+                    border.width: parent.isCurrent || parent.isActive || thisPcMouse.containsMouse ? 1 : 0
 
                     Behavior on color {
                         enabled: !root.effectsReduced
@@ -479,8 +521,8 @@ Pane {
                         anchors.topMargin: 8
                         anchors.bottomMargin: 8
                         anchors.leftMargin: 4
-                        width: 3
-                        radius: 1.5
+                        width: 2
+                        radius: 1
                         visible: thisPcBg.parent.isActive
                         color: Theme.accent
                     }
@@ -577,29 +619,29 @@ Pane {
                 }
 
                 background: Rectangle {
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
 
                     color: {
                         if (isActive)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.11)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.13 : 0.085)
                         if (placeMouse.pressed)
                             return Theme.surfaceActive
                         if (placeMouse.containsMouse)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.07 : 0.05)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.055 : 0.040)
                         return "transparent"
                     }
 
                     border.color: {
                         if (placeDelegate.isCurrent)
-                            return Theme.accent
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.58 : 0.46)
                         if (isActive)
-                            return Theme.withAlpha(Theme.accent, 0.32)
-                        return placeMouse.containsMouse ? Theme.withAlpha(Theme.accent, 0.18) : "transparent"
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.34 : 0.28)
+                        return placeMouse.containsMouse ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.14) : "transparent"
                     }
-                    border.width: placeDelegate.isCurrent || isActive || placeMouse.containsMouse ? (placeDelegate.isCurrent ? 2 : 1) : 0
+                    border.width: placeDelegate.isCurrent || isActive || placeMouse.containsMouse ? 1 : 0
 
                     Rectangle {
                         anchors.left: parent.left
@@ -608,8 +650,8 @@ Pane {
                         anchors.topMargin: 8
                         anchors.bottomMargin: 8
                         anchors.leftMargin: 4
-                        width: 3
-                        radius: 1.5
+                        width: 2
+                        radius: 1
                         visible: isActive
                         color: Theme.accent
                     }
@@ -656,7 +698,7 @@ Pane {
             Layout.preferredHeight: 1
             Layout.topMargin: 10
             Layout.bottomMargin: 10
-            color: Theme.panelBorder
+            color: Theme.panelStrokeStrong
         }
 
         RowLayout {
@@ -697,6 +739,13 @@ Pane {
             clip: true
             focus: true
             focusPolicy: Qt.StrongFocus
+
+            onContentYChanged: root.markTreeScrollActivity()
+            onContentXChanged: root.markTreeScrollActivity()
+
+            HoverHandler {
+                id: foldersTreeHover
+            }
 
             onActiveFocusChanged: {
                 if (activeFocus) {
@@ -830,29 +879,29 @@ Pane {
                 readonly property real iconSize: 20
 
                 background: Rectangle {
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusMd
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
 
                     color: {
                         if (isActive)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.12)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.14 : 0.09)
                         if (rowMouse.down)
                             return Theme.surfaceActive
                         if (rowMouse.containsMouse)
-                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.07 : 0.05)
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.055 : 0.040)
                         return "transparent"
                     }
 
                     border.color: {
                         if (folderDelegate.isCurrent)
-                            return Theme.accent
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.58 : 0.46)
                         if (isActive)
-                            return Theme.withAlpha(Theme.accent, 0.34)
-                        return rowMouse.containsMouse ? Theme.withAlpha(Theme.accent, 0.20) : "transparent"
+                            return Theme.withAlpha(Theme.accent, themeController.isDark ? 0.34 : 0.28)
+                        return rowMouse.containsMouse ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.14) : "transparent"
                     }
-                    border.width: folderDelegate.isCurrent || isActive || rowMouse.containsMouse ? (folderDelegate.isCurrent ? 2 : 1) : 0
+                    border.width: folderDelegate.isCurrent || isActive || rowMouse.containsMouse ? 1 : 0
 
                     Rectangle {
                         anchors.left: parent.left
@@ -901,8 +950,8 @@ Pane {
                         y: 4
                         width: 1
                         height: parent.height - 8
-                        color: Theme.panelBorder
-                        opacity: folderDelegate.isActive ? 0.40 : (rowMouse.containsMouse ? 0.34 : 0.24)
+                        color: Theme.panelStrokeSubtle
+                        opacity: folderDelegate.isActive ? 0.72 : (rowMouse.containsMouse ? 0.58 : 0.42)
                     }
 
                     Item {
@@ -1048,6 +1097,7 @@ Pane {
             }
 
             ScrollBar.vertical: ScrollBar {
+                id: foldersTreeVerticalScrollBar
                 policy: ScrollBar.AsNeeded
             }
         }

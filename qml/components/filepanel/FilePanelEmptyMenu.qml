@@ -30,6 +30,14 @@ Item {
         return root.favoritesController.isPinned(root.controller.currentPath)
     }
 
+    function canFavoriteCurrentFolder() {
+        return Boolean(root.favoritesController
+               && root.controller
+               && root.controller.currentPath.length > 0
+               && !root.controller.isVirtualRoot
+               && !String(root.controller.currentPath).toLowerCase().startsWith("archive://"))
+    }
+
     ThemedContextMenu {
         id: emptyContextMenu
         ThemedMenuItem {
@@ -83,10 +91,8 @@ Item {
                   : "Pin Current Folder to Favorites"
             icon.source: "../assets/icons/star.svg"
             iconColor: Theme.actionIconColor("favorite")
-            enabled: Boolean(root.favoritesController
-                     && root.controller
-                     && root.controller.currentPath.length > 0
-                     && !root.controller.isVirtualRoot)
+            visible: root.canFavoriteCurrentFolder()
+            enabled: visible
             onTriggered: {
                 if (root.favoritesController && root.controller) {
                     root.favoritesController.togglePinned(root.controller.currentPath)

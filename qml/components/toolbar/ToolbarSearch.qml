@@ -41,7 +41,9 @@ Rectangle {
     implicitHeight: 32
     radius: Theme.controlRadius
     color: Theme.panelSurfaceSoft
-    border.color: searchField.activeFocus ? Theme.focusRing : Theme.withAlpha(Theme.border, 0.5)
+    border.color: searchField.activeFocus
+                  ? Theme.withAlpha(Theme.focusRing, themeController.isDark ? 0.72 : 0.62)
+                  : Theme.withAlpha(Theme.border, themeController.isDark ? 0.34 : 0.24)
     border.width: 1
 
     Behavior on implicitWidth {

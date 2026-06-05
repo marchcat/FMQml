@@ -247,7 +247,10 @@ Popup {
         required property string label
         required property string value
         required property bool allowed
+        property string accessState: allowed ? "allowed" : "denied"
         required property string description
+        readonly property bool unknown: accessState === "unknown"
+        readonly property color stateColor: unknown ? Theme.categoryInfo : (allowed ? Theme.success : Theme.warning)
 
         Layout.fillWidth: true
         implicitHeight: Math.max(58, capabilityLayout.implicitHeight + 16)
@@ -273,8 +276,8 @@ Popup {
                 Layout.preferredWidth: 9
                 Layout.preferredHeight: 34
                 radius: 5
-                color: capabilityRow.allowed ? Theme.success : Theme.warning
-                opacity: capabilityRow.allowed ? 0.82 : 0.70
+                color: capabilityRow.stateColor
+                opacity: capabilityRow.allowed ? 0.82 : (capabilityRow.unknown ? 0.76 : 0.70)
             }
 
             ColumnLayout {
@@ -302,7 +305,7 @@ Popup {
 
             Label {
                 text: capabilityRow.value
-                color: capabilityRow.allowed ? Theme.success : Theme.warning
+                color: capabilityRow.stateColor
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignRight
@@ -591,7 +594,10 @@ Popup {
         return lines.join("\n")
     }
 
-    function capabilityDescription(label, allowed) {
+    function capabilityDescription(label, allowed, state) {
+        if (state === "unknown") {
+            return "The effective access state could not be verified for this item."
+        }
         switch (label) {
             case "Browse":
                 return allowed ? "Directory listing is available." : "Directory listing is blocked or unavailable."
@@ -1326,8 +1332,10 @@ Popup {
                                     label: (modelData && modelData.label) ? modelData.label : ""
                                     value: (modelData && modelData.value ? modelData.value : "")
                                     allowed: modelData && modelData.allowed ? true : false
+                                    accessState: (modelData && modelData.state) ? modelData.state : (allowed ? "allowed" : "denied")
                                     description: root.capabilityDescription((modelData && modelData.label) ? modelData.label : "",
-                                                                            modelData && modelData.allowed ? true : false)
+                                                                            modelData && modelData.allowed ? true : false,
+                                                                            (modelData && modelData.state) ? modelData.state : "")
                                 }
                             }
                         }

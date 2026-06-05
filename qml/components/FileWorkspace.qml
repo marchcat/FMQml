@@ -7,12 +7,21 @@ Item {
 
     required property var workspaceController
     property var propertiesController
+    property var quickLookPopup
 
     property alias leftPanelView: leftPanel
     property alias rightPanelView: rightPanel
     property bool liveResizeActive: false
+    property bool externalScrollActive: false
+    property int externalScrollSuppressFileCountThreshold: 25
+    property bool externalScrollOptimizationEnabled: false
+    property int externalScrollFileCountThreshold: 96
     property bool splitResizing: false
-    readonly property bool previewScrollActive: leftPanel.previewScrollActive || rightPanel.previewScrollActive
+    readonly property bool externalPreviewScrollActive: leftPanel.externalScrollAnySuppressionActive
+                                                        || rightPanel.externalScrollAnySuppressionActive
+    readonly property bool previewScrollActive: root.externalPreviewScrollActive
+                                                || leftPanel.previewScrollActive
+                                                || rightPanel.previewScrollActive
     readonly property bool isRenaming: leftPanel.isRenaming || rightPanel.isRenaming
     readonly property int activePanelBottomChromeHeight: root.workspaceController.activePanel === 0
                                                        ? leftPanel.bottomChromeHeight
@@ -20,6 +29,11 @@ Item {
     property var pendingSplitState: null
 
     signal panelVisualStateChanged()
+
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.panelSurface
+    }
 
     function traceRenameFocus(stage, detail) {
     }
@@ -66,7 +80,8 @@ Item {
     SplitView {
         id: splitView
         anchors.fill: parent
-        anchors.margins: 10
+        anchors.topMargin: 0
+        anchors.bottomMargin: 4
         orientation: Qt.Horizontal
 
         FilePanel {
@@ -77,7 +92,12 @@ Item {
             controller: root.workspaceController.leftPanel
             workspaceController: root.workspaceController
             propertiesController: root.propertiesController
+            quickLookPopup: root.quickLookPopup
             liveResizeActive: root.liveResizeActive
+            externalScrollActive: root.externalScrollActive
+            externalScrollSuppressFileCountThreshold: root.externalScrollSuppressFileCountThreshold
+            externalScrollOptimizationEnabled: root.externalScrollOptimizationEnabled
+            externalScrollFileCountThreshold: root.externalScrollFileCountThreshold
             active: root.workspaceController.activePanel === 0
             onGridIconSizeChanged: root.panelVisualStateChanged()
             onBriefRowHeightChanged: root.panelVisualStateChanged()
@@ -104,7 +124,12 @@ Item {
             controller: root.workspaceController.rightPanel
             workspaceController: root.workspaceController
             propertiesController: root.propertiesController
+            quickLookPopup: root.quickLookPopup
             liveResizeActive: root.liveResizeActive
+            externalScrollActive: root.externalScrollActive
+            externalScrollSuppressFileCountThreshold: root.externalScrollSuppressFileCountThreshold
+            externalScrollOptimizationEnabled: root.externalScrollOptimizationEnabled
+            externalScrollFileCountThreshold: root.externalScrollFileCountThreshold
             active: root.workspaceController.activePanel === 1
             onGridIconSizeChanged: root.panelVisualStateChanged()
             onBriefRowHeightChanged: root.panelVisualStateChanged()
@@ -118,33 +143,32 @@ Item {
         }
 
         handle: Rectangle {
-            implicitWidth: 12
+            implicitWidth: 4
             implicitHeight: 12
             color: "transparent"
+            readonly property bool handleActive: SplitHandle.hovered || SplitHandle.pressed
 
             SplitHandle.onPressedChanged: {
                 root.splitResizing = SplitHandle.pressed
             }
-            
-            // Interaction overlay
+
             Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: 2
-                anchors.rightMargin: 2
                 color: Theme.accent
-                opacity: SplitHandle.pressed ? 0.16 : (SplitHandle.hovered ? 0.08 : 0)
-                radius: 5
+                opacity: SplitHandle.pressed ? 0.10 : (SplitHandle.hovered ? 0.05 : 0.0)
+                radius: Theme.radiusSm
                 Behavior on opacity { NumberAnimation { duration: 150 } }
             }
 
-            // The actual divider line
             Rectangle {
                 anchors.centerIn: parent
-                width: (SplitHandle.hovered || SplitHandle.pressed) ? 3 : 2
-                height: parent.height - 18
+                width: parent.handleActive ? 2 : 1
+                height: Math.max(0, parent.height - Theme.panelRadius * 2)
                 radius: width / 2
-                color: (SplitHandle.hovered || SplitHandle.pressed) ? Theme.accent : Theme.border
-                opacity: SplitHandle.pressed ? 1.0 : (SplitHandle.hovered ? 0.9 : 0.58)
+                color: parent.handleActive
+                       ? Theme.accent
+                       : Theme.panelStrokeSubtle
+                opacity: SplitHandle.pressed ? 0.74 : (SplitHandle.hovered ? 0.36 : (themeController.isDark ? 0.08 : 0.18))
                 
                 Behavior on width { NumberAnimation { duration: 100 } }
                 Behavior on color { ColorAnimation { duration: 150 } }

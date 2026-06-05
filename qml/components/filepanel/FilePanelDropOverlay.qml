@@ -28,11 +28,14 @@ Item {
 
         Rectangle {
             anchors.fill: parent
-            color: Theme.accent
-            opacity: parent.containsDrag ? 0.1 : 0
+            anchors.margins: 1
+            radius: Theme.innerRadius(Theme.panelRadius, 1)
+            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.075 : 0.055)
+            opacity: parent.containsDrag ? 1 : 0
             visible: parent.containsDrag
-            border.color: Theme.accent
-            border.width: 2
+            border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.46 : 0.36)
+            border.width: 1
+            antialiasing: true
         }
     }
 }

@@ -36,6 +36,26 @@ Control {
         return value.indexOf("archive://") === 0 && value.endsWith("|/")
     }
 
+    function virtualRootTitle() {
+        if (root.favoritesRootMode) {
+            return "Favorites"
+        }
+        if (root.deviceRootMode) {
+            return "This PC"
+        }
+        return ""
+    }
+
+    function virtualRootSubtitle() {
+        if (root.favoritesRootMode) {
+            return "Pinned paths and frequent folders"
+        }
+        if (root.deviceRootMode) {
+            return "Drives, devices, and storage"
+        }
+        return ""
+    }
+
     // True when the active panel is showing the virtual devices:// root
     readonly property bool deviceRootMode: root.controller ? root.controller.isDeviceRoot : false
     readonly property bool favoritesRootMode: root.controller ? root.controller.isFavoritesRoot : false
@@ -44,7 +64,7 @@ Control {
     background: Rectangle {
         visible: root.backgroundVisible
         color: themeController.isDark ? Theme.surface : Theme.bg
-        radius: Theme.radius
+        radius: Theme.controlRadius
         border.color: root.activeFocus ? Theme.accent : Theme.border
         border.width: root.activeFocus ? 2 : 1
     }
@@ -115,7 +135,7 @@ Control {
                         color: thisPcCrumb.down 
                                ? Theme.surfaceActive 
                                : (thisPcCrumb.hovered ? Theme.itemHoverFill : "transparent")
-                        radius: 6
+                        radius: Theme.radiusForSide(Math.min(width, height))
                         
                         Behavior on color { ColorAnimation { duration: 100 } }
                     }
@@ -159,7 +179,7 @@ Control {
                         color: favoritesCrumb.down
                                ? Theme.surfaceActive
                                : (favoritesCrumb.hovered ? Theme.itemHoverFill : "transparent")
-                        radius: 6
+                        radius: Theme.radiusForSide(Math.min(width, height))
                     }
 
                     onClicked: {
@@ -169,6 +189,31 @@ Control {
                                 root.controller.openPath("favorites://")
                             })
                         }
+                    }
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.virtualRootMode
+                    width: Math.min(360, Math.max(0, flickable.width - x - 12))
+                    spacing: 0
+
+                    Label {
+                        width: parent.width
+                        text: root.virtualRootTitle()
+                        color: Theme.textPrimary
+                        font.pixelSize: 12
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: root.virtualRootSubtitle()
+                        visible: parent.width >= 190
+                        color: Theme.textSecondary
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
                     }
                 }
 
@@ -183,7 +228,7 @@ Control {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 4
+                        radius: Theme.radiusXs
                         color: Theme.itemHoverFill
                         opacity: separatorThisPc.interactive && thisPcSepMouseArea.containsMouse ? 1 : 0
                         Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -263,7 +308,7 @@ Control {
                                 color: crumbBtn.down 
                                        ? Theme.surfaceActive 
                                        : (crumbBtn.hovered ? Theme.itemHoverFill : "transparent")
-                                radius: 6
+                                radius: Theme.radiusForSide(Math.min(width, height))
                                 
                                 Behavior on color { ColorAnimation { duration: 100 } }
                             }
@@ -289,7 +334,7 @@ Control {
 
                             Rectangle {
                                 anchors.fill: parent
-                                radius: 4
+                                radius: Theme.radiusXs
                                 color: Theme.itemHoverFill
                                 opacity: separatorSegment.interactive && segSepMouseArea.containsMouse ? 1 : 0
                                 Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -398,7 +443,7 @@ Control {
             background: Rectangle {
                 anchors.fill: parent
                 anchors.margins: 2
-                radius: 6
+                radius: Theme.radiusForSide(height)
                 color: {
                     if (!itemRoot.enabled) return "transparent"
                     if (itemRoot.down) return itemRoot.pressedFill
@@ -421,7 +466,7 @@ Control {
                     anchors.bottom: parent.bottom
                     anchors.margins: 5
                     width: 3
-                    radius: 1.5
+                    radius: Theme.radiusXs
                     color: accentColor
                     visible: itemRoot.isCurrent
                 }

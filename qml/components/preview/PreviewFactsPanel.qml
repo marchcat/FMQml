@@ -139,15 +139,15 @@ Item {
                     sourcePath: root.verticalPlacement === "top"
                                 ? "qrc:/qt/qml/FM/qml/assets/icons/arrow-down.svg"
                                 : "qrc:/qt/qml/FM/qml/assets/icons/arrow-up.svg"
-                    recolorColor: placementButton.hovered ? Theme.accent : Theme.textSecondary
+                    recolorColor: placementButton.hovered ? Theme.textPrimary : Theme.textSecondary
                 }
 
                 background: Rectangle {
                     radius: Theme.radiusSm
                     color: placementButton.down
-                           ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.18 : 0.12)
+                           ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.10 : 0.06)
                            : (placementButton.hovered
-                              ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.11 : 0.07)
+                              ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.065 : 0.040)
                               : "transparent")
                     border.color: placementButton.hovered
                                   ? Theme.withAlpha(Theme.border, themeController.isDark ? 0.50 : 0.36)

@@ -26,10 +26,8 @@ Rectangle {
         anchors.margins: 1
         radius: Theme.radiusSm
         color: "transparent"
-        border.color: root.controller && root.controller.directoryModel.selectedCount > 0
-                      ? Theme.withAlpha(Theme.textPrimary, themeController.isDark ? 0.10 : 0.14)
-                      : "transparent"
-        border.width: root.controller && root.controller.directoryModel.selectedCount > 0 ? 1 : 0
+        border.color: "transparent"
+        border.width: 0
     }
 
     Text {

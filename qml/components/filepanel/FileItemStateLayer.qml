@@ -11,14 +11,14 @@ Item {
     property bool scrolling: false
     property bool resizeOptimized: false
     property real visualOffsetX: 0
-    property real leftMargin: 4
-    property real rightMargin: 4
-    property real topMargin: 1
-    property real bottomMargin: 1
+    property real leftMargin: 6
+    property real rightMargin: 6
+    property real topMargin: 2
+    property real bottomMargin: 2
     property bool showSelectionBar: true
     property real selectionBarLeftMargin: 4
-    property real selectionBarTopMargin: 4
-    property real selectionBarBottomMargin: 4
+    property real selectionBarTopMargin: 6
+    property real selectionBarBottomMargin: 6
     property real selectionBarWidth: 3
     property real selectionBarRadius: 1.5
 
@@ -31,14 +31,16 @@ Item {
         anchors.rightMargin: root.rightMargin
         anchors.topMargin: root.topMargin
         anchors.bottomMargin: root.bottomMargin
-        radius: Theme.radiusSm
+        radius: Theme.radiusMd
 
         color: root.selected
                ? (root.panelActive ? Theme.itemSelectedFill : Theme.itemSelectedFillInactive)
                : ((root.hovered && !root.scrolling) ? Theme.itemHoverFill : "transparent")
         border.color: root.selected
-                      ? (root.panelActive ? Theme.itemSelectedBorder : Theme.itemSelectedBorderInactive)
-                      : (root.currentItem ? Theme.withAlpha(Theme.focusRing, root.panelActive ? 0.82 : 0.38) : "transparent")
+                      ? (root.panelActive
+                         ? Theme.withAlpha(Theme.itemSelectedBorder, 0.72)
+                         : Theme.withAlpha(Theme.itemSelectedBorderInactive, 0.58))
+                      : (root.currentItem ? Theme.withAlpha(Theme.focusRing, root.panelActive ? 0.62 : 0.30) : "transparent")
         border.width: root.selected || root.currentItem ? 1 : 0
 
         Rectangle {

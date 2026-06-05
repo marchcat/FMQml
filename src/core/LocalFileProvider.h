@@ -14,9 +14,6 @@ public:
     explicit LocalFileProvider(QObject *parent = nullptr);
     ~LocalFileProvider() override;
 
-    static bool useNativeFileEnumerators();
-    static void setUseNativeFileEnumerators(bool enabled);
-
     QString scheme() const override;
     bool canHandle(const QString &path) const override;
     Capabilities capabilities() const override;

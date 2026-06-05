@@ -69,12 +69,22 @@ bool hasThumbnailSuffix(const QString &suffix)
     return thumbnailSuffixes.contains(suffix.toLower());
 }
 
+#ifdef Q_OS_WIN
+DWORD entryAttributesWindows(const QFileInfo &fileInfo)
+{
+    const QString nativePath = QDir::toNativeSeparators(fileInfo.absoluteFilePath());
+    return GetFileAttributesW(reinterpret_cast<LPCWSTR>(nativePath.utf16()));
+}
+#endif
+
 bool sameFilesystemPath(const QString &left, const QString &right)
 {
+    const QString normalizedLeft = QDir::cleanPath(QDir::fromNativeSeparators(left));
+    const QString normalizedRight = QDir::cleanPath(QDir::fromNativeSeparators(right));
 #ifdef Q_OS_WIN
-    return QDir::fromNativeSeparators(left).compare(QDir::fromNativeSeparators(right), Qt::CaseInsensitive) == 0;
+    return normalizedLeft.compare(normalizedRight, Qt::CaseInsensitive) == 0;
 #else
-    return QDir::fromNativeSeparators(left) == QDir::fromNativeSeparators(right);
+    return normalizedLeft == normalizedRight;
 #endif
 }
 
@@ -85,15 +95,10 @@ QString normalizedFilesystemPath(const QString &path)
     }
 
     const QString value = QDir::fromNativeSeparators(path);
-    const bool hadTrailingSeparator = value.endsWith(QLatin1Char('/'));
     QString absolutePath = QDir::isAbsolutePath(value)
         ? value
         : QDir::current().absoluteFilePath(value);
-    absolutePath = QDir::cleanPath(absolutePath);
-    if (hadTrailingSeparator && !absolutePath.endsWith(QLatin1Char('/'))) {
-        absolutePath.append(QLatin1Char('/'));
-    }
-    return absolutePath;
+    return QDir::cleanPath(absolutePath);
 }
 
 bool localProviderNavTraceEnabled()
@@ -123,12 +128,6 @@ void traceLocalProviderSlow(const char *stage, const QString &path, qint64 elaps
                           QStringLiteral("elapsedMs=%1 %2").arg(elapsedMs).arg(detail));
 }
 
-#ifdef Q_OS_WIN
-std::atomic_bool g_useNativeFileEnumerators{true};
-#else
-std::atomic_bool g_useNativeFileEnumerators{false};
-#endif
-
 FileEntry entryFromInfo(const QFileInfo &fileInfo)
 {
     FileEntry entry;
@@ -138,9 +137,34 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     entry.size = fileInfo.size();
     entry.modified = fileInfo.lastModified();
     entry.created = fileInfo.birthTime().isValid() ? fileInfo.birthTime() : fileInfo.lastModified();
+#ifdef Q_OS_WIN
+    const DWORD attributes = entryAttributesWindows(fileInfo);
+    const bool hasNativeAttributes = attributes != INVALID_FILE_ATTRIBUTES;
+    const bool isDirectory = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+        : fileInfo.isDir();
+    const bool isHidden = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_HIDDEN) != 0 || entry.name.startsWith(QLatin1Char('.')))
+        : (fileInfo.isHidden() || entry.name.startsWith(QLatin1Char('.')));
+    const bool isReadOnly = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_READONLY) != 0)
+        : !fileInfo.isWritable();
+    const bool isSystem = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_SYSTEM) != 0)
+        : false;
+    const bool isLink = hasNativeAttributes
+        ? ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+        : fileInfo.isSymLink();
+    entry.isDirectory = isDirectory;
+    entry.isHidden = isHidden;
+    entry.isReadOnly = isReadOnly;
+    entry.isSystem = isSystem;
+#else
     entry.isDirectory = fileInfo.isDir();
     entry.isHidden = fileInfo.isHidden() || fileInfo.fileName().startsWith(QLatin1Char('.'));
     entry.isReadOnly = !fileInfo.isWritable();
+    const bool isLink = fileInfo.isSymLink();
+#endif
 
     QLocale loc;
     entry.sizeText = entry.isDirectory
@@ -154,7 +178,8 @@ FileEntry entryFromInfo(const QFileInfo &fileInfo)
     if (entry.isDirectory) attrs += QLatin1Char('D');
     if (entry.isHidden)    attrs += QLatin1Char('H');
     if (entry.isReadOnly)  attrs += QLatin1Char('R');
-    if (fileInfo.isSymLink()) attrs += QLatin1Char('L');
+    if (entry.isSystem)    attrs += QLatin1Char('S');
+    if (isLink)            attrs += QLatin1Char('L');
     entry.attributesText = attrs;
 
     entry.isImage = !entry.isDirectory && isImageSuffix(entry.suffix);
@@ -243,6 +268,7 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &findData, const QString &par
     entry.isDirectory = isDirectory;
     entry.isHidden = isHidden;
     entry.isReadOnly = isReadOnly;
+    entry.isSystem = (attributes & FILE_ATTRIBUTE_SYSTEM) != 0;
 
     entry.sizeText = entry.isDirectory
         ? QString()
@@ -254,6 +280,7 @@ FileEntry entryFromFindData(const WIN32_FIND_DATAW &findData, const QString &par
     if (entry.isDirectory) attrs += QLatin1Char('D');
     if (entry.isHidden)    attrs += QLatin1Char('H');
     if (entry.isReadOnly)  attrs += QLatin1Char('R');
+    if (entry.isSystem)    attrs += QLatin1Char('S');
     if (isLink)            attrs += QLatin1Char('L');
     entry.attributesText = attrs;
 
@@ -369,28 +396,6 @@ QString windowsMutationErrorMessage(FileMutationKind kind, const QString &path, 
     return QStringLiteral("Cannot %1 %2: %3").arg(verb, target, detail);
 }
 
-bool canEnumerateDirectoryWindows(const QString &path, QString *errorMessage)
-{
-    const QString pattern = windowsSearchPattern(path);
-
-    WIN32_FIND_DATAW findData{};
-    HANDLE handle = findFirstFileBasic(pattern, &findData);
-    if (handle != INVALID_HANDLE_VALUE) {
-        FindClose(handle);
-        return true;
-    }
-
-    const DWORD errorCode = GetLastError();
-    if (errorCode == ERROR_FILE_NOT_FOUND || errorCode == ERROR_NO_MORE_FILES) {
-        return true;
-    }
-
-    if (errorMessage) {
-        *errorMessage = windowsMutationErrorMessage(FileMutationKind::Read, path, errorCode);
-    }
-    return false;
-}
-
 DWORD fileAttributesWindows(const QString &path)
 {
     return GetFileAttributesW(reinterpret_cast<LPCWSTR>(localExtendedLengthWindowsPath(path).utf16()));
@@ -409,21 +414,6 @@ LocalFileProvider::~LocalFileProvider()
     for (QFuture<void> &future : m_scanFutures) {
         future.waitForFinished();
     }
-}
-
-bool LocalFileProvider::useNativeFileEnumerators()
-{
-    return g_useNativeFileEnumerators.load();
-}
-
-void LocalFileProvider::setUseNativeFileEnumerators(bool enabled)
-{
-#ifdef Q_OS_WIN
-    g_useNativeFileEnumerators.store(enabled);
-#else
-    Q_UNUSED(enabled)
-    g_useNativeFileEnumerators.store(false);
-#endif
 }
 
 QString LocalFileProvider::scheme() const
@@ -518,9 +508,15 @@ QString LocalFileProvider::childPath(const QString &parentPath, const QString &n
 std::optional<FileEntry> LocalFileProvider::entryInfo(const QString &path) const
 {
     QFileInfo info(path);
+#ifdef Q_OS_WIN
+    if (!info.exists() && entryAttributesWindows(info) == INVALID_FILE_ATTRIBUTES) {
+        return std::nullopt;
+    }
+#else
     if (!info.exists()) {
         return std::nullopt;
     }
+#endif
     return entryFromInfo(info);
 }
 
@@ -744,144 +740,129 @@ void LocalFileProvider::scan(const QString &path)
                                   .arg(workerTimer.elapsed()));
 
 #ifdef Q_OS_WIN
-        QString enumerationError;
-        QElapsedTimer enumerateCheckTimer;
-        enumerateCheckTimer.start();
-        if (!canEnumerateDirectoryWindows(canonicalPath, &enumerationError)) {
-            if (myGen == m_scanGeneration.load()) {
-                emit finished(path, false, myGen,
-                              enumerationError.isEmpty()
-                                  ? QStringLiteral("Folder is not readable")
-                                  : enumerationError);
-            }
-            traceLocalProviderNav("scan-worker-end", canonicalPath,
-                                  QStringLiteral("generation=%1 result=enumerate-check-failed checkMs=%2 elapsedMs=%3 error=%4")
-                                      .arg(myGen)
-                                      .arg(enumerateCheckTimer.elapsed())
-                                      .arg(workerTimer.elapsed())
-                                      .arg(enumerationError));
-            return;
-        }
-        traceLocalProviderNav("scan-worker-enumerate-check", canonicalPath,
-                              QStringLiteral("generation=%1 checkMs=%2 elapsedMs=%3")
-                                  .arg(myGen)
-                                  .arg(enumerateCheckTimer.elapsed())
-                                  .arg(workerTimer.elapsed()));
-#endif
-
-#ifdef Q_OS_WIN
-        if (LocalFileProvider::useNativeFileEnumerators()) {
-            QElapsedTimer nativeOpenTimer;
-            nativeOpenTimer.start();
-            const QString pattern = windowsSearchPattern(canonicalPath);
-            WIN32_FIND_DATAW findData{};
-            HANDLE handle = findFirstFileBasic(pattern, &findData);
-            if (handle == INVALID_HANDLE_VALUE) {
-                if (myGen == m_scanGeneration.load()) {
-                    emit finished(path, false, myGen,
-                                  windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, GetLastError()));
-                }
-                traceLocalProviderNav("scan-worker-end", canonicalPath,
-                                      QStringLiteral("generation=%1 result=findFirst-failed openMs=%2 elapsedMs=%3")
+        {
+        QElapsedTimer nativeOpenTimer;
+        nativeOpenTimer.start();
+        const QString pattern = windowsSearchPattern(canonicalPath);
+        WIN32_FIND_DATAW findData{};
+        HANDLE handle = findFirstFileBasic(pattern, &findData);
+        if (handle == INVALID_HANDLE_VALUE) {
+            const DWORD errorCode = GetLastError();
+            if (errorCode == ERROR_FILE_NOT_FOUND || errorCode == ERROR_NO_MORE_FILES) {
+                emit finished(canonicalPath, true, myGen);
+                traceLocalProviderNav("scan-worker-finished", canonicalPath,
+                                      QStringLiteral("generation=%1 result=empty openMs=%2 elapsedMs=%3")
                                           .arg(myGen)
                                           .arg(nativeOpenTimer.elapsed())
                                           .arg(workerTimer.elapsed()));
                 return;
             }
-            traceLocalProviderNav("scan-worker-native-open", canonicalPath,
-                                  QStringLiteral("generation=%1 openMs=%2 elapsedMs=%3")
+            if (myGen == m_scanGeneration.load()) {
+                emit finished(path, false, myGen,
+                              windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, errorCode));
+            }
+            traceLocalProviderNav("scan-worker-end", canonicalPath,
+                                  QStringLiteral("generation=%1 result=findFirst-failed openMs=%2 elapsedMs=%3 error=%4")
                                       .arg(myGen)
                                       .arg(nativeOpenTimer.elapsed())
-                                      .arg(workerTimer.elapsed()));
+                                      .arg(workerTimer.elapsed())
+                                      .arg(windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, errorCode)));
+            return;
+        }
+        traceLocalProviderNav("scan-worker-native-open", canonicalPath,
+                              QStringLiteral("generation=%1 openMs=%2 elapsedMs=%3")
+                                  .arg(myGen)
+                                  .arg(nativeOpenTimer.elapsed())
+                                  .arg(workerTimer.elapsed()));
 
-            QString parentPrefix = QDir::fromNativeSeparators(canonicalPath);
-            if (!parentPrefix.endsWith(QLatin1Char('/'))) {
-                parentPrefix += QLatin1Char('/');
-            }
+        QString parentPrefix = QDir::fromNativeSeparators(canonicalPath);
+        if (!parentPrefix.endsWith(QLatin1Char('/'))) {
+            parentPrefix += QLatin1Char('/');
+        }
 
-            QLocale loc;
-            QList<FileEntry> batch;
-            batch.reserve(512);
-            qsizetype totalEntries = 0;
-            QElapsedTimer enumerationTimer;
-            enumerationTimer.start();
+        QLocale loc;
+        QList<FileEntry> batch;
+        batch.reserve(512);
+        qsizetype totalEntries = 0;
+        QElapsedTimer enumerationTimer;
+        enumerationTimer.start();
 
-            do {
-                if (myGen != m_scanGeneration.load()) {
-                    FindClose(handle);
-                    traceLocalProviderNav("scan-worker-cancelled", canonicalPath,
-                                          QStringLiteral("generation=%1 entries=%2 enumerateMs=%3 elapsedMs=%4 currentGeneration=%5")
-                                              .arg(myGen)
-                                              .arg(totalEntries)
-                                              .arg(enumerationTimer.elapsed())
-                                              .arg(workerTimer.elapsed())
-                                              .arg(m_scanGeneration.load()));
-                    return;
-                }
-
-                const wchar_t *name = findData.cFileName;
-                if (name[0] == L'.'
-                    && (name[1] == L'\0' || (name[1] == L'.' && name[2] == L'\0'))) {
-                    continue;
-                }
-
-                const bool isHidden = (findData.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) != 0
-                    || name[0] == L'.';
-                if (!showHidden && isHidden) {
-                    continue;
-                }
-
-                batch.append(entryFromFindData(findData, parentPrefix, loc));
-                if (batch.size() >= 512) {
-                    totalEntries += batch.size();
-                    emit batchReady(batch, myGen);
-                    traceLocalProviderNav("scan-worker-batch", canonicalPath,
-                                          QStringLiteral("generation=%1 batch=512 total=%2 enumerateMs=%3 elapsedMs=%4")
-                                              .arg(myGen)
-                                              .arg(totalEntries)
-                                              .arg(enumerationTimer.elapsed())
-                                              .arg(workerTimer.elapsed()));
-                    batch.clear();
-                }
-            } while (FindNextFileW(handle, &findData));
-
-            const DWORD findError = GetLastError();
-            FindClose(handle);
-
-            if (findError != ERROR_NO_MORE_FILES) {
-                if (myGen == m_scanGeneration.load()) {
-                    emit finished(path, false, myGen,
-                                  windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, findError));
-                }
-                traceLocalProviderNav("scan-worker-end", canonicalPath,
-                                      QStringLiteral("generation=%1 result=findNext-failed entries=%2 enumerateMs=%3 elapsedMs=%4 error=%5")
+        do {
+            if (myGen != m_scanGeneration.load()) {
+                FindClose(handle);
+                traceLocalProviderNav("scan-worker-cancelled", canonicalPath,
+                                      QStringLiteral("generation=%1 entries=%2 enumerateMs=%3 elapsedMs=%4 currentGeneration=%5")
                                           .arg(myGen)
-                                          .arg(totalEntries + batch.size())
+                                          .arg(totalEntries)
                                           .arg(enumerationTimer.elapsed())
                                           .arg(workerTimer.elapsed())
-                                          .arg(windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, findError)));
+                                          .arg(m_scanGeneration.load()));
                 return;
             }
 
-            if (!batch.isEmpty()) {
+            const wchar_t *name = findData.cFileName;
+            if (name[0] == L'.'
+                && (name[1] == L'\0' || (name[1] == L'.' && name[2] == L'\0'))) {
+                continue;
+            }
+
+            const bool isHidden = (findData.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) != 0
+                || name[0] == L'.';
+            if (!showHidden && isHidden) {
+                continue;
+            }
+
+            batch.append(entryFromFindData(findData, parentPrefix, loc));
+            if (batch.size() >= 512) {
                 totalEntries += batch.size();
                 emit batchReady(batch, myGen);
                 traceLocalProviderNav("scan-worker-batch", canonicalPath,
-                                      QStringLiteral("generation=%1 batch=final total=%2 enumerateMs=%3 elapsedMs=%4")
+                                      QStringLiteral("generation=%1 batch=512 total=%2 enumerateMs=%3 elapsedMs=%4")
                                           .arg(myGen)
                                           .arg(totalEntries)
                                           .arg(enumerationTimer.elapsed())
                                           .arg(workerTimer.elapsed()));
+                batch.clear();
             }
+        } while (FindNextFileW(handle, &findData));
 
-            emit finished(canonicalPath, true, myGen);
-            traceLocalProviderNav("scan-worker-finished", canonicalPath,
-                                  QStringLiteral("generation=%1 result=success entries=%2 enumerateMs=%3 elapsedMs=%4")
+        const DWORD findError = GetLastError();
+        FindClose(handle);
+
+        if (findError != ERROR_NO_MORE_FILES) {
+            if (myGen == m_scanGeneration.load()) {
+                emit finished(path, false, myGen,
+                              windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, findError));
+            }
+            traceLocalProviderNav("scan-worker-end", canonicalPath,
+                                  QStringLiteral("generation=%1 result=findNext-failed entries=%2 enumerateMs=%3 elapsedMs=%4 error=%5")
+                                      .arg(myGen)
+                                      .arg(totalEntries + batch.size())
+                                      .arg(enumerationTimer.elapsed())
+                                      .arg(workerTimer.elapsed())
+                                      .arg(windowsMutationErrorMessage(FileMutationKind::Read, canonicalPath, findError)));
+            return;
+        }
+
+        if (!batch.isEmpty()) {
+            totalEntries += batch.size();
+            emit batchReady(batch, myGen);
+            traceLocalProviderNav("scan-worker-batch", canonicalPath,
+                                  QStringLiteral("generation=%1 batch=final total=%2 enumerateMs=%3 elapsedMs=%4")
                                       .arg(myGen)
                                       .arg(totalEntries)
                                       .arg(enumerationTimer.elapsed())
                                       .arg(workerTimer.elapsed()));
-            return;
+        }
+
+        emit finished(canonicalPath, true, myGen);
+        traceLocalProviderNav("scan-worker-finished", canonicalPath,
+                              QStringLiteral("generation=%1 result=success entries=%2 enumerateMs=%3 elapsedMs=%4")
+                                  .arg(myGen)
+                                  .arg(totalEntries)
+                                  .arg(enumerationTimer.elapsed())
+                                  .arg(workerTimer.elapsed()));
+        return;
         }
 #endif
 

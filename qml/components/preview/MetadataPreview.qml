@@ -52,7 +52,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 112
-            radius: 14
+            radius: Theme.panelRadius
             color: themeController.isDark ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.10)
                                          : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.08)
             border.color: Theme.border
@@ -121,7 +121,7 @@ Item {
 
                         Rectangle {
                             visible: root.hidden
-                            radius: 8
+                            radius: Theme.radiusSm
                             color: Theme.surfaceHover
                             border.color: Theme.border
                             border.width: 1
@@ -139,7 +139,7 @@ Item {
 
                         Rectangle {
                             visible: root.symlink
-                            radius: 8
+                            radius: Theme.radiusSm
                             color: Theme.surfaceHover
                             border.color: Theme.border
                             border.width: 1
@@ -156,7 +156,7 @@ Item {
                         }
 
                         Rectangle {
-                            radius: 8
+                            radius: Theme.radiusSm
                             color: Theme.surfaceHover
                             border.color: Theme.border
                             border.width: 1
@@ -215,7 +215,7 @@ Item {
 
                 return props
             }
-            rowRadius: 10
+            rowRadius: Theme.radiusMd
             rowPadding: 12
             labelPixelSize: 11
             valuePixelSize: 13

@@ -28,7 +28,9 @@ Item {
         radius: 12
         color: Theme.panelSurfaceStrong
         border.width: 1
-        border.color: root.selected ? Theme.focusRing : Theme.panelBorder
+        border.color: root.selected
+                      ? Theme.withAlpha(root.accentColor, themeController.isDark ? 0.72 : 0.58)
+                      : Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.42 : 0.30)
 
         gradient: Gradient {
             orientation: Gradient.Vertical
@@ -44,9 +46,8 @@ Item {
     Rectangle {
         anchors.fill: shell
         radius: shell.radius
-        color: "transparent"
-        border.width: root.selected ? 1 : 0
-        border.color: Theme.withAlpha(root.accentColor, 0.85)
+        color: root.selected ? Theme.withAlpha(root.accentColor, themeController.isDark ? 0.055 : 0.035) : "transparent"
+        border.width: 0
         opacity: root.selected ? 1.0 : 0.0
     }
 

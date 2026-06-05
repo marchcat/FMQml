@@ -39,7 +39,7 @@ Pane {
 
     function updateImageMetadataDemand() {
         if (typeof quickLookController === "undefined" || !quickLookController || !quickLookController.setImageMetadataRequested) return
-        quickLookController.setImageMetadataRequested("pane", root.visible && !root.imageMetadataHidden)
+        quickLookController.setImageMetadataRequested("pane", root.visible && !root.imageMetadataHidden && !root.lightweightPreviewActive)
     }
 
     function toggleDetailsPanelPlacement() {
@@ -189,20 +189,21 @@ Pane {
 
     onVisibleChanged: root.updateImageMetadataDemand()
     onImageMetadataHiddenChanged: root.updateImageMetadataDemand()
+    onLightweightPreviewActiveChanged: root.updateImageMetadataDemand()
     Component.onCompleted: root.updateImageMetadataDemand()
 
     implicitWidth: 320
     implicitHeight: 480
 
     background: SurfaceCard {
-        surfaceColor: themeController.isDark ? Theme.surface : Theme.bg
-        strokeColor: Theme.border
-        cornerRadius: 0
+        surfaceColor: Theme.panelSurface
+        strokeColor: Theme.panelStroke
+        cornerRadius: Theme.panelRadius
 
         Rectangle {
             anchors.fill: parent
-            color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b,
-                          themeController.isDark ? 0.045 : 0.065)
+            radius: Theme.innerRadius(parent.cornerRadius, 1)
+            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.045 : 0.065)
         }
     }
 
@@ -222,8 +223,7 @@ Pane {
         Rectangle {
             Layout.fillWidth: true
             height: 1
-            color: Theme.border
-            opacity: themeController.isDark ? 0.34 : 0.24
+            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.20 : 0.20)
         }
 
         Item {
@@ -259,9 +259,9 @@ Pane {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 224
-                        radius: 16
+                        radius: Theme.panelRadius
                         color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(0, 0, 0, 0.03)
-                        border.color: Theme.border
+                        border.color: Theme.panelStroke
                         border.width: 1
                         clip: true
 
@@ -272,7 +272,7 @@ Pane {
                             anchors.rightMargin: 12
                             width: statusLabel.implicitWidth + 18
                             height: 26
-                            radius: 13
+                            radius: Theme.radiusForSide(height)
                             color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.10)
                             border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.32 : 0.22)
                             border.width: 1
@@ -296,10 +296,10 @@ Pane {
                                 Layout.alignment: Qt.AlignHCenter
                                 width: 84
                                 height: 84
-                                radius: 18
+                                radius: Theme.radiusLg
                                 color: themeController.isDark ? Theme.withAlpha(Theme.textPrimary, 0.05)
                                                               : Theme.withAlpha(Theme.textPrimary, 0.03)
-                                border.color: Theme.border
+                                border.color: Theme.panelStroke
                                 border.width: 1
 
                                 Image {
@@ -337,9 +337,9 @@ Pane {
                                 Layout.topMargin: 2
                                 width: pausedLabel.implicitWidth + 22
                                 height: 28
-                                radius: 14
+                                radius: Theme.radiusForSide(height)
                                 color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.035) : Qt.rgba(0, 0, 0, 0.025)
-                                border.color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.55 : 0.38)
+                                border.color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.38)
                                 border.width: 1
 
                                 Label {

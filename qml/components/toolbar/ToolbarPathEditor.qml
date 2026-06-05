@@ -112,18 +112,21 @@ Item {
         anchors.centerIn: parent
         width: Math.min(parent.width - 20, 800)
         height: 40
-        radius: Theme.panelRadius
+        radius: Theme.controlRadius
 
         color: root.pathEditing
                ? Theme.panelSurfaceStrong
                : (islandHover.hovered
-                  ? Theme.panelSurfaceSoft
-                  : Theme.panelSurface)
+                  ? Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.92 : 0.98)
+                  : Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.74 : 0.90))
 
         border.color: root.pathEditing
-                      ? (root.pathEditError.length > 0 ? Theme.danger : Theme.focusRing)
-                      : (islandHover.hovered ? Theme.withAlpha(Theme.accent, 0.36) : Theme.panelBorder)
-        border.width: root.pathEditing ? 2 : 1
+                      ? Theme.withAlpha(root.pathEditError.length > 0 ? Theme.danger : Theme.focusRing,
+                                        themeController.isDark ? 0.86 : 0.76)
+                      : (islandHover.hovered
+                         ? Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.58 : 0.50)
+                         : Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.42 : 0.36))
+        border.width: 1
 
         Behavior on color { ColorAnimation { duration: 150 } }
         Behavior on border.color { ColorAnimation { duration: 150 } }
@@ -144,12 +147,12 @@ Item {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 4
-            radius: Theme.panelRadius
+            width: 5
+            radius: Theme.innerRadius(pathIsland.radius, 1)
             color: root.pathEditing
                    ? (root.pathEditError.length > 0 ? Theme.danger : Theme.categoryInfo)
-                   : Theme.withAlpha(Theme.categoryInfo, islandHover.hovered ? 0.9 : 0.65)
-            opacity: root.pathEditing ? 1.0 : 0.85
+                   : Theme.withAlpha(Theme.categoryInfo, islandHover.hovered ? 0.98 : 0.82)
+            opacity: root.pathEditing ? 1.0 : 0.94
         }
 
         Rectangle {
@@ -397,7 +400,7 @@ Item {
             visible: (root.pathEditing || root.pathEditProgress > 0.0) && root.pathEditError.length === 0 && (suggestionsPopup.visible || root.suggestionsLoading)
             width: 128
             height: 22
-            radius: 11
+            radius: Theme.radiusForSide(height)
             color: Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.14 : 0.10)
             border.color: Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.42 : 0.34)
             border.width: 1
@@ -418,7 +421,7 @@ Item {
                 Rectangle {
                     Layout.preferredWidth: 16
                     Layout.preferredHeight: 16
-                    radius: 5
+                    radius: Theme.radiusForSide(Math.min(width, height))
                     color: Theme.categoryInfo
                     visible: !root.suggestionsLoading
 
@@ -455,7 +458,7 @@ Item {
                 color: Theme.withAlpha(Theme.danger, themeController.isDark ? 0.15 : 0.10)
                 border.color: Theme.withAlpha(Theme.danger, themeController.isDark ? 0.30 : 0.40)
                 border.width: 1
-                radius: Theme.radiusSm
+                radius: Theme.radiusForSide(parent ? parent.height : 24)
             }
             padding: 3
             leftPadding: 10
@@ -491,7 +494,7 @@ Item {
             color: Theme.glassSurfaceStrong
             border.color: Theme.withAlpha(Theme.border, 0.85)
             border.width: 1
-            radius: Theme.radiusSm
+            radius: Theme.controlRadius
 
             layer.enabled: true
             layer.effect: MultiEffect {
@@ -527,7 +530,7 @@ Item {
                         color: (ListView.view && ListView.view.currentIndex === index)
                                ? Theme.itemHoverFill
                                : "transparent"
-                        radius: Theme.radiusSm
+                        radius: Theme.radiusForSide(height)
                     }
 
                     contentItem: RowLayout {

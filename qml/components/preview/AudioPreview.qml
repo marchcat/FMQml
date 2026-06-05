@@ -60,7 +60,7 @@ Item {
             Layout.fillWidth: true
             Layout.preferredHeight: root.compact ? 150 : 230
             Layout.maximumHeight: parent.height
-            radius: Theme.radiusMd
+            radius: Theme.panelRadius
             color: Theme.withAlpha(Theme.secondaryAccent, themeController.isDark ? 0.12 : 0.09)
             border.color: Theme.withAlpha(Theme.secondaryAccent, themeController.isDark ? 0.34 : 0.26)
             border.width: 1
@@ -79,7 +79,7 @@ Item {
                     Rectangle {
                         Layout.preferredWidth: root.compact ? 78 : 132
                         Layout.preferredHeight: width
-                        radius: Theme.radiusSm
+                        radius: Theme.radiusLg
                         color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.16 : 0.12)
                         border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.42 : 0.30)
                         border.width: 1
@@ -210,7 +210,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: root.showDetails
-            radius: Theme.radiusMd
+            radius: Theme.panelRadius
             color: themeController.isDark ? Qt.rgba(1, 1, 1, 0.035) : Qt.rgba(0, 0, 0, 0.025)
             border.color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.70 : 0.54)
             border.width: 1

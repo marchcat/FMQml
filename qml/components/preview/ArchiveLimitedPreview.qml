@@ -20,7 +20,7 @@ Item {
             Layout.alignment: Qt.AlignHCenter
             width: root.compact ? 70 : 88
             height: width
-            radius: 16
+            radius: Theme.radiusForSide(Math.min(width, height))
             color: Theme.withAlpha(Theme.secondaryAccent, themeController.isDark ? 0.18 : 0.12)
             border.color: Theme.withAlpha(Theme.secondaryAccent, 0.35)
             border.width: 1

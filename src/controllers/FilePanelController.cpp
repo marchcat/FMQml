@@ -52,10 +52,12 @@ void traceFilePanelNav(const char *stage, const QString &path = {}, const QStrin
 
 bool sameFilesystemPath(const QString &left, const QString &right)
 {
+    const QString normalizedLeft = QDir::cleanPath(QDir::fromNativeSeparators(left));
+    const QString normalizedRight = QDir::cleanPath(QDir::fromNativeSeparators(right));
 #ifdef Q_OS_WIN
-    return left.compare(right, Qt::CaseInsensitive) == 0;
+    return normalizedLeft.compare(normalizedRight, Qt::CaseInsensitive) == 0;
 #else
-    return left == right;
+    return normalizedLeft == normalizedRight;
 #endif
 }
 
@@ -395,6 +397,8 @@ bool navigationFailureIndicatesMissingPath(const QString &error)
 }
 
 using SuggestionCancelCheck = std::function<bool()>;
+constexpr qsizetype MaxSuggestionScanEntries = 4096;
+constexpr int MaxSuggestionScanMs = 120;
 
 bool suggestionsCancelled(const SuggestionCancelCheck &shouldCancel)
 {
@@ -437,10 +441,16 @@ QVariantList nativeDirectorySuggestionEntries(const QString &searchDir,
         return suggestions;
     }
 
+    QElapsedTimer scanTimer;
+    scanTimer.start();
+    qsizetype scannedEntries = 0;
     do {
         if (suggestionsCancelled(shouldCancel)) {
             FindClose(handle);
             return {};
+        }
+        if (++scannedEntries > MaxSuggestionScanEntries || scanTimer.hasExpired(MaxSuggestionScanMs)) {
+            break;
         }
 
         const QString name = QString::fromWCharArray(findData.cFileName);
@@ -613,7 +623,7 @@ QVariantList directorySuggestionEntriesForInput(const QString &inputPath,
     }
 
 #ifdef Q_OS_WIN
-    if (!isArchive && LocalFileProvider::useNativeFileEnumerators()) {
+    if (!isArchive) {
         return nativeDirectorySuggestionEntries(searchDir, prefix, maxSuggestions, shouldCancel);
     }
 #endif
@@ -747,14 +757,16 @@ FilePanelController::FilePanelController(QObject *parent)
         }
     });
     connect(&m_directoryModel, &DirectoryModel::sortRoleChanged, this, [this]() {
-        if (m_viewMode == 0 && m_detailsSortRole != m_directoryModel.sortRole()) {
-            m_detailsSortRole = m_directoryModel.sortRole();
+        if (m_panelSortRole != m_directoryModel.sortRole()) {
+            m_panelSortRole = m_directoryModel.sortRole();
+            emit panelSortRoleChanged();
             emit detailsSortRoleChanged();
         }
     });
     connect(&m_directoryModel, &DirectoryModel::sortOrderChanged, this, [this]() {
-        if (m_viewMode == 0 && m_detailsSortOrder != m_directoryModel.sortOrder()) {
-            m_detailsSortOrder = m_directoryModel.sortOrder();
+        if (m_panelSortOrder != m_directoryModel.sortOrder()) {
+            m_panelSortOrder = m_directoryModel.sortOrder();
+            emit panelSortOrderChanged();
             emit detailsSortOrderChanged();
         }
     });
@@ -798,38 +810,74 @@ bool FilePanelController::isVirtualRoot() const
 
 DirectoryModel::SortRole FilePanelController::detailsSortRole() const
 {
-    return m_detailsSortRole;
+    return panelSortRole();
 }
 
 void FilePanelController::setDetailsSortRole(DirectoryModel::SortRole role)
 {
-    if (m_detailsSortRole == role) {
-        return;
-    }
+    setPanelSortRole(role);
+}
 
-    m_detailsSortRole = role;
-    emit detailsSortRoleChanged();
-    if (m_viewMode == 0) {
-        m_directoryModel.setSortRole(role);
-    }
+DirectoryModel::SortRole FilePanelController::panelSortRole() const
+{
+    return m_panelSortRole;
+}
+
+void FilePanelController::setPanelSortRole(DirectoryModel::SortRole role)
+{
+    setPanelSortPolicy(int(role), int(m_panelSortOrder));
 }
 
 Qt::SortOrder FilePanelController::detailsSortOrder() const
 {
-    return m_detailsSortOrder;
+    return panelSortOrder();
 }
 
 void FilePanelController::setDetailsSortOrder(Qt::SortOrder order)
 {
-    if (m_detailsSortOrder == order) {
+    setPanelSortOrder(order);
+}
+
+Qt::SortOrder FilePanelController::panelSortOrder() const
+{
+    return m_panelSortOrder;
+}
+
+void FilePanelController::setPanelSortOrder(Qt::SortOrder order)
+{
+    setPanelSortPolicy(int(m_panelSortRole), int(order));
+}
+
+void FilePanelController::setPanelSortPolicy(int role, int order)
+{
+    const auto normalizedRole = static_cast<DirectoryModel::SortRole>(qBound(0, role, 5));
+    const Qt::SortOrder normalizedOrder = order == int(Qt::DescendingOrder)
+            ? Qt::DescendingOrder
+            : Qt::AscendingOrder;
+
+    const bool roleChanged = m_panelSortRole != normalizedRole;
+    const bool orderChanged = m_panelSortOrder != normalizedOrder;
+    if (!roleChanged && !orderChanged) {
+        if (m_directoryModel.sortRole() != normalizedRole
+                || m_directoryModel.sortOrder() != normalizedOrder) {
+            m_directoryModel.setSortPolicy(normalizedRole, normalizedOrder);
+        }
         return;
     }
 
-    m_detailsSortOrder = order;
-    emit detailsSortOrderChanged();
-    if (m_viewMode == 0) {
-        m_directoryModel.setSortOrder(order);
+    m_panelSortRole = normalizedRole;
+    m_panelSortOrder = normalizedOrder;
+
+    if (roleChanged) {
+        emit panelSortRoleChanged();
+        emit detailsSortRoleChanged();
     }
+    if (orderChanged) {
+        emit panelSortOrderChanged();
+        emit detailsSortOrderChanged();
+    }
+
+    m_directoryModel.setSortPolicy(normalizedRole, normalizedOrder);
 }
 
 void FilePanelController::setIsDeviceRoot(bool value)
@@ -2287,8 +2335,7 @@ void FilePanelController::syncStateFrom(FilePanelController *other)
     }
 
     setViewMode(other->viewMode());
-    setDetailsSortRole(other->detailsSortRole());
-    setDetailsSortOrder(other->detailsSortOrder());
+    setPanelSortPolicy(int(other->panelSortRole()), int(other->panelSortOrder()));
 
     DirectoryModel *sourceModel = other->directoryModel();
     DirectoryModel *targetModel = directoryModel();
@@ -2334,7 +2381,13 @@ bool FilePanelController::openPathInternal(const QString &path, bool addToHistor
                           .arg(QDir::toNativeSeparators(oldPath))
                           .arg(totalTimer.elapsed()));
 
-    if (!newPath.isEmpty() && newPath == oldPath) {
+    const bool sameLocalPath = !newPath.isEmpty()
+        && !targetIsDeviceRoot
+        && !targetIsFavoritesRoot
+        && !ArchiveSupport::isArchivePath(newPath)
+        && !ArchiveSupport::isArchivePath(oldPath)
+        && sameFilesystemPath(newPath, oldPath);
+    if (!newPath.isEmpty() && (newPath == oldPath || sameLocalPath)) {
         emit pathNavigated(newPath);
         traceFilePanelNav("openPathInternal-end", newPath,
                           QStringLiteral("result=true reason=same elapsedMs=%1").arg(totalTimer.elapsed()));
@@ -2553,23 +2606,7 @@ void FilePanelController::setViewMode(int mode)
 {
     if (m_viewMode == mode) return;
     m_viewMode = mode;
-    applySortPolicyForCurrentView();
     emit viewModeChanged();
-}
-
-void FilePanelController::applySortPolicyForCurrentView()
-{
-    if (m_viewMode == 0) {
-        m_directoryModel.setSortRole(m_detailsSortRole);
-        m_directoryModel.setSortOrder(m_detailsSortOrder);
-        return;
-    }
-
-    // Grid/Brief intentionally ignore the richer Details sorting state.
-    // Those views do not expose the same sort dimensions, so we normalize
-    // them to a simple name-ascending order when the view mode changes.
-    m_directoryModel.setSortRole(DirectoryModel::SortByName);
-    m_directoryModel.setSortOrder(Qt::AscendingOrder);
 }
 
 QStringList FilePanelController::getDirectorySuggestions(const QString &inputPath) const

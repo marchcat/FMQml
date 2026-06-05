@@ -61,7 +61,7 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             Layout.minimumHeight: root.compact ? 128 : 220
-            radius: Theme.radiusMd
+            radius: Theme.panelRadius
             color: root.paperColor
             border.color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.44 : 0.34)
             border.width: 1
@@ -168,7 +168,7 @@ Item {
             visible: root.showDetails
             title: "Font"
             properties: root.extraProperties
-            rowRadius: 8
+            rowRadius: Theme.radiusMd
             rowPadding: 10
             labelPixelSize: 10
             valuePixelSize: 12

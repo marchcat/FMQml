@@ -362,6 +362,16 @@ qt_add_qml_module(fm
         qml/assets/icons/duration.svg
         qml/assets/icons/extension.svg
         qml/assets/icons/size.svg
+        qml/assets/icons/sort-ascending.svg
+        qml/assets/icons/sort-date-created.svg
+        qml/assets/icons/sort-date-modified.svg
+        qml/assets/icons/sort-default.svg
+        qml/assets/icons/sort-descending.svg
+        qml/assets/icons/sort-extension.svg
+        qml/assets/icons/sort-folders-first.svg
+        qml/assets/icons/sort-name.svg
+        qml/assets/icons/sort-size.svg
+        qml/assets/icons/sort-type.svg
         qml/assets/icons/sort-mixed.svg
         qml/assets/icons/text-nowrap.svg
         qml/assets/icons/text-wrap.svg
@@ -462,7 +472,7 @@ if(WIN32)
         src/platform/WindowsTaskbarProgress.cpp
         src/platform/WindowsTaskbarProgress.h
     )
-    target_link_libraries(fm PRIVATE Shell32 Comctl32 VirtDisk Ole32 Uuid Advapi32)
+    target_link_libraries(fm PRIVATE Shell32 Comctl32 VirtDisk Ole32 Uuid Advapi32 Authz Dwmapi)
 
     # Automatically copy dependency DLLs (tag.dll, zd.dll/z.dll) from vcpkg to output dir on Windows
     set(VCPKG_ROOT "C:/Users/tankr/vcpkg")
@@ -475,6 +485,15 @@ if(WIN32)
             COMMENT "Copying TagLib and ZLib DLLs from vcpkg to output folder..."
         )
     endif()
+
+    add_executable(access_audit EXCLUDE_FROM_ALL
+        tools/access-audit/main.cpp
+        src/core/FileAccessResolver.cpp
+        src/core/FileAccessResolver.h
+    )
+    target_compile_definitions(access_audit PRIVATE FM_ACCESS_RESOLVER_LOCAL_ONLY NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_include_directories(access_audit PRIVATE src src/core)
+    target_link_libraries(access_audit PRIVATE Qt6::Core Advapi32 Authz)
 endif()
 
 if (FM_MULTIMEDIA_PREVIEW_AVAILABLE)

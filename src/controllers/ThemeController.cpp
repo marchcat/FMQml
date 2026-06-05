@@ -27,6 +27,13 @@ QString normalizeThemeFilePath(const QString &value)
     return value;
 }
 
+QColor withAlpha(const QColor &color, qreal value)
+{
+    QColor c = color;
+    c.setAlphaF(value);
+    return c;
+}
+
 ThemeController::ThemePalette makePalette(
     const QString &id,
     const QString &name,
@@ -130,6 +137,15 @@ ThemeController::ThemePalette makePalette(
         ? border.lighter(175)
         : border.darker(165);
     palette.menuItemPressed = surfaceHover.darker(118);
+    palette.chromeGradientStart = dark
+        ? alpha(secondaryAccent, 0.22)
+        : alpha(secondaryAccent, 0.16);
+    palette.chromeGradientMid = dark
+        ? alpha(accent, 0.18)
+        : alpha(accent, 0.12);
+    palette.chromeGradientEnd = dark
+        ? alpha(warmAccent, 0.12)
+        : alpha(warmAccent, 0.08);
     palette.glassShadow = dark
         ? alpha(QColor(Qt::black), 0.36)
         : alpha(QColor(Qt::black), 0.16);
@@ -244,6 +260,9 @@ QColor ThemeController::statusRailFill() const { return activePalette().statusRa
 QColor ThemeController::menuBorder() const { return activePalette().menuBorder; }
 QColor ThemeController::menuSeparator() const { return activePalette().menuSeparator; }
 QColor ThemeController::menuItemPressed() const { return activePalette().menuItemPressed; }
+QColor ThemeController::chromeGradientStart() const { return activePalette().chromeGradientStart; }
+QColor ThemeController::chromeGradientMid() const { return activePalette().chromeGradientMid; }
+QColor ThemeController::chromeGradientEnd() const { return activePalette().chromeGradientEnd; }
 QColor ThemeController::glassShadow() const { return activePalette().glassShadow; }
 QColor ThemeController::shadow() const { return activePalette().shadow; }
 
@@ -364,7 +383,7 @@ QVariantList ThemeController::builtInThemeDrafts() const
     drafts.reserve(6);
     drafts.append(draftWithSubtitle(paletteForScheme(CatppuccinLatte), QStringLiteral("Soft light, blue, mauve")));
     drafts.append(draftWithSubtitle(paletteForScheme(AuroraGlass), QStringLiteral("Teal, orchid, blue")));
-    drafts.append(draftWithSubtitle(paletteForScheme(OxideGarden), QStringLiteral("Paper, rust, patina")));
+    drafts.append(draftWithSubtitle(paletteForScheme(PorcelainBloom), QStringLiteral("Porcelain, rose, leaf")));
     drafts.append(draftWithSubtitle(paletteForScheme(EmberLuxe), QStringLiteral("Amber, ruby, espresso")));
     drafts.append(draftWithSubtitle(paletteForScheme(GraphiteSage), QStringLiteral("Graphite, sage, brass")));
     drafts.append(draftWithSubtitle(paletteForScheme(VelvetExcess), QStringLiteral("Velvet, orchid, gold")));
@@ -560,8 +579,8 @@ ThemeController::ThemePalette ThemeController::activePalette() const
 ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme scheme) const
 {
     switch (scheme) {
-    case AuroraGlass:
-        return makePalette(
+    case AuroraGlass: {
+        ThemePalette palette = makePalette(
             QStringLiteral("aurora-glass"),
             QStringLiteral("Aurora Glass"),
             true,
@@ -586,36 +605,64 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#06B6D4")),
             QColor(QStringLiteral("#34D399")),
             QColor(QStringLiteral("#FB923C")));
+        palette.chromeGradientStart = withAlpha(palette.categoryInfo, 0.24);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.20);
+        palette.chromeGradientEnd = withAlpha(palette.categoryNavigation, 0.16);
+        return palette;
+    }
 
-    case OxideGarden:
-        return makePalette(
-            QStringLiteral("oxide-garden"),
-            QStringLiteral("Oxide Garden"),
+    case PorcelainBloom: {
+        ThemePalette palette = makePalette(
+            QStringLiteral("porcelain-bloom"),
+            QStringLiteral("Porcelain Bloom"),
             false,
-            QColor(QStringLiteral("#F3EDDF")),
-            QColor(QStringLiteral("#E8DDC4")),
-            QColor(QStringLiteral("#DCCBA8")),
-            QColor(QStringLiteral("#CDB68B")),
-            QColor(QStringLiteral("#26251C")),
-            QColor(QStringLiteral("#645F46")),
-            QColor(QStringLiteral("#B8A878")),
-            QColor(QStringLiteral("#A3442F")),
-            QColor(QStringLiteral("#FFF8EA")),
-            QColor(QStringLiteral("#B3263A")),
-            QColor(QStringLiteral("#2F6F5E")),
-            QColor(QStringLiteral("#7A4F22")),
-            QColor(QStringLiteral("#58733D")),
-            QColor(QStringLiteral("#A85C20")),
-            QColor(QStringLiteral("#2F7440")),
-            QColor(QStringLiteral("#8E6515")),
-            QColor(QStringLiteral("#2B695B")),
-            QColor(QStringLiteral("#76551F")),
-            QColor(QStringLiteral("#A3442F")),
-            QColor(QStringLiteral("#4E6A34")),
-            QColor(QStringLiteral("#5F4D32")));
+            QColor(QStringLiteral("#FAFBFA")),
+            QColor(QStringLiteral("#FFFFFF")),
+            QColor(QStringLiteral("#FFF1F1")),
+            QColor(QStringLiteral("#FFE3E1")),
+            QColor(QStringLiteral("#2E2527")),
+            QColor(QStringLiteral("#755F64")),
+            QColor(QStringLiteral("#E7CACA")),
+            QColor(QStringLiteral("#D61F3D")),
+            QColor(QStringLiteral("#FFFFFF")),
+            QColor(QStringLiteral("#B91C1C")),
+            QColor(QStringLiteral("#E11D48")),
+            QColor(QStringLiteral("#FB7185")),
+            QColor(QStringLiteral("#0F9F8F")),
+            QColor(QStringLiteral("#E75B35")),
+            QColor(QStringLiteral("#2F8F5B")),
+            QColor(QStringLiteral("#B7791F")),
+            QColor(QStringLiteral("#0E8AA5")),
+            QColor(QStringLiteral("#D92652")),
+            QColor(QStringLiteral("#D61F3D")),
+            QColor(QStringLiteral("#7C3AED")),
+            QColor(QStringLiteral("#2F8F5B")));
+        palette.panelSurface = QColor(QStringLiteral("#FFFFFF"));
+        palette.panelSurfaceSoft = QColor(QStringLiteral("#FFF7F6"));
+        palette.panelSurfaceStrong = QColor(QStringLiteral("#FFFFFF"));
+        palette.panelBorder = withAlpha(QColor(QStringLiteral("#E2B7B7")), 0.88);
+        palette.controlSurface = QColor(QStringLiteral("#FFF3F2"));
+        palette.controlSurfaceActive = QColor(QStringLiteral("#FFE2E0"));
+        palette.controlBorder = QColor(QStringLiteral("#E5B9B8"));
+        palette.itemHoverFill = withAlpha(palette.accent, 0.09);
+        palette.itemCurrentFill = withAlpha(palette.activeAccent, 0.10);
+        palette.itemCurrentBorder = withAlpha(palette.activeAccent, 0.66);
+        palette.itemSelectedFill = withAlpha(palette.activeAccent, 0.13);
+        palette.itemSelectedFillInactive = withAlpha(palette.activeAccent, 0.08);
+        palette.itemSelectedBorder = withAlpha(palette.activeAccent, 0.84);
+        palette.itemSelectedBorderInactive = withAlpha(palette.activeAccent, 0.48);
+        palette.statusRailFill = QColor(QStringLiteral("#FFF9F8"));
+        palette.menuBorder = QColor(QStringLiteral("#DDAEAE"));
+        palette.menuSeparator = QColor(QStringLiteral("#CA8D8F"));
+        palette.menuItemPressed = QColor(QStringLiteral("#FFD8D5"));
+        palette.chromeGradientStart = withAlpha(palette.activeGlow, 0.24);
+        palette.chromeGradientMid = withAlpha(palette.activeAccent, 0.18);
+        palette.chromeGradientEnd = withAlpha(palette.secondaryAccent, 0.12);
+        return palette;
+    }
 
-    case EmberLuxe:
-        return makePalette(
+    case EmberLuxe: {
+        ThemePalette palette = makePalette(
             QStringLiteral("ember-luxe"),
             QStringLiteral("Ember Luxe"),
             true,
@@ -640,9 +687,14 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#F59E0B")),
             QColor(QStringLiteral("#22C55E")),
             QColor(QStringLiteral("#FB923C")));
+        palette.chromeGradientStart = withAlpha(palette.danger, 0.15);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.20);
+        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.14);
+        return palette;
+    }
 
-    case GraphiteSage:
-        return makePalette(
+    case GraphiteSage: {
+        ThemePalette palette = makePalette(
             QStringLiteral("graphite-sage"),
             QStringLiteral("Graphite Sage"),
             true,
@@ -667,6 +719,11 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#9BCFAD")),
             QColor(QStringLiteral("#8FCAB8")),
             QColor(QStringLiteral("#8AA0B8")));
+        palette.chromeGradientStart = withAlpha(palette.categoryNavigation, 0.17);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.18);
+        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.12);
+        return palette;
+    }
 
     case VelvetExcess: {
         auto alpha = [](const QColor &color, qreal value) {
@@ -719,6 +776,9 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
         palette.menuBorder = QColor(QStringLiteral("#8A447B"));
         palette.menuSeparator = QColor(QStringLiteral("#B15B96"));
         palette.menuItemPressed = QColor(QStringLiteral("#542149"));
+        palette.chromeGradientStart = alpha(palette.accent, 0.22);
+        palette.chromeGradientMid = alpha(palette.activeGlow, 0.18);
+        palette.chromeGradientEnd = alpha(palette.warmAccent, 0.13);
         palette.glassShadow = alpha(QColor(QStringLiteral("#050106")), 0.54);
         return palette;
     }
@@ -859,6 +919,9 @@ QJsonObject ThemeController::themeJsonObject(const ThemePalette &palette)
     colors.insert(QStringLiteral("menuBorder"), colorToString(palette.menuBorder));
     colors.insert(QStringLiteral("menuSeparator"), colorToString(palette.menuSeparator));
     colors.insert(QStringLiteral("menuItemPressed"), colorToString(palette.menuItemPressed));
+    colors.insert(QStringLiteral("chromeGradientStart"), colorToString(palette.chromeGradientStart));
+    colors.insert(QStringLiteral("chromeGradientMid"), colorToString(palette.chromeGradientMid));
+    colors.insert(QStringLiteral("chromeGradientEnd"), colorToString(palette.chromeGradientEnd));
     colors.insert(QStringLiteral("glassShadow"), colorToString(palette.glassShadow));
     colors.insert(QStringLiteral("shadow"), colorToString(palette.shadow));
 
@@ -899,10 +962,9 @@ ThemeController::ThemeScheme ThemeController::schemeFromId(const QString &id, bo
         if (ok) *ok = true;
         return AuroraGlass;
     }
-    if (key == QStringLiteral("oxide-garden")
-            || key == QStringLiteral("porcelain-spectrum")) {
+    if (key == QStringLiteral("porcelain-bloom")) {
         if (ok) *ok = true;
-        return OxideGarden;
+        return PorcelainBloom;
     }
     if (key == QStringLiteral("ember-luxe")) {
         if (ok) *ok = true;
@@ -987,6 +1049,9 @@ bool ThemeController::paletteFromState(const QVariantMap &state, ThemePalette *p
     resolved.menuBorder = colorFromString(colors.value(QStringLiteral("menuBorder")).toString(), resolved.dark ? resolved.border.lighter(125) : resolved.border.darker(108));
     resolved.menuSeparator = colorFromString(colors.value(QStringLiteral("menuSeparator")).toString(), resolved.dark ? resolved.border.lighter(175) : resolved.border.darker(165));
     resolved.menuItemPressed = colorFromString(colors.value(QStringLiteral("menuItemPressed")).toString(), resolved.surfaceHover.darker(118));
+    resolved.chromeGradientStart = colorFromString(colors.value(QStringLiteral("chromeGradientStart")).toString(), resolved.chromeGradientStart);
+    resolved.chromeGradientMid = colorFromString(colors.value(QStringLiteral("chromeGradientMid")).toString(), resolved.chromeGradientMid);
+    resolved.chromeGradientEnd = colorFromString(colors.value(QStringLiteral("chromeGradientEnd")).toString(), resolved.chromeGradientEnd);
     resolved.glassShadow = colorFromString(colors.value(QStringLiteral("glassShadow")).toString(), resolved.dark ? alpha(QColor(Qt::black), 0.36) : alpha(QColor(Qt::black), 0.16));
     resolved.shadow = colorFromString(colors.value(QStringLiteral("shadow")).toString(), QColor(QStringLiteral("#10000000")));
 

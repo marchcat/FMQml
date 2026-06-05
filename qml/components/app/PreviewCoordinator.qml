@@ -9,6 +9,7 @@ Item {
     property var quickLookController
     property var quickLookPopup
     property var propertiesController
+    property bool previewSuppressed: false
 
     property string pendingPreviewPath: ""
     property string pendingPreviewRefreshPath: ""
@@ -27,7 +28,7 @@ Item {
 
     function activePanelScrolling() {
         const controller = activePanelController()
-        return controller ? controller.scrolling : false
+        return root.previewSuppressed || (controller ? controller.scrolling : false)
     }
 
     function quickLook() {
@@ -115,6 +116,20 @@ Item {
         root.previewPending = pending
                               && targetPath.length > 0
                               && (targetPath === "selection://" || !quickLookController || quickLookController.path !== targetPath)
+    }
+
+    onPreviewSuppressedChanged: {
+        if (root.previewSuppressed) {
+            return
+        }
+        const appRoot = app()
+        if (!appRoot || !appRoot.previewPaneVisible) {
+            return
+        }
+        if (root.pendingPreviewRefreshPath.length > 0) {
+            previewRefreshTimer.restart()
+        }
+        root.syncPreviewFromActivePanel(false)
     }
 
     Timer {

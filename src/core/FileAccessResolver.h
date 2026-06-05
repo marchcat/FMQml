@@ -11,6 +11,12 @@ struct FileAttributesInfo {
 };
 
 struct FileAccessInfo {
+    enum class State {
+        Unknown,
+        Denied,
+        Allowed
+    };
+
     bool canRead = false;
     bool canModify = false;
     bool canDelete = false;
@@ -20,6 +26,14 @@ struct FileAccessInfo {
     bool canTraverse = false;
     bool canChangeAttributes = false;
     bool exact = false;
+    State readState = State::Unknown;
+    State modifyState = State::Unknown;
+    State deleteState = State::Unknown;
+    State executeState = State::Unknown;
+    State browseState = State::Unknown;
+    State createChildrenState = State::Unknown;
+    State traverseState = State::Unknown;
+    State changeAttributesState = State::Unknown;
 };
 
 struct FileCapabilityInfo {

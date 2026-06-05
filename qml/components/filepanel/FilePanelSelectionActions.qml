@@ -33,6 +33,19 @@ Rectangle {
             ? root.controller.selectedPaths()
             : []
     }
+    readonly property bool selectionContainsArchivePath: {
+        for (let i = 0; i < selectedPaths.length; ++i) {
+            if (String(selectedPaths[i]).toLowerCase().startsWith("archive://")) {
+                return true
+            }
+        }
+        return false
+    }
+    readonly property bool canToggleFavorite: root.hasSelection
+                                              && !root.selectionContainsArchivePath
+                                              && root.favoritesController
+                                              && root.controller
+                                              && !root.controller.isVirtualRoot
     readonly property string singlePath: selectedPaths.length === 1 ? selectedPaths[0] : ""
     readonly property int singleIndex: root.singlePath.length > 0 && root.controller && root.controller.directoryModel
                                        ? root.controller.directoryModel.indexOfPath(root.singlePath)
@@ -41,7 +54,7 @@ Rectangle {
                                               ? root.controller.directoryModel.isDirectoryAt(root.singleIndex)
                                               : false
     readonly property bool allSelectedPinned: {
-        if (!root.favoritesController || selectedPaths.length === 0) {
+        if (!root.favoritesController || selectedPaths.length === 0 || root.selectionContainsArchivePath) {
             return false
         }
         const revision = root.favoritesController.pinnedCount
@@ -66,8 +79,7 @@ Rectangle {
     implicitHeight: 44
     visible: root.visibleForSelection
     color: Theme.panelSurfaceStrong
-    border.color: root.active ? Theme.withAlpha(Theme.activeAccent, 0.34) : Theme.panelBorder
-    border.width: 1
+    border.width: 0
 
     Connections {
         target: root.controller && root.controller.directoryModel ? root.controller.directoryModel : null
@@ -81,7 +93,19 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         height: 1
-        color: root.active ? Theme.withAlpha(Theme.activeAccent, 0.34) : Theme.panelBorder
+        color: root.active
+               ? Theme.withAlpha(Theme.activeAccent, themeController.isDark ? 0.40 : 0.56)
+               : Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.26)
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 1
+        color: root.active
+               ? Theme.withAlpha(Theme.activeAccent, themeController.isDark ? 0.28 : 0.38)
+               : Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.28 : 0.22)
     }
 
     RowLayout {
@@ -163,19 +187,20 @@ Rectangle {
             Layout.fillHeight: true
             Layout.topMargin: 8
             Layout.bottomMargin: 8
-            color: Theme.panelBorder
-            opacity: 0.6
+            color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.26)
         }
 
         IconButton {
             iconSource: "../assets/icons/star.svg"
             iconTone: "favorite"
             iconSize: 16
-            enabled: root.hasSelection && root.favoritesController && root.controller && !root.controller.isVirtualRoot
+            enabled: root.canToggleFavorite
             isHighlighted: root.allSelectedPinned
             onClicked: root.pinToggleRequested(root.selectedPaths, root.allSelectedPinned)
             ToolTip.visible: hovered
-            ToolTip.text: root.allSelectedPinned ? "Unpin from Favorites" : "Pin to Favorites"
+            ToolTip.text: root.selectionContainsArchivePath
+                          ? "Archive contents cannot be pinned"
+                          : (root.allSelectedPinned ? "Unpin from Favorites" : "Pin to Favorites")
         }
 
         IconButton {

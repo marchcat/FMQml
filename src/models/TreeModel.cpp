@@ -1033,63 +1033,61 @@ QVector<TreeModel::ChildEntry> TreeModel::loadChildEntries(const QString &path,
     }
 
 #ifdef Q_OS_WIN
-    if (LocalFileProvider::useNativeFileEnumerators()) {
-        QString outputBase = QDir::fromNativeSeparators(path);
-        if (!outputBase.endsWith(QLatin1Char('/'))) {
-            outputBase += QLatin1Char('/');
-        }
+    QString outputBase = QDir::fromNativeSeparators(path);
+    if (!outputBase.endsWith(QLatin1Char('/'))) {
+        outputBase += QLatin1Char('/');
+    }
 
-        WIN32_FIND_DATAW findData;
-        const QString pattern = treeModelFindPattern(path);
-        HANDLE handle = FindFirstFileExW(reinterpret_cast<LPCWSTR>(pattern.utf16()),
-                                         FindExInfoBasic,
-                                         &findData,
-                                         FindExSearchNameMatch,
-                                         nullptr,
-                                         FIND_FIRST_EX_LARGE_FETCH);
-        if (handle == INVALID_HANDLE_VALUE && GetLastError() == ERROR_INVALID_PARAMETER) {
-            handle = FindFirstFileExW(reinterpret_cast<LPCWSTR>(pattern.utf16()),
-                                      FindExInfoBasic,
-                                      &findData,
-                                      FindExSearchNameMatch,
-                                      nullptr,
-                                      0);
-        }
-        if (handle != INVALID_HANDLE_VALUE) {
-            do {
-                if (cancelled && cancelled->load()) {
-                    FindClose(handle);
-                    return {};
-                }
+    WIN32_FIND_DATAW findData;
+    const QString pattern = treeModelFindPattern(path);
+    HANDLE handle = FindFirstFileExW(reinterpret_cast<LPCWSTR>(pattern.utf16()),
+                                     FindExInfoBasic,
+                                     &findData,
+                                     FindExSearchNameMatch,
+                                     nullptr,
+                                     FIND_FIRST_EX_LARGE_FETCH);
+    if (handle == INVALID_HANDLE_VALUE && GetLastError() == ERROR_INVALID_PARAMETER) {
+        handle = FindFirstFileExW(reinterpret_cast<LPCWSTR>(pattern.utf16()),
+                                  FindExInfoBasic,
+                                  &findData,
+                                  FindExSearchNameMatch,
+                                  nullptr,
+                                  0);
+    }
+    if (handle != INVALID_HANDLE_VALUE) {
+        do {
+            if (cancelled && cancelled->load()) {
+                FindClose(handle);
+                return {};
+            }
 
-                const QString name = QString::fromWCharArray(findData.cFileName);
-                if (name == QLatin1String(".") || name == QLatin1String("..")) {
-                    continue;
-                }
-                const DWORD attributes = findData.dwFileAttributes;
-                if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-                    continue;
-                }
-                if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
-                    continue;
-                }
-                if (!showHidden && ((attributes & FILE_ATTRIBUTE_HIDDEN) != 0 || name.startsWith(QLatin1Char('.')))) {
-                    continue;
-                }
+            const QString name = QString::fromWCharArray(findData.cFileName);
+            if (name == QLatin1String(".") || name == QLatin1String("..")) {
+                continue;
+            }
+            const DWORD attributes = findData.dwFileAttributes;
+            if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+                continue;
+            }
+            if ((attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+                continue;
+            }
+            if (!showHidden && ((attributes & FILE_ATTRIBUTE_HIDDEN) != 0 || name.startsWith(QLatin1Char('.')))) {
+                continue;
+            }
 
-                ChildEntry entry;
-                entry.name = name;
-                entry.path = QDir::cleanPath(outputBase + name);
-                entry.icon = QStringLiteral("folder");
-                children.append(entry);
-            } while (FindNextFileW(handle, &findData));
+            ChildEntry entry;
+            entry.name = name;
+            entry.path = QDir::cleanPath(outputBase + name);
+            entry.icon = QStringLiteral("folder");
+            children.append(entry);
+        } while (FindNextFileW(handle, &findData));
 
-            FindClose(handle);
-            std::sort(children.begin(), children.end(), [](const ChildEntry &lhs, const ChildEntry &rhs) {
-                return lhs.name.compare(rhs.name, Qt::CaseInsensitive) < 0;
-            });
-            return children;
-        }
+        FindClose(handle);
+        std::sort(children.begin(), children.end(), [](const ChildEntry &lhs, const ChildEntry &rhs) {
+            return lhs.name.compare(rhs.name, Qt::CaseInsensitive) < 0;
+        });
+        return children;
     }
 #endif
 

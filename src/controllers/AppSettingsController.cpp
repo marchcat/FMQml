@@ -93,14 +93,6 @@ QString nearestExistingFolderAtOrAbove(const QString &path)
     return {};
 }
 
-bool defaultUseNativeFileEnumerators()
-{
-#ifdef Q_OS_WIN
-    return true;
-#else
-    return false;
-#endif
-}
 }
 
 AppSettingsController::AppSettingsController(QObject *parent)
@@ -113,8 +105,7 @@ AppSettingsController::AppSettingsController(QObject *parent)
     m_showThumbnails = settings.value(QStringLiteral("showThumbnails"), true).toBool();
     m_ultraLightMode = settings.value(QStringLiteral("ultraLightMode"),
                                       settings.value(QStringLiteral("simplifyVisualsForPerformance"), false)).toBool();
-    m_useNativeFileEnumerators = settings.value(QStringLiteral("useNativeFileEnumerators"),
-                                                defaultUseNativeFileEnumerators()).toBool();
+    settings.remove(QStringLiteral("useNativeFileEnumerators"));
     m_previewDetailsRaised = settings.value(QStringLiteral("previewDetailsRaised"), false).toBool();
     settings.endGroup();
 }
@@ -200,25 +191,6 @@ void AppSettingsController::setUltraLightMode(bool enabled)
     emit ultraLightModeChanged();
 }
 
-bool AppSettingsController::useNativeFileEnumerators() const
-{
-    return m_useNativeFileEnumerators;
-}
-
-void AppSettingsController::setUseNativeFileEnumerators(bool enabled)
-{
-    if (m_useNativeFileEnumerators == enabled) {
-        return;
-    }
-
-    m_useNativeFileEnumerators = enabled;
-    QSettings settings;
-    settings.beginGroup(QLatin1String(AppearanceGroup));
-    settings.setValue(QStringLiteral("useNativeFileEnumerators"), m_useNativeFileEnumerators);
-    settings.endGroup();
-    emit useNativeFileEnumeratorsChanged();
-}
-
 bool AppSettingsController::previewDetailsRaised() const
 {
     return m_previewDetailsRaised;
@@ -273,6 +245,8 @@ QVariantMap AppSettingsController::workspaceState() const
     state[QStringLiteral("rightSortRole")] = boundedInt(settings.value(QStringLiteral("rightSortRole"), 0), 0, 0, 5);
     state[QStringLiteral("leftSortOrder")] = boundedInt(settings.value(QStringLiteral("leftSortOrder"), 0), 0, 0, 1);
     state[QStringLiteral("rightSortOrder")] = boundedInt(settings.value(QStringLiteral("rightSortOrder"), 0), 0, 0, 1);
+    state[QStringLiteral("leftMixFilesAndFolders")] = settings.value(QStringLiteral("leftMixFilesAndFolders"), false).toBool();
+    state[QStringLiteral("rightMixFilesAndFolders")] = settings.value(QStringLiteral("rightMixFilesAndFolders"), false).toBool();
     state[QStringLiteral("showHidden")] = settings.value(QStringLiteral("showHidden"), false).toBool();
 
     settings.endGroup();
@@ -323,6 +297,8 @@ void AppSettingsController::saveWorkspaceState(const QVariantMap &state)
     settings.setValue(QStringLiteral("rightSortRole"), boundedInt(state.value(QStringLiteral("rightSortRole")), 0, 0, 5));
     settings.setValue(QStringLiteral("leftSortOrder"), boundedInt(state.value(QStringLiteral("leftSortOrder")), 0, 0, 1));
     settings.setValue(QStringLiteral("rightSortOrder"), boundedInt(state.value(QStringLiteral("rightSortOrder")), 0, 0, 1));
+    settings.setValue(QStringLiteral("leftMixFilesAndFolders"), state.value(QStringLiteral("leftMixFilesAndFolders")).toBool());
+    settings.setValue(QStringLiteral("rightMixFilesAndFolders"), state.value(QStringLiteral("rightMixFilesAndFolders")).toBool());
     settings.setValue(QStringLiteral("showHidden"), state.value(QStringLiteral("showHidden")).toBool());
 
     settings.endGroup();
@@ -550,7 +526,6 @@ QVariantMap AppSettingsController::appearanceSettings() const
     appearance[QStringLiteral("useHighQualitySystemIcons")] = m_useHighQualitySystemIcons;
     appearance[QStringLiteral("showThumbnails")] = m_showThumbnails;
     appearance[QStringLiteral("ultraLightMode")] = m_ultraLightMode;
-    appearance[QStringLiteral("useNativeFileEnumerators")] = m_useNativeFileEnumerators;
     appearance[QStringLiteral("previewDetailsRaised")] = m_previewDetailsRaised;
     return appearance;
 }
@@ -564,8 +539,6 @@ void AppSettingsController::applyAppearanceSettings(const QVariantMap &appearanc
     setUltraLightMode(appearance.value(QStringLiteral("ultraLightMode"),
                                        appearance.value(QStringLiteral("simplifyVisualsForPerformance"),
                                                         m_ultraLightMode)).toBool());
-    setUseNativeFileEnumerators(appearance.value(QStringLiteral("useNativeFileEnumerators"),
-                                                 m_useNativeFileEnumerators).toBool());
     setPreviewDetailsRaised(appearance.value(QStringLiteral("previewDetailsRaised"),
                                              m_previewDetailsRaised).toBool());
 }

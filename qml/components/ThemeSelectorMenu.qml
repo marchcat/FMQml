@@ -53,29 +53,32 @@ Menu {
     background: Item {
         Rectangle {
             anchors.fill: parent
-            anchors.topMargin: 3
-            anchors.leftMargin: 2
+            anchors.topMargin: 2
+            anchors.leftMargin: 1
             anchors.rightMargin: 1
-            radius: Theme.radius + 2
-            color: "#000000"
-            opacity: themeController.isDark ? 0.40 : 0.12
+            anchors.bottomMargin: 1
+            radius: Theme.radiusLg
+            color: Theme.shadow
+            opacity: themeController.isDark ? 0.28 : 0.10
         }
 
         Rectangle {
             anchors.fill: parent
             anchors.topMargin: 1
             anchors.leftMargin: 1
-            radius: Theme.radius + 1
+            anchors.rightMargin: 1
+            radius: Theme.innerRadius(Theme.radiusLg, 1)
             color: Theme.accent
-            opacity: themeController.isDark ? 0.12 : 0.05
+            opacity: themeController.isDark ? 0.08 : 0.04
         }
 
         Rectangle {
             anchors.fill: parent
             color: Theme.panelSurfaceStrong
-            radius: Theme.radius + 1
-            border.color: Theme.panelBorder
+            radius: Theme.radiusLg
+            border.color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.38 : 0.28)
             border.width: 1
+            antialiasing: true
         }
 
         Rectangle {
@@ -87,8 +90,7 @@ Menu {
             anchors.rightMargin: 5
             height: 1
             radius: 0.5
-            color: themeController.isDark ? "#22ffffff" : "#55ffffff"
-            opacity: themeController.isDark ? 0.32 : 0.48
+            color: Theme.withAlpha(Theme.accentText, themeController.isDark ? 0.045 : 0.14)
         }
     }
 
