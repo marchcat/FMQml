@@ -29,6 +29,30 @@ constexpr auto ByteArrayEncodingKey = "__encoding";
 constexpr auto ByteArrayDataKey = "data";
 constexpr auto ByteArrayEncodingBase64 = "base64";
 
+bool hasExplicitNonLocalScheme(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    const int separatorIndex = trimmed.indexOf(QStringLiteral("://"));
+    if (separatorIndex <= 0) {
+        return false;
+    }
+
+    const QString scheme = trimmed.left(separatorIndex).toLower();
+    if (scheme == QLatin1String("file")) {
+        return false;
+    }
+
+    if (!scheme.at(0).isLetter()) {
+        return false;
+    }
+    for (const QChar ch : scheme) {
+        if (!ch.isLetterOrNumber() && ch != QLatin1Char('+') && ch != QLatin1Char('.') && ch != QLatin1Char('-')) {
+            return false;
+        }
+    }
+    return true;
+}
+
 QVariantMap variantMapFromJsonObject(const QJsonObject &object)
 {
     return object.toVariantMap();
@@ -323,8 +347,12 @@ void AppSettingsController::saveWorkspaceState(const QVariantMap &state)
         settings.setValue(QStringLiteral("fileWorkspaceSplitState"),
                           state.value(QStringLiteral("fileWorkspaceSplitState")));
     }
-    settings.setValue(QStringLiteral("leftPath"), safeFolderPath(state.value(QStringLiteral("leftPath")).toString()));
-    settings.setValue(QStringLiteral("rightPath"), safeFolderPath(state.value(QStringLiteral("rightPath")).toString()));
+    settings.setValue(QStringLiteral("leftPath"),
+                      safeFolderPathForSave(state.value(QStringLiteral("leftPath")).toString(),
+                                            settings.value(QStringLiteral("leftPath")).toString()));
+    settings.setValue(QStringLiteral("rightPath"),
+                      safeFolderPathForSave(state.value(QStringLiteral("rightPath")).toString(),
+                                            settings.value(QStringLiteral("rightPath")).toString()));
     settings.setValue(QStringLiteral("leftViewMode"), boundedInt(state.value(QStringLiteral("leftViewMode")), 0, 0, 2));
     settings.setValue(QStringLiteral("rightViewMode"), boundedInt(state.value(QStringLiteral("rightViewMode")), 0, 0, 2));
     settings.setValue(QStringLiteral("leftGridIconSize"), boundedInt(state.value(QStringLiteral("leftGridIconSize")), 48, 32, 96));
@@ -348,6 +376,9 @@ void AppSettingsController::saveWorkspaceState(const QVariantMap &state)
 QString AppSettingsController::safeFolderPath(const QString &path) const
 {
     const QString trimmed = path.trimmed();
+    if (hasExplicitNonLocalScheme(trimmed)) {
+        return fallbackFolderPath();
+    }
     if (ArchiveSupport::isArchivePath(trimmed)) {
         const QFileInfo physicalInfo(ArchiveSupport::physicalArchivePath(trimmed));
         const QString parent = physicalInfo.absoluteDir().absolutePath();
@@ -359,6 +390,16 @@ QString AppSettingsController::safeFolderPath(const QString &path) const
         return trimmed;
     }
     return fallbackFolderPath();
+}
+
+QString AppSettingsController::safeFolderPathForSave(const QString &path, const QString &previousPath) const
+{
+    const QString trimmed = path.trimmed();
+    if (hasExplicitNonLocalScheme(trimmed)) {
+        const QString previous = safeFolderPath(previousPath);
+        return previous.isEmpty() ? fallbackFolderPath() : previous;
+    }
+    return safeFolderPath(trimmed);
 }
 
 QVariantMap AppSettingsController::sanitizedWindowGeometry(const QVariantMap &state,
@@ -660,7 +701,7 @@ QString AppSettingsController::fallbackFolderPath() const
     if (!home.isEmpty() && QFileInfo(home).isDir()) {
         return home;
     }
-    return QLatin1String(DeviceRoot);
+    return QDir::rootPath();
 }
 
 bool AppSettingsController::isRestorableFolderPath(const QString &path) const
@@ -668,14 +709,14 @@ bool AppSettingsController::isRestorableFolderPath(const QString &path) const
     if (path.isEmpty()) {
         return false;
     }
-    if (path == QLatin1String(DeviceRoot)) {
-        return true;
-    }
-    if (path == QLatin1String(FavoritesRoot)) {
-        return true;
-    }
     if (ArchiveSupport::isArchivePath(path)) {
         return QFileInfo::exists(ArchiveSupport::physicalArchivePath(path));
+    }
+    if (path == QLatin1String(DeviceRoot) || path == QLatin1String(FavoritesRoot)) {
+        return false;
+    }
+    if (hasExplicitNonLocalScheme(path)) {
+        return false;
     }
 
     const QFileInfo info(path);

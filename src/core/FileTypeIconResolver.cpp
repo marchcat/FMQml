@@ -1,12 +1,76 @@
 #include "FileTypeIconResolver.h"
 
 #include <QFileInfo>
+#include <QList>
 #include <QSet>
+#include <QStringList>
 
 namespace {
+struct FileIconRule {
+    QString iconName;
+    QStringList extensions;
+};
+
 QString fileTypeIconPath(const QString &name)
 {
     return QStringLiteral("qrc:/qt/qml/FM/qml/assets/filetypes/%1.svg").arg(name);
+}
+
+const QList<FileIconRule> &nativeIconOverrideRules()
+{
+    static const QList<FileIconRule> rules = {
+        {QStringLiteral("archive"), {QStringLiteral("apk")}},
+        {QStringLiteral("fb2"), {QStringLiteral("fb2"), QStringLiteral("fb2.zip")}},
+    };
+    return rules;
+}
+
+QString normalizedExtension(QString extension)
+{
+    extension = extension.trimmed().toLower();
+    while (extension.startsWith(QLatin1Char('.'))) {
+        extension.remove(0, 1);
+    }
+    return extension;
+}
+
+bool fileNameMatchesExtension(const QString &fileName, const QString &extension)
+{
+    const QString ext = normalizedExtension(extension);
+    return !ext.isEmpty() && fileName.toLower().endsWith(QLatin1Char('.') + ext);
+}
+
+QString matchingRuleIconForExtension(const QString &extension, const QList<FileIconRule> &rules)
+{
+    const QString ext = normalizedExtension(extension);
+    if (ext.isEmpty()) {
+        return {};
+    }
+
+    for (const FileIconRule &rule : rules) {
+        for (const QString &ruleExtension : rule.extensions) {
+            if (ext == normalizedExtension(ruleExtension)) {
+                return rule.iconName;
+            }
+        }
+    }
+    return {};
+}
+
+QString matchingRuleIconForFileName(const QString &fileName, const QList<FileIconRule> &rules)
+{
+    if (fileName.isEmpty()) {
+        return {};
+    }
+
+    for (const FileIconRule &rule : rules) {
+        for (const QString &extension : rule.extensions) {
+            if (fileNameMatchesExtension(fileName, extension)) {
+                return rule.iconName;
+            }
+        }
+    }
+    return {};
 }
 
 bool hasSuffix(const QString &suffix, const QSet<QString> &suffixes)
@@ -14,9 +78,16 @@ bool hasSuffix(const QString &suffix, const QSet<QString> &suffixes)
     return suffixes.contains(suffix.toLower());
 }
 
-QString suffixFromPath(const QString &path)
+QString fileNameFromPathHint(QString path)
 {
-    return QFileInfo(path).suffix().toLower();
+    path.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const int archiveSeparator = path.lastIndexOf(QStringLiteral("|/"));
+    if (archiveSeparator >= 0) {
+        path = path.mid(archiveSeparator + 2);
+    }
+
+    const int slash = path.lastIndexOf(QLatin1Char('/'));
+    return slash >= 0 ? path.mid(slash + 1) : QFileInfo(path).fileName();
 }
 }
 
@@ -32,6 +103,11 @@ QString FileTypeIconResolver::iconForSuffix(const QString &suffix, bool isDirect
     }
 
     const QString s = suffix.toLower();
+    const QString explicitIcon = matchingRuleIconForExtension(s, nativeIconOverrideRules());
+    if (!explicitIcon.isEmpty()) {
+        return fileTypeIconPath(explicitIcon);
+    }
+
     static const QSet<QString> imageSuffixes = {
         QStringLiteral("jpg"), QStringLiteral("jpeg"), QStringLiteral("png"), QStringLiteral("gif"),
         QStringLiteral("bmp"), QStringLiteral("webp"), QStringLiteral("ico"), QStringLiteral("svg"),
@@ -101,10 +177,33 @@ QString FileTypeIconResolver::iconForSuffix(const QString &suffix, bool isDirect
 QString FileTypeIconResolver::iconForPath(const QString &path) const
 {
     const QFileInfo info(path);
+    const QString explicitIcon = info.isDir()
+        ? QString{}
+        : matchingRuleIconForFileName(info.fileName(), nativeIconOverrideRules());
+    if (!explicitIcon.isEmpty()) {
+        return fileTypeIconPath(explicitIcon);
+    }
     return iconForSuffix(info.suffix(), info.isDir());
 }
 
 QString FileTypeIconResolver::iconForPathHint(const QString &path, bool isDirectory) const
 {
-    return iconForSuffix(suffixFromPath(path), isDirectory);
+    const QString fileName = fileNameFromPathHint(path);
+    const QString explicitIcon = isDirectory
+        ? QString{}
+        : matchingRuleIconForFileName(fileName, nativeIconOverrideRules());
+    if (!explicitIcon.isEmpty()) {
+        return fileTypeIconPath(explicitIcon);
+    }
+    return iconForSuffix(QFileInfo(fileName).suffix(), isDirectory);
+}
+
+QString FileTypeIconResolver::nativeIconOverrideForPathHint(const QString &path, bool isDirectory) const
+{
+    if (isDirectory) {
+        return {};
+    }
+
+    const QString iconName = matchingRuleIconForFileName(fileNameFromPathHint(path), nativeIconOverrideRules());
+    return iconName.isEmpty() ? QString{} : fileTypeIconPath(iconName);
 }

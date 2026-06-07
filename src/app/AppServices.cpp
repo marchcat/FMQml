@@ -1,6 +1,7 @@
 #include "AppServices.h"
 
 #include "../core/ArchiveSupport.h"
+#include "../core/FileProviderPluginRegistry.h"
 #include "../core/IsoSupport.h"
 #include "../models/DirectoryModel.h"
 
@@ -123,6 +124,7 @@ AppServices::AppServices(QObject *parent)
     });
     connect(m_workspace.leftPanel(), &FilePanelController::pathNavigated, &m_favorites, &FavoritesController::recordVisit);
     connect(m_workspace.rightPanel(), &FilePanelController::pathNavigated, &m_favorites, &FavoritesController::recordVisit);
+    FileProviderPluginRegistry::instance().loadDefaultPluginDirectories();
     restoreInitialWorkspaceState();
 }
 
@@ -241,6 +243,11 @@ AdminController *AppServices::admin()
 FavoritesController *AppServices::favorites()
 {
     return &m_favorites;
+}
+
+PluginActionController *AppServices::pluginActions()
+{
+    return &m_pluginActions;
 }
 
 FileTypeIconResolver *AppServices::fileTypeIcons()

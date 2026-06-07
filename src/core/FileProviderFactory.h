@@ -8,4 +8,6 @@
 class FileProviderFactory final {
 public:
     static std::unique_ptr<FileProvider> createProvider(const QString &path);
+    static bool hasPluginProviderForPath(const QString &path);
+    static QString normalizePath(const QString &path);
 };

@@ -643,8 +643,11 @@ Dialog {
                                     enabled: !root.scanning && modelData.path !== diskUsageController.rootPath
                                     flat: true
                                     Layout.preferredHeight: 26
+                                    Layout.preferredWidth: Math.min(implicitWidth, Math.max(110, Math.min(220, root.width * 0.32)))
+                                    Layout.maximumWidth: Math.max(110, Math.min(220, root.width * 0.32))
                                     contentItem: RowLayout {
                                         spacing: 5
+                                        clip: true
 
                                         RecolorSvgIcon {
                                             Layout.preferredWidth: 13
@@ -660,7 +663,7 @@ Dialog {
                                             text: breadcrumbButton.text
                                             color: breadcrumbButton.enabled ? Theme.textPrimary : Theme.textSecondary
                                             font.pixelSize: 11
-                                            elide: Text.ElideRight
+                                            elide: Text.ElideMiddle
                                             horizontalAlignment: Text.AlignHCenter
                                             verticalAlignment: Text.AlignVCenter
                                         }

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import QtQml
 import ".."
 import "../../style"
 
@@ -19,6 +20,7 @@ Item {
     property bool contextCanMountIso: false
     property bool isCurrentPathArchive: false
     property bool isCurrentPathReadOnlyContainer: false
+    property var customActions: []
 
     signal renameRequested()
 
@@ -38,6 +40,7 @@ Item {
         root.contextPathValue = path === undefined ? "" : path
         root.contextCanExtractArchive = canExtractArchive === true
         root.contextCanMountIso = canMountIso === true
+        root.customActions = root.availableCustomActions()
         contextMenu.popup()
     }
 
@@ -67,6 +70,33 @@ Item {
 
     function canAnalyzeContextFolder() {
         return menuPolicy.canAnalyzeContextFolder()
+    }
+
+    function customActionContext() {
+        const row = root.contextRow()
+        const model = menuPolicy.directoryModel()
+        return {
+            scope: "item",
+            currentPath: root.controller ? root.controller.currentPath : "",
+            targetPath: root.contextPathValue,
+            targetIsDirectory: row >= 0 && model ? model.isDirectoryAt(row) : false,
+            selectedPaths: root.controller && root.controller.selectedPaths ? root.controller.selectedPaths() : []
+        }
+    }
+
+    function availableCustomActions() {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            return []
+        }
+        return pluginActionController.actionsForContext(root.customActionContext())
+    }
+
+    function triggerCustomAction(actionId) {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            return
+        }
+        const result = pluginActionController.triggerAction(actionId, root.customActionContext())
+        pluginActionResultDialog.showResult(result)
     }
 
     ThemedContextMenu {
@@ -237,6 +267,27 @@ Item {
             enabled: menuPolicy.canOpenTerminal()
             onTriggered: root.controller.openInTerminal()
         }
+        ThemedMenuSeparator {
+            visible: root.customActions.length > 0
+        }
+        Instantiator {
+            model: root.customActions
+            delegate: ThemedMenuItem {
+                text: modelData.text || ""
+                icon.source: modelData.iconSource && modelData.iconSource.length > 0
+                             ? modelData.iconSource
+                             : "../assets/icons/info.svg"
+                iconColor: Theme.actionIconColor("info")
+                enabled: modelData.enabled !== false
+                onTriggered: root.triggerCustomAction(modelData.id)
+            }
+            onObjectAdded: (index, object) => contextMenu.addItem(object)
+            onObjectRemoved: (index, object) => contextMenu.removeItem(object)
+        }
+    }
+
+    PluginActionResultDialog {
+        id: pluginActionResultDialog
     }
 
     FolderDialog {

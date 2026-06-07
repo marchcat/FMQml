@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQml
 import ".."
 import "../../style"
 
@@ -14,6 +15,7 @@ Item {
     property var windowObject
     property bool isCurrentPathArchive: false
     property bool isCurrentPathReadOnlyContainer: false
+    property var customActions: []
 
     signal selectAllRequested()
 
@@ -25,6 +27,7 @@ Item {
     }
 
     function popupEmptyMenu() {
+        root.customActions = root.availableCustomActions()
         emptyContextMenu.popup()
     }
 
@@ -34,6 +37,31 @@ Item {
 
     function canFavoriteCurrentFolder() {
         return menuPolicy.canFavoriteCurrentFolder()
+    }
+
+    function customActionContext() {
+        return {
+            scope: "folder",
+            currentPath: root.controller ? root.controller.currentPath : "",
+            targetPath: root.controller ? root.controller.currentPath : "",
+            targetIsDirectory: true,
+            selectedPaths: root.controller && root.controller.selectedPaths ? root.controller.selectedPaths() : []
+        }
+    }
+
+    function availableCustomActions() {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            return []
+        }
+        return pluginActionController.actionsForContext(root.customActionContext())
+    }
+
+    function triggerCustomAction(actionId) {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            return
+        }
+        const result = pluginActionController.triggerAction(actionId, root.customActionContext())
+        pluginActionResultDialog.showResult(result)
     }
 
     ThemedContextMenu {
@@ -132,5 +160,26 @@ Item {
             iconColor: Theme.actionIconColor("info")
             onTriggered: if (root.propertiesController) root.propertiesController.load(root.controller.currentPath)
         }
+        ThemedMenuSeparator {
+            visible: root.customActions.length > 0
+        }
+        Instantiator {
+            model: root.customActions
+            delegate: ThemedMenuItem {
+                text: modelData.text || ""
+                icon.source: modelData.iconSource && modelData.iconSource.length > 0
+                             ? modelData.iconSource
+                             : "../assets/icons/info.svg"
+                iconColor: Theme.actionIconColor("info")
+                enabled: modelData.enabled !== false
+                onTriggered: root.triggerCustomAction(modelData.id)
+            }
+            onObjectAdded: (index, object) => emptyContextMenu.addItem(object)
+            onObjectRemoved: (index, object) => emptyContextMenu.removeItem(object)
+        }
+    }
+
+    PluginActionResultDialog {
+        id: pluginActionResultDialog
     }
 }

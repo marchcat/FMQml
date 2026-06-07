@@ -7,6 +7,7 @@ Item {
     id: root
 
     property string iconSource: "qrc:/qt/qml/FM/qml/assets/icons/archive.svg"
+    property string fallbackIconSource: ""
     property bool compact: true
 
     clip: true
@@ -25,12 +26,29 @@ Item {
             border.color: Theme.withAlpha(Theme.secondaryAccent, 0.35)
             border.width: 1
 
-            Image {
+            Item {
                 anchors.centerIn: parent
-                source: root.iconSource
-                sourceSize: Qt.size(root.compact ? 36 : 46, root.compact ? 36 : 46)
-                smooth: true
-                opacity: 0.9
+                width: root.compact ? 36 : 46
+                height: width
+
+                Image {
+                    id: primaryIcon
+                    anchors.fill: parent
+                    source: root.iconSource
+                    sourceSize: Qt.size(parent.width, parent.height)
+                    smooth: true
+                    opacity: 0.9
+                    visible: root.iconSource.length > 0 && status !== Image.Error
+                }
+
+                Image {
+                    anchors.fill: parent
+                    source: root.fallbackIconSource
+                    sourceSize: Qt.size(parent.width, parent.height)
+                    smooth: true
+                    opacity: 0.9
+                    visible: root.fallbackIconSource.length > 0 && (root.iconSource.length === 0 || primaryIcon.status === Image.Error)
+                }
             }
         }
 

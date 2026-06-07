@@ -387,7 +387,7 @@ Item {
                     path: root.path
                     isDirectory: root.isDirectory
                     suffix: root.suffix
-                    useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
+                    useNativeIcons: root.panel ? root.panel.effectiveUseNativeIcons : (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
                     iconSize: 16
                 }
 

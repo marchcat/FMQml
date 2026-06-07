@@ -28,6 +28,7 @@ Dialog {
     property bool shellFirstQmlRestoreEnabled: false
     property bool systemTrayIconEnabled: false
     signal themeEditorRequested()
+    signal pluginManagerRequested()
     readonly property string appDataLocation: typeof appSettings !== "undefined" && appSettings
                                               ? appSettings.appDataLocation
                                               : ""
@@ -221,6 +222,10 @@ Dialog {
         themeEditorRequested()
     }
 
+    function openPluginManager() {
+        pluginManagerRequested()
+    }
+
     background: DialogShell {
         accentColor: root.dialogAccent
         shellColor: Theme.panelSurface
@@ -339,6 +344,40 @@ Dialog {
                             checked: root.systemTrayIconEnabled
                             accentColor: root.dialogAccent
                             onToggled: (checked) => root.setSystemTrayIconEnabled(checked)
+                        }
+
+                        SettingsContentBlock {
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Label {
+                                        text: "Plugins"
+                                        font.pixelSize: 12
+                                        font.weight: Font.DemiBold
+                                        color: Theme.textPrimary
+                                    }
+
+                                    Label {
+                                        text: "View loaded provider/action plugins and load plugin files for this session."
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: 11
+                                        color: root.detailText
+                                    }
+                                }
+
+                                DialogActionButton {
+                                    text: "Manage"
+                                    highlighted: false
+                                    secondaryTextColor: root.dialogAccent
+                                    onClicked: root.openPluginManager()
+                                }
+                            }
                         }
                     }
 

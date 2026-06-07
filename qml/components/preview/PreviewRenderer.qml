@@ -203,11 +203,21 @@ Item {
     }
 
     function iconSource() {
-        if (!root.useNativeIcons) {
-            return fileTypeIconResolver.iconForSuffix(root.extension, root.directory)
-        }
         if (root.path === "selection://") {
             return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
+        if (root.path === "favorites://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+        }
+        const overrideIcon = nativeIconOverrideForPath(root.path, root.directory)
+        if (overrideIcon.length > 0) {
+            return overrideIcon
+        }
+        if (!root.useNativeIcons) {
+            return fallbackIconSource()
+        }
+        if (!supportsNativeIcon(root.path)) {
+            return fallbackIconSource()
         }
         if (root.path.length > 0 && root.path !== "devices://") {
             const query = root.directory
@@ -216,6 +226,35 @@ Item {
             return "image://icon/" + encodeURIComponent(root.path + query)
         }
         return "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
+    }
+
+    function fallbackIconSource() {
+        if (root.path === "selection://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
+        if (root.path === "devices://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
+        }
+        if (root.path === "favorites://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+        }
+        if (root.path.length > 0) {
+            return fileTypeIconResolver.iconForPathHint(root.path, root.directory)
+        }
+        return fileTypeIconResolver.iconForSuffix(root.extension, root.directory)
+    }
+
+    function nativeIconOverrideForPath(path, directory) {
+        const value = String(path || "")
+        if (value.length === 0 || value === "devices://" || value === "favorites://" || value === "selection://") {
+            return ""
+        }
+        return fileTypeIconResolver.nativeIconOverrideForPathHint(value, directory)
+    }
+
+    function supportsNativeIcon(path) {
+        const value = String(path || "")
+        return value.indexOf("://") < 0 || value.indexOf("archive://") === 0
     }
 
     function extraValue(label) {
@@ -474,6 +513,7 @@ Item {
             coverSource: root.bookCoverSource
             bookTitle: root.bookTitle
             bookAuthor: root.bookAuthor
+            iconSource: root.fallbackIconSource()
             pageIndex: root.bookPageIndex
             pageCount: root.bookPageCount
             compact: root.compactLayout
@@ -526,6 +566,7 @@ Item {
         ArchiveLimitedPreview {
             anchors.fill: parent
             iconSource: root.iconSource()
+            fallbackIconSource: root.fallbackIconSource()
             compact: root.compactLayout
         }
     }
@@ -536,6 +577,7 @@ Item {
         FolderPreview {
             anchors.fill: parent
             iconSource: root.iconSource()
+            fallbackIconSource: root.fallbackIconSource()
             title: root.fileName()
             sizeText: root.sizeText
             modifiedText: root.modifiedText
@@ -550,6 +592,7 @@ Item {
         UnsupportedPreview {
             anchors.fill: parent
             iconSource: root.iconSource()
+            fallbackIconSource: root.fallbackIconSource()
             title: root.fileName()
             typeText: root.typeLabel()
             sizeText: root.sizeText

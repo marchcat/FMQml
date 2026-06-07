@@ -14,7 +14,7 @@ set(CMAKE_UNITY_BUILD ON)
 
 set(CMAKE_UNITY_BUILD_BATCH_SIZE 8)
 
-find_package(Qt6 6.7 REQUIRED COMPONENTS Core Gui Widgets Qml Quick QuickControls2 Concurrent Svg QuickEffects QuickDialogs2)
+find_package(Qt6 6.7 REQUIRED COMPONENTS Core Gui Widgets Qml Quick QuickControls2 Concurrent Network Svg QuickEffects QuickDialogs2)
 
 qt_standard_project_setup(REQUIRES 6.7)
 qt_policy(SET QTP0004 NEW)
@@ -74,6 +74,8 @@ qt_add_executable(fm
     src/controllers/FilePanelController.h
     src/controllers/FileSearchController.cpp
     src/controllers/FileSearchController.h
+    src/controllers/PluginActionController.cpp
+    src/controllers/PluginActionController.h
     src/controllers/DiskUsageController.cpp
     src/controllers/DiskUsageController.h
     src/controllers/FavoritesController.cpp
@@ -119,6 +121,10 @@ qt_add_executable(fm
     src/core/IsoMountManager.h
     src/core/FileProviderFactory.cpp
     src/core/FileProviderFactory.h
+    src/core/FileActionPlugin.h
+    src/core/FileProviderPlugin.h
+    src/core/FileProviderPluginRegistry.cpp
+    src/core/FileProviderPluginRegistry.h
     src/core/IconProvider.cpp
     src/core/IconProvider.h
     src/core/SvgRecolorProvider.cpp
@@ -167,6 +173,14 @@ target_precompile_headers(fm PRIVATE
 set_source_files_properties(qml/style/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 target_include_directories(fm PRIVATE src src/core src/models src/controllers)
+
+if(WIN32)
+    # Provider plugins are loaded as DLLs and may need FileProvider symbols from the host executable.
+    set_target_properties(fm PROPERTIES
+        ENABLE_EXPORTS TRUE
+        WINDOWS_EXPORT_ALL_SYMBOLS TRUE
+    )
+endif()
 
 set(MY_QML_FILES
     qml/App.qml
@@ -287,6 +301,8 @@ set(MY_QML_FILES
     qml/components/filepanel/FilePanelSelectionBadge.qml
     qml/components/filepanel/FilePanelFilterPopover.qml
     qml/components/filepanel/FilePanelViewMenu.qml
+    qml/components/filepanel/PluginActionResultDialog.qml
+    qml/components/PluginManagerDialog.qml
     qml/components/Sidebar.qml
     qml/components/StorageView.qml
     qml/style/Theme.qml
@@ -308,6 +324,7 @@ qt_add_qml_module(fm
         src/controllers/AppSettingsController.h
         src/controllers/FilePanelController.h
         src/controllers/FileSearchController.h
+        src/controllers/PluginActionController.h
         src/controllers/DiskUsageController.h
         src/controllers/FavoritesController.h
         src/controllers/SystemTrayController.h
@@ -343,6 +360,7 @@ qt_add_qml_module(fm
         qml/assets/icons/folder-open.svg
         qml/assets/icons/folder-plus.svg
         qml/assets/icons/folder.svg
+        qml/assets/icons/ftp.svg
         qml/assets/icons/file-manager.svg
         qml/assets/icons/app_icon.ico
         qml/assets/icons/app_icon.svg
@@ -356,6 +374,7 @@ qt_add_qml_module(fm
         qml/assets/icons/list.svg
         qml/assets/icons/moon.svg
         qml/assets/icons/move.svg
+        qml/assets/icons/plugin.svg
         qml/assets/icons/music.svg
         qml/assets/icons/open.svg
         qml/assets/icons/paste.svg
@@ -402,6 +421,7 @@ qt_add_qml_module(fm
         qml/assets/filetypes/code.svg
         qml/assets/filetypes/document.svg
         qml/assets/filetypes/executable.svg
+        qml/assets/filetypes/fb2.svg
         qml/assets/filetypes/font.svg
         qml/assets/filetypes/folder.svg
         qml/assets/filetypes/image.svg
@@ -449,6 +469,7 @@ target_link_libraries(fm
         Qt6::QuickEffects
         Qt6::QuickDialogs2
         Qt6::Concurrent
+        Qt6::Network
         Qt6::Svg
 )
 
@@ -529,3 +550,50 @@ if (FM_MULTIMEDIA_PREVIEW_AVAILABLE)
 else()
     message(STATUS "Experimental audio playback controls are disabled.")
 endif()
+
+set(FM_PROVIDER_PLUGIN_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins/providers")
+set(FM_PROVIDER_PLUGIN_IMPORT_DIR "${CMAKE_CURRENT_BINARY_DIR}/plugins/provider-imports")
+
+qt_add_plugin(fm_mock_provider
+    CLASS_NAME MockFileProviderPlugin
+    src/plugins/mock/MockFileProviderPlugin.cpp
+    src/plugins/mock/MockFileProviderPlugin.h
+)
+
+target_include_directories(fm_mock_provider PRIVATE src src/core)
+target_link_libraries(fm_mock_provider PRIVATE Qt6::Core fm)
+set_target_properties(fm_mock_provider PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_IMPORT_DIR}"
+)
+
+foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(fm_mock_provider PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+        LIBRARY_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+        ARCHIVE_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_IMPORT_DIR}"
+    )
+endforeach()
+
+qt_add_plugin(fm_ftp_provider
+    CLASS_NAME FtpFileProviderPlugin
+    src/plugins/ftp/FtpFileProviderPlugin.cpp
+    src/plugins/ftp/FtpFileProviderPlugin.h
+)
+
+target_include_directories(fm_ftp_provider PRIVATE src src/core)
+target_link_libraries(fm_ftp_provider PRIVATE Qt6::Core Qt6::Concurrent Qt6::Network fm)
+set_target_properties(fm_ftp_provider PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+    ARCHIVE_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_IMPORT_DIR}"
+)
+
+foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties(fm_ftp_provider PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+        LIBRARY_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
+        ARCHIVE_OUTPUT_DIRECTORY_${config} "${FM_PROVIDER_PLUGIN_IMPORT_DIR}"
+    )
+endforeach()

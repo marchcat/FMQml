@@ -25,6 +25,8 @@ Popup {
     property int suggestionRequestId: 0
     property string pendingSuggestionText: ""
     property bool suggestionsLoading: false
+    property bool argumentTextElided: false
+    property bool pathAutocompleteUnavailable: false
 
     x: Math.round((parent.width - width) / 2)
     y: Math.round((parent.height - height) / 2)
@@ -50,6 +52,7 @@ Popup {
     onAboutToShow: {
         opacity = 0.0
         scale = 0.96
+        argumentTextElided = false
     }
 
     function normalize(value) {
@@ -400,6 +403,26 @@ Popup {
         return root.activePanelController || null
     }
 
+    function hasExplicitNonLocalScheme(path) {
+        const value = String(path || "").trim().toLowerCase()
+        const schemeIndex = value.indexOf("://")
+        return schemeIndex > 0 && value.indexOf("file://") !== 0
+    }
+
+    function localPathSuggestionsAvailable(path) {
+        const ctrl = activeSuggestionController()
+        if (!ctrl || !ctrl.pathKindFor) {
+            return true
+        }
+
+        const currentKind = ctrl.currentPath ? ctrl.pathKindFor(ctrl.currentPath) : "local"
+        if (currentKind !== "local") {
+            return false
+        }
+
+        return !root.hasExplicitNonLocalScheme(path)
+    }
+
     function resetSuggestionRequest() {
         suggestionRefreshTimer.stop()
         if (root.suggestionController && root.suggestionController.cancelDirectorySuggestions) {
@@ -409,6 +432,7 @@ Popup {
         root.pendingSuggestionText = ""
         root.suggestionController = null
         root.suggestionsLoading = false
+        root.pathAutocompleteUnavailable = false
     }
 
     function processedSuggestion(item) {
@@ -424,7 +448,8 @@ Popup {
                 subtitle: path,
                 value: path,
                 previewColor: "",
-                category: item.isDrive ? "Drive" : "Path"
+                category: item.isDrive ? "Drive" : "Path",
+                pathSuggestion: true
             }
         }
 
@@ -434,7 +459,8 @@ Popup {
             subtitle: item.subtitle || "",
             value: item.value || "",
             previewColor: item.previewColor || "",
-            category: item.category || ""
+            category: item.category || "",
+            pathSuggestion: false
         }
     }
 
@@ -462,8 +488,16 @@ Popup {
             root.suggestionsLoading = false
             return
         }
+        if (!root.localPathSuggestionsAvailable(text)) {
+            root.pathAutocompleteUnavailable = true
+            root.suggestionsLoading = false
+            root.filteredSuggestions = []
+            root.selectedIndex = -1
+            return
+        }
 
         try {
+            root.pathAutocompleteUnavailable = false
             ctrl.requestDirectorySuggestionEntries(text, requestId, 160)
         } catch (e) {
             console.log("Error requesting path suggestions: " + e)
@@ -476,6 +510,16 @@ Popup {
         root.pendingSuggestionText = text
         root.filteredSuggestions = []
         root.selectedIndex = -1
+        if (!root.localPathSuggestionsAvailable(text)) {
+            suggestionRefreshTimer.stop()
+            if (root.suggestionController && root.suggestionController.cancelDirectorySuggestions) {
+                root.suggestionController.cancelDirectorySuggestions()
+            }
+            root.pathAutocompleteUnavailable = true
+            root.suggestionsLoading = false
+            return
+        }
+        root.pathAutocompleteUnavailable = false
         root.suggestionsLoading = true
         suggestionRefreshTimer.restart()
     }
@@ -485,6 +529,7 @@ Popup {
             root.resetSuggestionRequest()
             root.filteredSuggestions = []
             root.selectedIndex = -1
+            root.pathAutocompleteUnavailable = false
             return
         }
 
@@ -520,6 +565,9 @@ Popup {
     }
 
     onArgumentTextChanged: {
+        if (argumentText.length === 0) {
+            argumentTextElided = false
+        }
         argumentError = ""
         if (root.argumentMode) {
             root.refreshSuggestions()
@@ -530,9 +578,11 @@ Popup {
         if (argumentMode) {
             refreshSuggestions()
         } else {
+            argumentTextElided = false
             resetSuggestionRequest()
             filteredSuggestions = []
             argumentError = ""
+            pathAutocompleteUnavailable = false
         }
     }
 
@@ -572,6 +622,7 @@ Popup {
             argumentMode = false
             argumentText = ""
             argumentError = ""
+            pathAutocompleteUnavailable = false
             selectedArgumentCommand = null
         }
     }
@@ -609,6 +660,7 @@ Popup {
                 return
             }
             root.suggestionsLoading = false
+            root.pathAutocompleteUnavailable = false
             root.applySuggestions(suggestions || [])
         }
     }
@@ -778,12 +830,35 @@ Popup {
                                              ? root.selectedArgumentCommand.argumentLabel
                                              : "Enter argument..."
                             text: root.argumentText
+                            color: root.argumentTextElided ? "transparent" : Theme.textPrimary
                             visible: opacity > 0.01
                             opacity: root.argumentMode ? 1.0 : 0.0
                             Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutQuad } }
 
+                            Label {
+                                anchors.fill: parent
+                                anchors.leftMargin: argumentField.leftPadding
+                                anchors.rightMargin: argumentField.rightPadding
+                                visible: root.argumentTextElided && argumentField.text.length > 0
+                                text: argumentField.text
+                                color: Theme.textPrimary
+                                font.family: argumentField.font.family
+                                font.pixelSize: argumentField.font.pixelSize
+                                font.weight: argumentField.font.weight
+                                verticalAlignment: Text.AlignVCenter
+                                elide: Text.ElideMiddle
+                                clip: true
+                            }
+
                             onTextEdited: {
+                                root.argumentTextElided = false
                                 root.argumentText = text
+                            }
+
+                            function applySuggestedPath(path) {
+                                root.argumentText = path
+                                argumentField.cursorPosition = String(path).length
+                                root.argumentTextElided = true
                             }
 
                             Keys.onPressed: (event) => {
@@ -822,9 +897,7 @@ Popup {
                                     if (root.selectedIndex >= 0 && root.selectedIndex < root.filteredSuggestions.length) {
                                         const sugg = root.filteredSuggestions[root.selectedIndex]
                                         if (sugg && sugg.value !== undefined) {
-                                            argumentField.text = sugg.value
-                                            root.argumentText = sugg.value
-                                            argumentField.cursorPosition = argumentField.text.length
+                                            argumentField.applySuggestedPath(sugg.value)
                                         }
                                     }
                                     event.accepted = true
@@ -882,13 +955,17 @@ Popup {
                         }
 
                         Label {
-                            text: root.suggestionsLoading ? "Loading folders..."
+                            text: root.pathAutocompleteUnavailable
+                                  ? "autocomplete unavailable for remote providers"
+                                  : root.suggestionsLoading ? "Loading folders..."
                                   : root.filteredSuggestions.length > 0
                                   ? (root.filteredSuggestions.length === 1 ? "1 suggestion" : root.filteredSuggestions.length + " suggestions")
                                   : "Type custom and Enter"
                             color: Theme.textSecondary
                             font.pixelSize: Theme.fontSizeCaption
                             horizontalAlignment: Text.AlignRight
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: Math.max(230, root.width * 0.48)
                         }
                     }
 
@@ -966,6 +1043,7 @@ Popup {
                     readonly property string subtitleText: isSuggestion ? (modelData.subtitle || "") : (command && command.subtitle || "")
                     readonly property string categoryText: isSuggestion ? (modelData.category || "") : (command && command.category || "")
                     readonly property string shortcutText: isSuggestion ? "" : (command && command.shortcut || "")
+                    readonly property bool pathSuggestion: isSuggestion && modelData.pathSuggestion === true
 
                     onHoveredChanged: {
                         if (hovered && ListView.view) {
@@ -1014,7 +1092,7 @@ Popup {
                                 color: isEnabled ? Theme.textPrimary : Theme.textSecondary
                                 font.pixelSize: 13
                                 font.weight: isCurrent ? Font.DemiBold : Font.Medium
-                                elide: Text.ElideRight
+                                elide: pathSuggestion ? Text.ElideMiddle : Text.ElideRight
                                 Layout.fillWidth: true
                             }
 
@@ -1030,7 +1108,7 @@ Popup {
                                 }
                                 color: !isEnabled ? Theme.warning : Theme.textSecondary
                                 font.pixelSize: 10
-                                elide: Text.ElideRight
+                                elide: pathSuggestion ? Text.ElideMiddle : Text.ElideRight
                                 Layout.fillWidth: true
                             }
                         }
@@ -1098,7 +1176,9 @@ Popup {
                 Label {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: root.argumentMode
-                          ? (root.suggestionsLoading ? "Loading folders..." : "No suggestions available")
+                          ? (root.pathAutocompleteUnavailable
+                             ? "autocomplete unavailable for remote providers"
+                             : (root.suggestionsLoading ? "Loading folders..." : "No suggestions available"))
                           : "No commands match the current query"
                     color: Theme.textPrimary
                     font.pixelSize: 13

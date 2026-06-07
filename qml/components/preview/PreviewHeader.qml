@@ -8,6 +8,7 @@ Rectangle {
     id: root
 
     property string iconSource: ""
+    property string fallbackIconSource: ""
     property string title: ""
     property string subtitle: ""
     property string closeIconSource: ""
@@ -30,11 +31,24 @@ Rectangle {
         anchors.rightMargin: 12
         spacing: 12
 
-        Image {
-            source: root.iconSource
-            sourceSize: Qt.size(24, 24)
+        Item {
             Layout.preferredWidth: 24
             Layout.preferredHeight: 24
+
+            Image {
+                id: primaryIcon
+                anchors.fill: parent
+                source: root.iconSource
+                sourceSize: Qt.size(24, 24)
+                visible: root.iconSource.length > 0 && status !== Image.Error
+            }
+
+            Image {
+                anchors.fill: parent
+                source: root.fallbackIconSource
+                sourceSize: Qt.size(24, 24)
+                visible: root.fallbackIconSource.length > 0 && (root.iconSource.length === 0 || primaryIcon.status === Image.Error)
+            }
         }
 
         ColumnLayout {

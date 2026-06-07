@@ -17,6 +17,8 @@ Control {
     property var menuVisualTarget: null
     property var openPathHandler: null
     property var prepareNavigationHandler: null
+    readonly property real maxCrumbWidth: Math.max(110, Math.min(220, width * 0.42))
+    readonly property real maxLastCrumbWidth: Math.max(130, Math.min(300, width * 0.55))
 
     signal editRequested()
 
@@ -39,10 +41,12 @@ Control {
         }
     }
 
-    function getFolderIcon(name, isDrive, isThisPc, isArchive) {
+    function getFolderIcon(name, isDrive, isThisPc, isArchive, pathKind) {
         if (isThisPc) return "../assets/icons/computer.svg";
         if (isDrive) return "../assets/icons/hard-drive.svg";
         if (isArchive) return "../assets/icons/archive.svg";
+        if (pathKind === "ftp") return "../assets/icons/ftp.svg";
+        if (pathKind === "remote") return "../assets/icons/computer.svg";
         return "../assets/icons/folder.svg";
     }
 
@@ -290,6 +294,7 @@ Control {
 
                         readonly property string name: modelData && modelData.name !== undefined ? String(modelData.name) : ""
                         readonly property string path: modelData && modelData.path !== undefined ? String(modelData.path) : ""
+                        readonly property string pathKind: modelData && modelData.pathKind !== undefined ? String(modelData.pathKind) : ""
                         readonly property bool isDrive: modelData && modelData.isDrive !== undefined ? Boolean(modelData.isDrive) : false
                         readonly property bool isArchive: modelData && modelData.isArchive !== undefined ? Boolean(modelData.isArchive) : root.isArchiveCrumbPath(path)
                         
@@ -298,28 +303,42 @@ Control {
                         ToolButton {
                             id: crumbBtn
                             anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, isLast ? root.maxLastCrumbWidth : root.maxCrumbWidth)
+                            implicitHeight: 28
                             padding: 6
                             leftPadding: 8
                             rightPadding: 8
                             
-                            contentItem: Row {
+                            contentItem: RowLayout {
                                 spacing: 4
+                                clip: true
+
                                 RecolorSvgIcon {
-                                    sourcePath: root.getFolderIcon(name, isDrive, false, isArchive)
-                                    recolorColor: root.getIconColor(isArchive ? "archive" : (isDrive ? "hard-drive" : "folder"), isLast, crumbBtn.hovered)
-                                    width: 14
-                                    height: 14
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    sourcePath: root.getFolderIcon(name, isDrive, false, isArchive, pathKind)
+                                    recolorColor: root.getIconColor(pathKind === "ftp" ? "ftp" : (pathKind === "remote" ? "remote" : (isArchive ? "archive" : (isDrive ? "hard-drive" : "folder"))), isLast, crumbBtn.hovered)
+                                    Layout.preferredWidth: 14
+                                    Layout.preferredHeight: 14
+                                    Layout.alignment: Qt.AlignVCenter
                                     sourceSize: Qt.size(28, 28)
                                 }
+
                                 Text {
+                                    id: crumbText
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
                                     text: name
                                     font.pixelSize: 12
                                     font.bold: isLast
                                     color: isLast ? Theme.accent : Theme.textPrimary
-                                    anchors.verticalCenter: parent.verticalCenter
+                                    elide: Text.ElideMiddle
+                                    horizontalAlignment: Text.AlignLeft
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                             }
+
+                            ToolTip.visible: hovered
+                            ToolTip.delay: 450
+                            ToolTip.text: name
                             
                             background: Rectangle {
                                 color: crumbBtn.down 
@@ -416,6 +435,8 @@ Control {
             base = Theme.actionIconColor("favorite")
         } else if (lower === "archive") {
             base = Theme.actionIconColor("archive")
+        } else if (lower === "ftp" || lower === "remote") {
+            base = Theme.categoryNavigation
         } else if (lower.includes(":") || lower === "hard-drive") {
             base = Theme.actionIconColor("drive")
         } else {

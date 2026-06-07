@@ -123,14 +123,56 @@ Pane {
         if (path === "favorites://") {
             return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
         }
-        if (!root.useNativeIcons) {
-            return fileTypeIconResolver.iconForSuffix(root.previewPending ? root.extensionForPath(path) : quickLookController.extension,
-                                                      root.previewPending ? false : quickLookController.directory)
+        const overrideIcon = nativeIconOverrideForPath(path, root.effectiveDirectory())
+        if (overrideIcon.length > 0) {
+            return overrideIcon
         }
-        const query = (!root.previewPending && quickLookController.directory)
+        if (!root.useNativeIcons) {
+            return displayFallbackIconSource()
+        }
+        if (!supportsNativeIcon(path)) {
+            return displayFallbackIconSource()
+        }
+        const query = root.effectiveDirectory()
             ? ("?directory=true&hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
             : ("?hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
         return "image://icon/" + encodeURIComponent(path + query)
+    }
+
+    function displayFallbackIconSource() {
+        const path = root.effectivePreviewPath
+        if (path === "selection://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
+        if (path.length === 0) {
+            return quickLookController.type === "info"
+                   ? "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
+                   : "qrc:/qt/qml/FM/qml/assets/lucide-toolbar/panel-right.svg"
+        }
+        if (path === "devices://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
+        }
+        if (path === "favorites://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+        }
+        return fileTypeIconResolver.iconForPathHint(path, root.effectiveDirectory())
+    }
+
+    function effectiveDirectory() {
+        return root.previewPending ? false : quickLookController.directory
+    }
+
+    function nativeIconOverrideForPath(path, directory) {
+        const value = String(path || "")
+        if (value.length === 0 || value === "devices://" || value === "favorites://" || value === "selection://") {
+            return ""
+        }
+        return fileTypeIconResolver.nativeIconOverrideForPathHint(value, directory)
+    }
+
+    function supportsNativeIcon(path) {
+        const value = String(path || "")
+        return value.indexOf("://") < 0 || value.indexOf("archive://") === 0
     }
 
     function displaySubtitle() {
@@ -214,6 +256,7 @@ Pane {
             Layout.fillWidth: true
             liveResizeActive: root.lightweightPreviewActive
             iconSource: root.displayIconSource()
+            fallbackIconSource: root.displayFallbackIconSource()
             title: root.displayTitle()
             subtitle: root.displaySubtitle()
             closeIconSource: "qrc:/qt/qml/FM/qml/assets/lucide-toolbar/eye-off.svg"
@@ -302,14 +345,34 @@ Pane {
                                 border.color: Theme.panelStroke
                                 border.width: 1
 
-                                Image {
+                                Item {
                                     anchors.centerIn: parent
-                                    source: root.displayIconSource()
-                                    sourceSize: Qt.size(42, 42)
-                                    smooth: true
-                                    mipmap: false
-                                    asynchronous: true
-                                    opacity: 0.9
+                                    width: 42
+                                    height: 42
+
+                                    Image {
+                                        id: lightweightPrimaryIcon
+                                        anchors.fill: parent
+                                        source: root.displayIconSource()
+                                        sourceSize: Qt.size(42, 42)
+                                        smooth: true
+                                        mipmap: false
+                                        asynchronous: true
+                                        opacity: 0.9
+                                        visible: root.displayIconSource().length > 0 && status !== Image.Error
+                                    }
+
+                                    Image {
+                                        anchors.fill: parent
+                                        source: root.displayFallbackIconSource()
+                                        sourceSize: Qt.size(42, 42)
+                                        smooth: true
+                                        mipmap: false
+                                        asynchronous: false
+                                        opacity: 0.9
+                                        visible: root.displayFallbackIconSource().length > 0
+                                                 && (root.displayIconSource().length === 0 || lightweightPrimaryIcon.status === Image.Error)
+                                    }
                                 }
                             }
 

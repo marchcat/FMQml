@@ -37,6 +37,7 @@ QtObject {
     property var quickLookActiveTarget
     property var openHelpDialog
     property var openSettingsDialog
+    property var openPluginManagerDialog
     property var openThemeEditorDialog
     property var openSettingsImportDialog
     property var openSettingsExportDialog
@@ -1001,6 +1002,17 @@ QtObject {
             keywords: ["settings", "preferences", "workspace", "persistence"],
             enabled: function() { return root.workspaceCommandsEnabled },
             run: function() { if (root.openSettingsDialog) root.openSettingsDialog() }
+        },
+        {
+            id: "settings.plugins",
+            title: "Open Plugin Manager",
+            subtitle: "View, load, and disable loaded plugins",
+            category: "Settings",
+            shortcut: "",
+            keywords: ["settings", "plugins", "extensions", "providers", "ftp", "mock", "load"],
+            aliases: ["plugins", "extensions", "plugin manager", "manage plugins"],
+            enabled: function() { return root.workspaceCommandsEnabled },
+            run: function() { if (root.openPluginManagerDialog) root.openPluginManagerDialog() }
         },
         {
             id: "theme.editor",

@@ -1,5 +1,6 @@
 #include "IconProvider.h"
 #include "ArchiveSupport.h"
+#include "FileTypeIconResolver.h"
 #include <QFileInfo>
 #include <QIcon>
 #include <QPainter>
@@ -9,6 +10,7 @@
 #include <QSet>
 #include <QDebug>
 #include <QSettings>
+#include <QSvgRenderer>
 #include <QUrl>
 #include <QStringList>
 #include <QRect>
@@ -133,6 +135,97 @@ bool imageLooksTinyInCanvas(const QImage &image)
         || bounds.height() < image.height() / 2;
 }
 
+bool imageLooksLikeOpaquePlaceholder(const QImage &image)
+{
+    if (image.isNull() || image.width() < 8 || image.height() < 8 || !image.hasAlphaChannel()) {
+        return false;
+    }
+
+    const QImage argb = image.format() == QImage::Format_ARGB32
+        ? image
+        : image.convertToFormat(QImage::Format_ARGB32);
+    const int width = argb.width();
+    const int height = argb.height();
+    const int total = width * height;
+    int visible = 0;
+    int opaque = 0;
+    int minX = width;
+    int minY = height;
+    int maxX = -1;
+    int maxY = -1;
+    bool colorBuckets[4096] = {};
+    int uniqueBuckets = 0;
+
+    for (int y = 0; y < height; ++y) {
+        const QRgb *line = reinterpret_cast<const QRgb *>(argb.constScanLine(y));
+        for (int x = 0; x < width; ++x) {
+            const int alpha = qAlpha(line[x]);
+            if (alpha <= 8) {
+                continue;
+            }
+
+            ++visible;
+            if (alpha >= 240) {
+                ++opaque;
+            }
+            minX = qMin(minX, x);
+            minY = qMin(minY, y);
+            maxX = qMax(maxX, x);
+            maxY = qMax(maxY, y);
+
+            const int bucket = ((qRed(line[x]) >> 4) << 8)
+                | ((qGreen(line[x]) >> 4) << 4)
+                | (qBlue(line[x]) >> 4);
+            if (!colorBuckets[bucket]) {
+                colorBuckets[bucket] = true;
+                ++uniqueBuckets;
+            }
+        }
+    }
+
+    if (visible == 0 || maxX < minX || maxY < minY) {
+        return false;
+    }
+
+    const QRect bounds(QPoint(minX, minY), QPoint(maxX, maxY));
+    const bool cornersOpaque = qAlpha(argb.pixel(0, 0)) >= 240
+        && qAlpha(argb.pixel(width - 1, 0)) >= 240
+        && qAlpha(argb.pixel(0, height - 1)) >= 240
+        && qAlpha(argb.pixel(width - 1, height - 1)) >= 240;
+    const bool fillsCanvas = visible >= total * 92 / 100
+        && opaque >= visible * 95 / 100
+        && bounds.width() >= width * 90 / 100
+        && bounds.height() >= height * 90 / 100;
+
+    return cornersOpaque && fillsCanvas && uniqueBuckets <= 8;
+}
+
+QString qrcPathFromUrl(QString source)
+{
+    if (source.startsWith(QStringLiteral("qrc:/"))) {
+        source = source.mid(3);
+    }
+    return source;
+}
+
+QImage renderFallbackIcon(const QString &path, const QSize &requestedSize, bool forceDirectory)
+{
+    static const FileTypeIconResolver resolver;
+    const QString iconSource = resolver.iconForPathHint(path, forceDirectory);
+    QSvgRenderer renderer(qrcPathFromUrl(iconSource));
+    if (!renderer.isValid()) {
+        return {};
+    }
+
+    QImage image(requestedSize, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::transparent);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing);
+    renderer.render(&painter, QRectF(QPointF(0, 0), QSizeF(requestedSize)));
+    return image;
+}
+
 #ifdef Q_OS_WIN
 QImage imageFromHBitmap(HBITMAP hBmp)
 {
@@ -243,6 +336,9 @@ QImage IconProvider::requestImage(const QString &id, QSize *size, const QSize &r
         loadTimer.start();
     }
     QImage icon = getIcon(path, targetSize, forceDirectory, genericOnly, highQualitySystemIcons);
+    if (icon.isNull()) {
+        icon = renderFallbackIcon(path, targetSize, forceDirectory);
+    }
     const qint64 loadMs = iconTimingEnabled() ? loadTimer.elapsed() : 0;
     
     {
@@ -447,6 +543,59 @@ QImage getWindowsImageListIcon(const QString &path,
     return {};
 }
 
+int windowsSystemIconIndexForPath(const QString &path, bool forceDirectory, bool useFileAttributes)
+{
+    if (path.isEmpty()) {
+        return -1;
+    }
+
+    SHFILEINFO sfi;
+    ZeroMemory(&sfi, sizeof(sfi));
+
+    UINT flags = SHGFI_SYSICONINDEX;
+    if (useFileAttributes) {
+        flags |= SHGFI_USEFILEATTRIBUTES;
+    }
+
+    const DWORD attr = forceDirectory ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
+    const std::wstring wpath = QDir::toNativeSeparators(path).toStdWString();
+    if (!SHGetFileInfoW(wpath.c_str(), attr, &sfi, sizeof(sfi), flags)) {
+        return -1;
+    }
+
+    return sfi.iIcon;
+}
+
+int windowsUnknownFileIconIndex()
+{
+    static const int index = windowsSystemIconIndexForPath(
+        QDir::temp().filePath(QStringLiteral("fm_unknown_file_type.__fm_unknown_assoc__")),
+        false,
+        true);
+    return index;
+}
+
+bool shellUsesUnknownFileIcon(const QFileInfo &fileInfo)
+{
+    if (fileInfo.isDir()) {
+        return false;
+    }
+
+    const QString suffix = fileInfo.suffix().toLower();
+    if (suffix.isEmpty()) {
+        return true;
+    }
+
+    const int unknownIndex = windowsUnknownFileIconIndex();
+    if (unknownIndex < 0) {
+        return false;
+    }
+
+    const QString fakePath = QDir::temp().filePath(QStringLiteral("fm_file_type.") + suffix);
+    const int suffixIndex = windowsSystemIconIndexForPath(fakePath, false, true);
+    return suffixIndex >= 0 && suffixIndex == unknownIndex;
+}
+
 QImage getWindowsEmbeddedIcon(const QString &path, const QSize &requestedSize)
 {
     if (path.isEmpty() || !requestedSize.isValid()) {
@@ -506,6 +655,19 @@ QImage IconProvider::getWindowsIcon(const QString &path,
     const bool pathSpecificIcon = !forceDirectory && !genericOnly && isPathSpecificIcon(fileInfo);
     const bool embeddedIconCandidate = !forceDirectory && !genericOnly && canExtractEmbeddedIcon(fileInfo);
     const bool imageListIconCandidate = pathSpecificIcon && highQualitySystemIconsEnabled();
+    const bool unknownShellFileIcon = !forceDirectory && !pathSpecificIcon && shellUsesUnknownFileIcon(fileInfo);
+
+    if (unknownShellFileIcon) {
+        if (iconTimingEnabled()) {
+            qInfo().noquote()
+                << "[IconProvider] shell-file-no-association-fallback"
+                << "ms=" << timer.elapsed()
+                << "suffix=" << fileInfo.suffix().toLower()
+                << "generic=" << genericOnly
+                << "path=" << path;
+        }
+        return {};
+    }
 
     if (imageListIconCandidate) {
         const QImage imageListImage = getWindowsImageListIcon(path, requestedSize, false, false);
@@ -525,7 +687,17 @@ QImage IconProvider::getWindowsIcon(const QString &path,
         const QString effectivePath = forceDirectory ? QDir::toNativeSeparators(QDir::tempPath()) : path;
         const QImage highQualityImage = getWindowsHighQualityIcon(effectivePath, requestedSize);
         if (!highQualityImage.isNull()) {
-            if (!forceDirectory && imageHasVisibleCorners(highQualityImage)) {
+            if (!forceDirectory && !pathSpecificIcon && imageLooksLikeOpaquePlaceholder(highQualityImage)) {
+                if (iconTimingEnabled()) {
+                    qInfo().noquote()
+                        << "[IconProvider] shell-file-hq-placeholder-fallback"
+                        << "ms=" << timer.elapsed()
+                        << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
+                        << "generic=" << genericOnly
+                        << "dir=" << forceDirectory
+                        << "path=" << effectivePath;
+                }
+            } else if (!forceDirectory && imageHasVisibleCorners(highQualityImage)) {
                 if (iconTimingEnabled()) {
                     qInfo().noquote()
                         << "[IconProvider] shell-file-hq-corner-fallback"
@@ -584,16 +756,28 @@ QImage IconProvider::getWindowsIcon(const QString &path,
         QImage image = QImage::fromHICON(sfi.hIcon);
         DestroyIcon(sfi.hIcon);
         if (!image.isNull()) {
-            if (iconTimingEnabled()) {
-                qInfo().noquote()
-                    << "[IconProvider] shell-file"
-                    << "ms=" << timer.elapsed()
-                    << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
-                    << "generic=" << genericOnly
-                    << "dir=" << forceDirectory
-                    << "path=" << path;
+            if (!forceDirectory && !pathSpecificIcon && imageLooksLikeOpaquePlaceholder(image)) {
+                if (iconTimingEnabled()) {
+                    qInfo().noquote()
+                        << "[IconProvider] shell-file-placeholder-fallback"
+                        << "ms=" << timer.elapsed()
+                        << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
+                        << "generic=" << genericOnly
+                        << "dir=" << forceDirectory
+                        << "path=" << path;
+                }
+            } else {
+                if (iconTimingEnabled()) {
+                    qInfo().noquote()
+                        << "[IconProvider] shell-file"
+                        << "ms=" << timer.elapsed()
+                        << "size=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height())
+                        << "generic=" << genericOnly
+                        << "dir=" << forceDirectory
+                        << "path=" << path;
+                }
+                return image.scaled(requestedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             }
-            return image.scaled(requestedSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
     }
 
@@ -607,7 +791,10 @@ QImage IconProvider::getWindowsIcon(const QString &path,
             << "path=" << path;
     }
 
-    return getGenericIcon(path, requestedSize, forceDirectory);
+    if (forceDirectory) {
+        return getGenericIcon(path, requestedSize, true);
+    }
+    return {};
 }
 #endif
 

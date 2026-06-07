@@ -21,6 +21,12 @@ Item {
     property bool pendingSuggestionAllowTrailingSeparator: false
     property var openPathHandler: null
     property var prepareNavigationHandler: null
+    readonly property bool autocompleteUnavailable: (root.pathEditing || root.pathEditProgress > 0.0)
+                                                   && root.pathEditError.length === 0
+                                                   && !root.localAutocompleteAvailable(pathEditor.text)
+    readonly property bool autocompleteHintVisible: (root.pathEditing || root.pathEditProgress > 0.0)
+                                                   && root.pathEditError.length === 0
+                                                   && (root.autocompleteUnavailable || suggestionsPopup.visible || root.suggestionsLoading)
 
     signal pathAccepted()
     signal pathCancelled()
@@ -38,6 +44,7 @@ Item {
     function focusPath() {
         root.pathEditError = ""
         const displayValue = root.displayPath(root.activePath)
+        pathEditor.compactSuggestionTextActive = false
         pathEditor.text = displayValue
         pathEditor.originalText = displayValue
         root.pathEditing = true
@@ -54,9 +61,7 @@ Item {
             return root.workspaceController.displayPath(String(path))
         }
         const value = String(path)
-        if (value.indexOf("archive://") === 0
-                || value.indexOf("devices://") === 0
-                || value.indexOf("favorites://") === 0) {
+        if (value.indexOf("://") > 0) {
             return value
         }
         return Qt.platform.os === "windows" ? value.replace(/\//g, "\\") : value
@@ -75,7 +80,27 @@ Item {
         }
     }
 
+    function hasExplicitNonLocalScheme(path) {
+        const value = String(path || "").trim().toLowerCase()
+        const schemeIndex = value.indexOf("://")
+        return schemeIndex > 0 && value.indexOf("file://") !== 0
+    }
+
+    function localAutocompleteAvailable(path) {
+        if (!root.controller || !root.controller.pathKindFor) {
+            return true
+        }
+        const currentKind = root.controller.currentPath
+                            ? root.controller.pathKindFor(root.controller.currentPath)
+                            : "local"
+        if (currentKind !== "local") {
+            return false
+        }
+        return !root.hasExplicitNonLocalScheme(path)
+    }
+
     function acceptPathEdit() {
+        pathEditor.compactSuggestionTextActive = false
         pathEditor.cancelPendingSuggestions()
         root.suggestionRequestId += 1
         root.suggestionsLoading = false
@@ -102,6 +127,7 @@ Item {
 
     function cancelPathEdit() {
         root.pathEditError = ""
+        pathEditor.compactSuggestionTextActive = false
         suggestionsPopup.close()
         if (root.pathEditing || root.pathEditProgress > 0.0) {
             root.pathEditing = false
@@ -128,6 +154,7 @@ Item {
         width: Math.min(parent.width - 20, 800)
         height: 40
         radius: Theme.controlRadius
+        readonly property real autocompleteHintWidth: root.autocompleteUnavailable ? Math.min(292, Math.max(210, width - 110)) : 128
 
         color: root.pathEditing
                ? Theme.panelSurfaceStrong
@@ -184,17 +211,24 @@ Item {
             }
         }
 
-        Label {
-            id: inlinePathKind
+        Rectangle {
+            id: inlineProviderKind
             anchors.left: parent.left
-            anchors.leftMargin: 18 + (10 * root.pathEditProgress)
+            anchors.leftMargin: 16 + (10 * root.pathEditProgress)
             anchors.verticalCenter: parent.verticalCenter
+            width: 24
+            height: 24
+            radius: Theme.radiusForSide(height)
             visible: root.pathEditing || root.pathEditProgress > 0.0
+            color: Theme.withAlpha(kindColor, themeController.isDark ? 0.16 : 0.11)
+            border.color: Theme.withAlpha(kindColor, themeController.isDark ? 0.40 : 0.30)
+            border.width: 1
+
             readonly property string kindValue: {
                 if (root.controller && root.controller.pathKindFor) {
                     return root.controller.pathKindFor(root.controller.currentPath)
                 }
-                return "path"
+                return "local"
             }
             readonly property color kindColor: {
                 if (kindValue === "archive") {
@@ -203,14 +237,65 @@ Item {
                 if (kindValue === "devices") {
                     return Theme.categorySystem
                 }
+                if (kindValue === "favorites") {
+                    return Theme.actionIconColor("favorite")
+                }
+                if (kindValue === "ftp") {
+                    return Theme.categoryNavigation
+                }
+                if (kindValue === "remote") {
+                    return Theme.categoryNavigation
+                }
                 return Theme.categoryInfo
             }
-            text: kindValue
-            color: kindColor
-            font.pixelSize: 10
-            font.weight: Font.DemiBold
-            opacity: 0.78
-            padding: 0
+            readonly property string iconSource: {
+                if (kindValue === "archive") {
+                    return "../../assets/icons/archive.svg"
+                }
+                if (kindValue === "devices") {
+                    return "../../assets/icons/hard-drive.svg"
+                }
+                if (kindValue === "favorites") {
+                    return "../../assets/icons/star.svg"
+                }
+                if (kindValue === "ftp") {
+                    return "../../assets/icons/ftp.svg"
+                }
+                if (kindValue === "remote") {
+                    return "../../assets/icons/computer.svg"
+                }
+                return "../../assets/icons/folder.svg"
+            }
+            readonly property string tooltipText: {
+                if (kindValue === "archive") return "Archive"
+                if (kindValue === "devices") return "This PC"
+                if (kindValue === "favorites") return "Favorites"
+                if (kindValue === "ftp") return "FTP"
+                if (kindValue === "remote") return "Remote provider"
+                return "Local folder"
+            }
+            opacity: 0.92
+
+            HoverHandler {
+                id: providerKindHover
+            }
+
+            ToolTip.visible: providerKindHover.hovered
+            ToolTip.delay: 450
+            ToolTip.text: inlineProviderKind.tooltipText
+
+            Image {
+                anchors.centerIn: parent
+                width: 14
+                height: 14
+                source: inlineProviderKind.iconSource
+                sourceSize: Qt.size(28, 28)
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    colorization: 1.0
+                    colorizationColor: inlineProviderKind.kindColor
+                }
+            }
         }
 
         PathBar {
@@ -234,9 +319,10 @@ Item {
         PremiumTextField {
             id: pathEditor
             property string originalText: ""
+            property bool compactSuggestionTextActive: false
             anchors.fill: parent
             anchors.leftMargin: 58 + (18 * root.pathEditProgress)
-            anchors.rightMargin: 42
+            anchors.rightMargin: root.autocompleteHintVisible ? pathIsland.autocompleteHintWidth + 20 : 42
             opacity: root.pathEditProgress
             visible: root.pathEditing || root.pathEditProgress > 0.01
             text: root.displayPath(root.activePath)
@@ -251,7 +337,7 @@ Item {
             selectByMouse: true
 
             placeholderTextColor: Theme.withAlpha(Theme.textSecondary, 0.72)
-            color: Theme.textPrimary
+            color: compactSuggestionTextActive ? "transparent" : Theme.textPrimary
             selectionColor: Theme.withAlpha(Theme.categoryInfo, 0.30)
             selectedTextColor: Theme.textPrimary
             cursorDelegate: Rectangle {
@@ -272,9 +358,24 @@ Item {
 
             Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.InOutQuad } }
             Behavior on anchors.leftMargin { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            Behavior on anchors.rightMargin { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
+            Label {
+                anchors.fill: parent
+                visible: pathEditor.compactSuggestionTextActive && pathEditor.text.length > 0
+                text: pathEditor.text
+                color: Theme.textPrimary
+                font.family: pathEditor.font.family
+                font.pixelSize: pathEditor.font.pixelSize
+                font.weight: pathEditor.font.weight
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideMiddle
+                clip: true
+            }
 
             onTextChanged: {
                 if (root.pathEditing && activeFocus && !root.ignoreTextChange) {
+                    compactSuggestionTextActive = false
                     originalText = text
                     updateSuggestions(false)
                 }
@@ -299,6 +400,11 @@ Item {
                 if (requestId !== root.suggestionRequestId || !root.pathEditing || !root.controller) {
                     return
                 }
+                if (!root.localAutocompleteAvailable(text)) {
+                    root.suggestionsLoading = false
+                    suggestionsPopup.close()
+                    return
+                }
                 if ((text.endsWith("/") || text.endsWith("\\")) && allowTrailingSeparator !== true) {
                     root.suggestionsLoading = false
                     suggestionsPopup.close()
@@ -312,6 +418,15 @@ Item {
                 root.controller.requestDirectorySuggestions(text, requestId, 160)
             }
 
+            function applySuggestedPath(path) {
+                root.ignoreTextChange = true
+                pathEditor.text = path
+                pathEditor.cursorPosition = path.length
+                pathEditor.originalText = path
+                pathEditor.compactSuggestionTextActive = true
+                root.ignoreTextChange = false
+            }
+
             function updateSuggestions(allowTrailingSeparator, immediate) {
                 suggestionsModel.clear()
                 const text = pathEditor.text.trim()
@@ -320,6 +435,11 @@ Item {
                 suggestionRequestTimer.stop()
                 if (root.controller && root.controller.cancelDirectorySuggestions) {
                     root.controller.cancelDirectorySuggestions()
+                }
+                if (!root.localAutocompleteAvailable(text)) {
+                    root.suggestionsLoading = false
+                    suggestionsPopup.close()
+                    return
                 }
                 if ((text.endsWith("/") || text.endsWith("\\")) && allowTrailingSeparator !== true) {
                     root.suggestionsLoading = false
@@ -364,14 +484,15 @@ Item {
                     if (nextIndex >= suggestionsModel.count) nextIndex = -1
                     suggestionsList.currentIndex = nextIndex
 
-                    root.ignoreTextChange = true
                     if (nextIndex === -1) {
+                        root.ignoreTextChange = true
                         pathEditor.text = pathEditor.originalText
+                        pathEditor.compactSuggestionTextActive = false
+                        pathEditor.cursorPosition = pathEditor.text.length
+                        root.ignoreTextChange = false
                     } else {
-                        pathEditor.text = suggestionsModel.get(nextIndex).path
+                        pathEditor.applySuggestedPath(suggestionsModel.get(nextIndex).path)
                     }
-                    pathEditor.cursorPosition = pathEditor.text.length
-                    root.ignoreTextChange = false
 
                     event.accepted = true
                 } else if (event.key === Qt.Key_Up && suggestionsPopup.visible) {
@@ -379,26 +500,25 @@ Item {
                     if (nextIndex < -1) nextIndex = suggestionsModel.count - 1
                     suggestionsList.currentIndex = nextIndex
 
-                    root.ignoreTextChange = true
                     if (nextIndex === -1) {
+                        root.ignoreTextChange = true
                         pathEditor.text = pathEditor.originalText
+                        pathEditor.compactSuggestionTextActive = false
+                        pathEditor.cursorPosition = pathEditor.text.length
+                        root.ignoreTextChange = false
                     } else {
-                        pathEditor.text = suggestionsModel.get(nextIndex).path
+                        pathEditor.applySuggestedPath(suggestionsModel.get(nextIndex).path)
                     }
-                    pathEditor.cursorPosition = pathEditor.text.length
-                    root.ignoreTextChange = false
 
                     event.accepted = true
                 } else if (event.key === Qt.Key_Tab) {
-                    if (suggestionsPopup.visible && suggestionsModel.count > 0) {
+                    if (root.autocompleteUnavailable) {
+                        event.accepted = true
+                    } else if (suggestionsPopup.visible && suggestionsModel.count > 0) {
                         let index = suggestionsList.currentIndex >= 0 ? suggestionsList.currentIndex : 0
                         let selectedPath = suggestionsModel.get(index).path
 
-                        root.ignoreTextChange = true
-                        pathEditor.text = selectedPath
-                        pathEditor.cursorPosition = selectedPath.length
-                        pathEditor.originalText = selectedPath
-                        root.ignoreTextChange = false
+                        pathEditor.applySuggestedPath(selectedPath)
 
                         suggestionsPopup.close()
                         event.accepted = true
@@ -414,8 +534,8 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
-            visible: (root.pathEditing || root.pathEditProgress > 0.0) && root.pathEditError.length === 0 && (suggestionsPopup.visible || root.suggestionsLoading)
-            width: 128
+            visible: root.autocompleteHintVisible
+            width: pathIsland.autocompleteHintWidth
             height: 22
             radius: Theme.radiusForSide(height)
             color: Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.14 : 0.10)
@@ -432,7 +552,7 @@ Item {
                     Layout.preferredWidth: 16
                     Layout.preferredHeight: 16
                     running: root.suggestionsLoading
-                    visible: root.suggestionsLoading
+                    visible: root.suggestionsLoading && !root.autocompleteUnavailable
                 }
 
                 Rectangle {
@@ -440,7 +560,7 @@ Item {
                     Layout.preferredHeight: 16
                     radius: Theme.radiusForSide(Math.min(width, height))
                     color: Theme.categoryInfo
-                    visible: !root.suggestionsLoading
+                    visible: !root.suggestionsLoading && !root.autocompleteUnavailable
 
                     Label {
                         anchors.centerIn: parent
@@ -452,10 +572,14 @@ Item {
                 }
 
                 Label {
-                    text: root.suggestionsLoading ? "loading" : "autocomplete"
+                    text: root.autocompleteUnavailable
+                          ? "autocomplete unavailable for remote providers"
+                          : (root.suggestionsLoading ? "loading" : "autocomplete")
                     color: Theme.textPrimary
                     font.pixelSize: Theme.fontSizeCaption
                     font.weight: Font.Medium
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
                 }
             }
         }
@@ -583,11 +707,8 @@ Item {
                         if (view) {
                             let ed = view.editor
                             if (ed) {
-                                if (ed.toolbarRoot) ed.toolbarRoot.ignoreTextChange = true
                                 let selectedPath = view.model.get(index).path
-                                ed.text = selectedPath
-                                ed.cursorPosition = selectedPath.length
-                                if (ed.toolbarRoot) ed.toolbarRoot.ignoreTextChange = false
+                                ed.applySuggestedPath(selectedPath)
                             }
                             if (view.popup && view.popup.toolbarRoot) {
                                 view.popup.toolbarRoot.acceptPathEdit()

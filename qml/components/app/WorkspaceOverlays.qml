@@ -11,6 +11,7 @@ Item {
     property var conflictDialog: null
     property var helpDialog: null
     property var settingsDialog: null
+    property var pluginManagerDialog: null
     property var themeEditorDialog: null
     property var propertiesDialog: null
     property var deleteConfirmDialog: null
@@ -41,6 +42,11 @@ Item {
     function ensureSettingsDialog() {
         if (!root.settingsDialog) root.settingsDialog = settingsDialogComponent.createObject(root)
         return root.settingsDialog
+    }
+
+    function ensurePluginManagerDialog() {
+        if (!root.pluginManagerDialog) root.pluginManagerDialog = pluginManagerDialogComponent.createObject(root)
+        return root.pluginManagerDialog
     }
 
     function ensureThemeEditorDialog() {
@@ -101,6 +107,7 @@ Item {
     readonly property bool workspaceOverlayOpen: root.isOpen(root.conflictDialog)
                                                  || root.isOpen(root.helpDialog)
                                                  || root.isOpen(root.settingsDialog)
+                                                 || root.isOpen(root.pluginManagerDialog)
                                                  || root.isOpen(root.themeEditorDialog)
                                                  || root.isOpen(root.propertiesDialog)
                                                  || root.isOpen(root.isoMountDialog)
@@ -139,6 +146,10 @@ Item {
 
     function openSettingsDialog() {
         root.ensureSettingsDialog().open()
+    }
+
+    function openPluginManagerDialog() {
+        root.ensurePluginManagerDialog().open()
     }
 
     function openThemeEditorDialog() {
@@ -196,6 +207,10 @@ Item {
     function closeTopOverlay() {
         if (root.isOpen(root.themeEditorDialog) && !root.themeEditorDialog.childDialogOpen()) {
             root.themeEditorDialog.closeEditor()
+            return true
+        }
+        if (root.isOpen(root.pluginManagerDialog)) {
+            root.pluginManagerDialog.accept()
             return true
         }
         if (root.isOpen(root.settingsDialog)) {
@@ -315,7 +330,13 @@ Item {
         SettingsDialog {
             appRoot: root.appRoot
             onThemeEditorRequested: root.openThemeEditorDialog()
+            onPluginManagerRequested: root.openPluginManagerDialog()
         }
+    }
+
+    Component {
+        id: pluginManagerDialogComponent
+        PluginManagerDialog {}
     }
 
     Component {

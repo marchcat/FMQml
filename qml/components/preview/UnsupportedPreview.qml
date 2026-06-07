@@ -7,6 +7,7 @@ Item {
     id: root
 
     property string iconSource: "qrc:/qt/qml/FM/qml/assets/icons/document.svg"
+    property string fallbackIconSource: ""
     property string title: "File"
     property string typeText: "Unsupported File"
     property string sizeText: ""
@@ -48,12 +49,29 @@ Item {
                 border.color: Theme.withAlpha(root.accentColor, themeController.isDark ? 0.38 : 0.28)
                 border.width: 1
 
-                Image {
+                Item {
                     anchors.centerIn: parent
-                    source: root.iconSource
-                    sourceSize: Qt.size(root.compact ? 34 : 66, root.compact ? 34 : 66)
-                    opacity: 0.92
-                    smooth: true
+                    width: root.compact ? 34 : 66
+                    height: width
+
+                    Image {
+                        id: primaryIcon
+                        anchors.fill: parent
+                        source: root.iconSource
+                        sourceSize: Qt.size(parent.width, parent.height)
+                        opacity: 0.92
+                        smooth: true
+                        visible: root.iconSource.length > 0 && status !== Image.Error
+                    }
+
+                    Image {
+                        anchors.fill: parent
+                        source: root.fallbackIconSource
+                        sourceSize: Qt.size(parent.width, parent.height)
+                        opacity: 0.92
+                        smooth: true
+                        visible: root.fallbackIconSource.length > 0 && (root.iconSource.length === 0 || primaryIcon.status === Image.Error)
+                    }
                 }
 
                 Rectangle {

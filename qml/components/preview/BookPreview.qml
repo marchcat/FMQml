@@ -13,6 +13,7 @@ Item {
     property string extension: ""
     property var extraProperties: []
     property string coverSource: ""
+    property string iconSource: "qrc:/qt/qml/FM/qml/assets/filetypes/document.svg"
     property string bookTitle: ""
     property string bookAuthor: ""
     property int pageIndex: 0
@@ -129,7 +130,7 @@ Item {
                         height: root.coverSource.length > 0 ? parent.height : width
                         source: root.coverSource.length > 0
                                 ? root.coverSource
-                                : "qrc:/qt/qml/FM/qml/assets/filetypes/document.svg"
+                                : root.iconSource
                         sourceSize: root.coverSource.length > 0
                                     ? Qt.size(root.compact ? 128 : 320, root.compact ? 192 : 480)
                                     : Qt.size(64, 64)

@@ -47,7 +47,7 @@ Item {
     readonly property bool  canShowThumbnail: !isDirectory && hasThumbnail
     readonly property bool  thumbnailEligible: root.canShowThumbnail
                                            && !root.thumbnailLoadingPaused
-                                           && (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
+                                           && (root.panel ? root.panel.effectiveUseNativeIcons : (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true))
                                            && (typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true)
                                            && !(typeof appSettings !== "undefined" && appSettings ? appSettings.ultraLightMode : false)
     property bool thumbnailLoadEnabled: false
@@ -324,7 +324,7 @@ Item {
                 path: root.path
                 isDirectory: root.isDirectory
                 suffix: root.suffix
-                useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
+                useNativeIcons: root.panel ? root.panel.effectiveUseNativeIcons : (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
                 thumbnailSource: root.thumbnailRequestActive
                                  ? "image://thumbnail/" + encodeURIComponent(root.path)
                                  : ""

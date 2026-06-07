@@ -12,4 +12,5 @@ public:
     Q_INVOKABLE QString iconForSuffix(const QString &suffix, bool isDirectory) const;
     Q_INVOKABLE QString iconForPath(const QString &path) const;
     Q_INVOKABLE QString iconForPathHint(const QString &path, bool isDirectory) const;
+    Q_INVOKABLE QString nativeIconOverrideForPathHint(const QString &path, bool isDirectory) const;
 };

@@ -17,6 +17,7 @@ Item {
     required property bool isArchiveFile
     required property bool isIsoImageFile
 
+    property var panel
     property bool currentItem: false
     property bool panelActive: true
     property int gridIconSize: 48
@@ -66,7 +67,7 @@ Item {
                 path: root.path
                 isDirectory: root.isDirectory
                 suffix: root.suffix
-                useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
+                useNativeIcons: root.panel ? root.panel.effectiveUseNativeIcons : (typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true)
                 iconSize: root.displayedIconSize
             }
         }

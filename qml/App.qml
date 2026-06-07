@@ -617,6 +617,10 @@ ApplicationWindow {
         workspaceOverlays.openSettingsDialog()
     }
 
+    function openPluginManagerDialog() {
+        workspaceOverlays.openPluginManagerDialog()
+    }
+
     function systemTrayModeActive() {
         return typeof systemTrayController !== "undefined"
             && systemTrayController
@@ -1051,6 +1055,7 @@ ApplicationWindow {
         quickLookActiveTarget: root.quickLookActiveTarget
         openHelpDialog: root.openHelpDialog
         openSettingsDialog: root.openSettingsDialog
+        openPluginManagerDialog: root.openPluginManagerDialog
         openThemeEditorDialog: workspaceOverlays.openThemeEditorDialog
         openSettingsImportDialog: root.openSettingsImportDialog
         openSettingsExportDialog: root.openSettingsExportDialog

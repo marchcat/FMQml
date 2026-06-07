@@ -89,13 +89,46 @@ Popup {
         if (root.displayPath === "selection://") {
             return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
         }
+        const overrideIcon = nativeIconOverrideForPath(root.displayPath, quickLookController.directory)
+        if (overrideIcon.length > 0) {
+            return overrideIcon
+        }
         if (!root.useNativeIcons) {
-            return fileTypeIconResolver.iconForSuffix(quickLookController.extension, quickLookController.directory)
+            return displayFallbackIconSource()
+        }
+        if (!supportsNativeIcon(root.displayPath)) {
+            return displayFallbackIconSource()
         }
         const query = quickLookController.directory
             ? ("?directory=true&hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
             : ("?hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
         return "image://icon/" + encodeURIComponent(root.displayPath + query)
+    }
+
+    function displayFallbackIconSource() {
+        if (root.displayPath.length === 0 || root.displayPath === "devices://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/computer.svg"
+        }
+        if (root.displayPath === "favorites://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/star.svg"
+        }
+        if (root.displayPath === "selection://") {
+            return "qrc:/qt/qml/FM/qml/assets/icons/grid.svg"
+        }
+        return fileTypeIconResolver.iconForPathHint(root.displayPath, quickLookController.directory)
+    }
+
+    function nativeIconOverrideForPath(path, directory) {
+        const value = String(path || "")
+        if (value.length === 0 || value === "devices://" || value === "favorites://" || value === "selection://") {
+            return ""
+        }
+        return fileTypeIconResolver.nativeIconOverrideForPathHint(value, directory)
+    }
+
+    function supportsNativeIcon(path) {
+        const value = String(path || "")
+        return value.indexOf("://") < 0 || value.indexOf("archive://") === 0
     }
 
     function displaySubtitle() {
@@ -149,6 +182,7 @@ Popup {
         PreviewHeader {
             Layout.fillWidth: true
             iconSource: root.displayIconSource()
+            fallbackIconSource: root.displayFallbackIconSource()
             title: root.displayTitle()
             subtitle: root.displaySubtitle()
             closeIconSource: "qrc:/qt/qml/FM/qml/assets/lucide-toolbar/eye-off.svg"

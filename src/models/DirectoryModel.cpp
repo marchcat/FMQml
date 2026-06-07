@@ -793,26 +793,29 @@ bool DirectoryModel::openPath(const QString &path)
         return false;
     }
     const bool archivePath = ArchiveSupport::isArchivePath(path);
-    const bool wantsArchive = archivePath;
-    const QString normalizedPath = ArchiveSupport::normalizeArchivePath(path);
+    std::unique_ptr<FileProvider> targetProvider = FileProviderFactory::createProvider(path);
+    const QString targetScheme = targetProvider ? targetProvider->scheme() : QStringLiteral("<none>");
+    const QString normalizedPath = targetProvider
+        ? targetProvider->normalizedPath(path)
+        : FileProviderFactory::normalizePath(path);
     traceDirectoryNav("openPath-normalized", normalizedPath,
-                      QStringLiteral("archivePath=%1 wantsArchive=%2 elapsedMs=%3")
+                      QStringLiteral("archivePath=%1 targetProvider=%2 elapsedMs=%3")
                           .arg(archivePath)
-                          .arg(wantsArchive)
+                          .arg(targetScheme)
                           .arg(totalTimer.elapsed()));
     if (normalizedPath.isEmpty()) {
         traceDirectoryNav("openPath-end", path,
                           QStringLiteral("result=false reason=normalize elapsedMs=%1").arg(totalTimer.elapsed()));
         return false;
     }
-    if (wantsArchive && (!m_provider || m_provider->scheme() != QStringLiteral("archive"))) {
+    if (!m_provider || !m_provider->canHandle(normalizedPath)) {
         traceDirectoryNav("openPath-replaceProvider", normalizedPath,
-                          QStringLiteral("reason=archive elapsedMs=%1").arg(totalTimer.elapsed()));
-        replaceProvider(FileProviderFactory::createProvider(normalizedPath));
-    } else if (!m_provider || !m_provider->canHandle(normalizedPath)) {
-        traceDirectoryNav("openPath-replaceProvider", normalizedPath,
-                          QStringLiteral("reason=canHandle elapsedMs=%1").arg(totalTimer.elapsed()));
-        replaceProvider(FileProviderFactory::createProvider(normalizedPath));
+                          QStringLiteral("reason=canHandle targetProvider=%1 elapsedMs=%2")
+                              .arg(targetScheme)
+                              .arg(totalTimer.elapsed()));
+        if (targetProvider) {
+            replaceProvider(std::move(targetProvider));
+        }
     }
     if (!m_provider || !m_provider->canHandle(normalizedPath)) {
         traceDirectoryNav("openPath-end", normalizedPath,

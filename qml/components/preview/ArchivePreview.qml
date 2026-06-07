@@ -39,11 +39,24 @@ Item {
     readonly property string metaText: compressedText.length > 0
                                    ? compressedText
                                    : (sizeText.length > 0 ? sizeText : formatText)
+    readonly property string fallbackIconSource: {
+        if (root.path.length > 0) {
+            return fileTypeIconResolver.iconForPathHint(root.path, false)
+        }
+        return fileTypeIconResolver.iconForSuffix(root.extension, false)
+    }
     readonly property string iconSource: {
+        const overrideIcon = nativeIconOverrideForPath(root.path)
+        if (overrideIcon.length > 0) {
+            return overrideIcon
+        }
         if (root.useNativeIcons && root.path.length > 0) {
+            if (!supportsNativeIcon(root.path)) {
+                return root.fallbackIconSource
+            }
             return "image://icon/" + encodeURIComponent(root.path + "?hq=" + (root.useHighQualitySystemIcons ? "1" : "0"))
         }
-        return "qrc:/qt/qml/FM/qml/assets/icons/archive.svg"
+        return root.fallbackIconSource
     }
 
     clip: true
@@ -61,6 +74,19 @@ Item {
             }
         }
         return ""
+    }
+
+    function nativeIconOverrideForPath(path) {
+        const value = String(path || "")
+        if (value.length === 0) {
+            return ""
+        }
+        return fileTypeIconResolver.nativeIconOverrideForPathHint(value, false)
+    }
+
+    function supportsNativeIcon(path) {
+        const value = String(path || "")
+        return value.indexOf("://") < 0 || value.indexOf("archive://") === 0
     }
 
     function metricItems() {
@@ -111,12 +137,29 @@ Item {
                     border.color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.42 : 0.30)
                     border.width: 1
 
-                    Image {
+                    Item {
                         anchors.centerIn: parent
-                        source: root.iconSource
-                        sourceSize: Qt.size(root.compact ? 38 : 76, root.compact ? 38 : 76)
-                        smooth: true
-                        opacity: 0.92
+                        width: root.compact ? 38 : 76
+                        height: width
+
+                        Image {
+                            id: primaryIcon
+                            anchors.fill: parent
+                            source: root.iconSource
+                            sourceSize: Qt.size(parent.width, parent.height)
+                            smooth: true
+                            opacity: 0.92
+                            visible: root.iconSource.length > 0 && status !== Image.Error
+                        }
+
+                        Image {
+                            anchors.fill: parent
+                            source: root.fallbackIconSource
+                            sourceSize: Qt.size(parent.width, parent.height)
+                            smooth: true
+                            opacity: 0.92
+                            visible: root.fallbackIconSource.length > 0 && (root.iconSource.length === 0 || primaryIcon.status === Image.Error)
+                        }
                     }
 
                     Rectangle {

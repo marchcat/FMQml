@@ -68,7 +68,12 @@ Pane {
     readonly property bool useHighQualitySystemIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useHighQualitySystemIcons : true
     readonly property bool showThumbnails: typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true
     readonly property bool ultraLightMode: typeof appSettings !== "undefined" && appSettings ? appSettings.ultraLightMode : false
-    readonly property bool effectiveShowThumbnails: root.showThumbnails && !root.ultraLightMode
+    readonly property string currentPathKind: root.controller && root.controller.currentPath
+                                              ? root.controller.pathKindFor(root.controller.currentPath)
+                                              : "local"
+    readonly property bool isCurrentPathRemote: root.currentPathKind === "remote" || root.currentPathKind === "ftp"
+    readonly property bool effectiveUseNativeIcons: root.useNativeIcons && !root.isCurrentPathRemote
+    readonly property bool effectiveShowThumbnails: root.showThumbnails && !root.ultraLightMode && !root.isCurrentPathRemote
     readonly property bool loadingDirectory: Boolean(root.controller
                                                      && ((root.controller.navigationPending === true)
                                                          || (root.controller.directoryModel
@@ -627,7 +632,7 @@ Pane {
 
     FilePanelIconPolicy {
         id: filePanelIconPolicy
-        useNativeIcons: root.useNativeIcons
+        useNativeIcons: root.effectiveUseNativeIcons
         useHighQualitySystemIcons: root.useHighQualitySystemIcons
     }
 
@@ -1030,6 +1035,10 @@ Pane {
 
     function bundledIconForSuffix(isDirectory, suffix) {
         return filePanelIconPolicy.bundledIconForSuffix(isDirectory, suffix)
+    }
+
+    function bundledIconForPath(path, isDirectory, suffix) {
+        return filePanelIconPolicy.bundledIconForPath(path, isDirectory, suffix)
     }
 
     function panelIconSource(path, isDirectory, suffix) {
@@ -2671,7 +2680,7 @@ Pane {
                     readonly property int renameEditorTop: contentMargin + root.gridIconSize + contentSpacing
                     readonly property int renameEditorSideMargin: contentMargin
                     readonly property int renameEditorAvailableHeight: Math.max(30, height - renameEditorTop - contentMargin)
-                    readonly property bool canLoadThumbnail: root.useNativeIcons
+                    readonly property bool canLoadThumbnail: root.effectiveUseNativeIcons
                                                               && root.effectiveShowThumbnails
                                                               && !root.thumbnailLoadingPaused
                                                               && !gridDelegate.lightweightActive
@@ -3018,6 +3027,7 @@ Pane {
                         anchors.fill: parent
                         visible: gridDelegate.lightweightActive
                         z: 5
+                        panel: root
                         index: gridDelegate.index
                         name: gridDelegate.name
                         path: gridDelegate.path
@@ -3052,10 +3062,10 @@ Pane {
                             anchors.centerIn: parent
                             width: Math.max(28, Math.round(root.gridIconSize * 0.8))
                             height: width
-                            source: root.bundledIconForSuffix(isDirectory, suffix)
+                            source: root.bundledIconForPath(path, isDirectory, suffix)
                             sourceSize: Qt.size(width, height)
                             visible: (!gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready)
-                                     && (!root.useNativeIcons || gridNativeIcon.status !== Image.Ready)
+                                     && (!root.effectiveUseNativeIcons || gridNativeIcon.status !== Image.Ready)
                             opacity: isImage ? 0.72 : 1.0
                             smooth: true
                             mipmap: false
@@ -3067,9 +3077,9 @@ Pane {
                             anchors.centerIn: parent
                             width: gridFallbackIcon.width
                             height: gridFallbackIcon.height
-                            source: root.useNativeIcons ? root.panelIconSource(path, isDirectory, suffix) : ""
+                            source: root.effectiveUseNativeIcons ? root.panelIconSource(path, isDirectory, suffix) : ""
                             sourceSize: Qt.size(width, height)
-                            visible: root.useNativeIcons
+                            visible: root.effectiveUseNativeIcons
                                      && (!gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready)
                                      && status === Image.Ready
                             opacity: isImage ? 0.72 : 1.0

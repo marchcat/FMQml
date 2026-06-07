@@ -75,6 +75,7 @@ private:
     void setSettingsMaintenanceStatus(const QString &status);
     QString normalizeLocalPath(const QString &filePath) const;
     QString fallbackFolderPath() const;
+    QString safeFolderPathForSave(const QString &path, const QString &previousPath) const;
     bool isRestorableFolderPath(const QString &path) const;
     bool m_useNativeIcons = true;
     bool m_useHighQualitySystemIcons = true;

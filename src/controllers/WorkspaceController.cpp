@@ -40,8 +40,7 @@ bool deletePolicyIsChildOfPath(const QString &path, const QString &ancestor)
 
 QString nativeDisplayPath(const QString &path)
 {
-    if (path.startsWith(QStringLiteral("archive://")) || path.startsWith(QStringLiteral("devices://"))
-        || path.startsWith(QStringLiteral("favorites://"))) {
+    if (path.contains(QStringLiteral("://"))) {
         return path;
     }
     return QDir::toNativeSeparators(path);

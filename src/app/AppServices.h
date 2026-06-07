@@ -8,6 +8,7 @@
 #include "../controllers/DiskUsageController.h"
 #include "../controllers/FavoritesController.h"
 #include "../controllers/FileSearchController.h"
+#include "../controllers/PluginActionController.h"
 #include "../controllers/PropertiesController.h"
 #include "../controllers/QuickLookController.h"
 #include "../controllers/SystemTrayController.h"
@@ -32,6 +33,7 @@ public:
     AppSettingsController *settings();
     AdminController *admin();
     FavoritesController *favorites();
+    PluginActionController *pluginActions();
     FileTypeIconResolver *fileTypeIcons();
     SystemTrayController *systemTray();
 
@@ -56,6 +58,7 @@ private:
     AppSettingsController m_settings;
     AdminController m_admin;
     FavoritesController m_favorites;
+    PluginActionController m_pluginActions;
     FileTypeIconResolver m_fileTypeIcons;
     SystemTrayController m_systemTray;
 };

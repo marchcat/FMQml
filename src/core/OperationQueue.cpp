@@ -104,6 +104,38 @@ QString archiveContainerKey(const QString &path)
     return QStringLiteral("archive://") + parts.join(QLatin1Char('|'));
 }
 
+QString explicitProviderScheme(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    const int separatorIndex = trimmed.indexOf(QStringLiteral("://"));
+    if (separatorIndex <= 0) {
+        return {};
+    }
+
+    static const QRegularExpression schemePattern(QStringLiteral("^[A-Za-z][A-Za-z0-9+.-]*$"));
+    const QString scheme = trimmed.left(separatorIndex).toLower();
+    if (!schemePattern.match(scheme).hasMatch()) {
+        return {};
+    }
+    return scheme;
+}
+
+QString providerCacheKeyForPath(const QString &path)
+{
+    if (ArchiveSupport::isArchivePath(path)) {
+        return ArchiveSupport::archiveRootPathForPath(path);
+    }
+
+    if (FileProviderFactory::hasPluginProviderForPath(path)) {
+        const QString scheme = explicitProviderScheme(path);
+        if (!scheme.isEmpty()) {
+            return QStringLiteral("plugin:%1").arg(scheme);
+        }
+    }
+
+    return QStringLiteral("local");
+}
+
 qint64 cheapArchiveSelectionBytes(const QStringList &sources)
 {
     if (sources.isEmpty()) {
@@ -299,12 +331,7 @@ OperationQueue::OperationQueue(QObject *parent)
 FileProvider* OperationQueue::getProviderForPath(const QString &path) const
 {
     QMutexLocker locker(&m_providerMutex);
-    QString key;
-    if (ArchiveSupport::isArchivePath(path)) {
-        key = ArchiveSupport::archiveRootPathForPath(path);
-    } else {
-        key = QStringLiteral("local");
-    }
+    const QString key = providerCacheKeyForPath(path);
 
     auto it = m_providerCache.find(key);
     if (it != m_providerCache.end()) {
@@ -312,6 +339,9 @@ FileProvider* OperationQueue::getProviderForPath(const QString &path) const
     }
 
     std::unique_ptr<FileProvider> provider = FileProviderFactory::createProvider(path);
+    if (!provider) {
+        provider = std::make_unique<LocalFileProvider>();
+    }
     FileProvider* ptr = provider.get();
     m_providerCache.insert(key, std::move(provider));
     return ptr;
