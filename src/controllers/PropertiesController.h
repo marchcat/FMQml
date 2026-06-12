@@ -39,6 +39,7 @@ class PropertiesController final : public QObject {
     Q_PROPERTY(QVariantList extraProperties READ extraProperties NOTIFY propertiesChanged)
     Q_PROPERTY(QVariantList accessProperties READ accessProperties NOTIFY propertiesChanged)
     Q_PROPERTY(QVariantList attributeProperties READ attributeProperties NOTIFY propertiesChanged)
+    Q_PROPERTY(QVariantList unixProperties READ unixProperties NOTIFY propertiesChanged)
     Q_PROPERTY(bool canEditAttributes READ canEditAttributes NOTIFY propertiesChanged)
     Q_PROPERTY(bool hiddenAttribute READ hiddenAttribute NOTIFY propertiesChanged)
     Q_PROPERTY(bool readOnlyAttribute READ readOnlyAttribute NOTIFY propertiesChanged)
@@ -75,6 +76,7 @@ public:
     QVariantList extraProperties() const;
     QVariantList accessProperties() const;
     QVariantList attributeProperties() const;
+    QVariantList unixProperties() const;
     bool canEditAttributes() const;
     bool hiddenAttribute() const;
     bool readOnlyAttribute() const;
@@ -147,6 +149,7 @@ private:
     QVariantList m_extraProperties;
     QVariantList m_accessProperties;
     QVariantList m_attributeProperties;
+    QVariantList m_unixProperties;
     bool m_canEditAttributes = false;
     bool m_hiddenAttribute = false;
     bool m_readOnlyAttribute = false;

@@ -3201,6 +3201,9 @@ Pane {
                         x: 8
                         y: 8 + gridDelegate.visualOffsetY
                         z: 30
+                        badgeSize: Math.max(16, Math.min(21, Math.round(root.gridIconSize * 0.24)))
+                        markSize: Math.max(7, Math.round(badgeSize * 0.4))
+                        markStroke: badgeSize >= 22 ? 1.2 : 1
                         available: root.showSelectionBadges && !gridDelegate.lightweightActive
                         controller: root.controller
                         panel: root

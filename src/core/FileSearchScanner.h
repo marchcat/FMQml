@@ -20,6 +20,7 @@ struct FileSearchScannerEntry {
     bool isDirectory = false;
     bool isHidden = false;
     bool isReparseDirectory = false;
+    bool isMountBoundary = false;
 };
 
 class FileSearchScanner final : public QObject, public QRunnable {

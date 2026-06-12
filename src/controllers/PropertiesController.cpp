@@ -117,6 +117,7 @@ bool PropertiesController::visible() const { return m_visible; }
 QVariantList PropertiesController::extraProperties() const { return m_extraProperties; }
 QVariantList PropertiesController::accessProperties() const { return m_accessProperties; }
 QVariantList PropertiesController::attributeProperties() const { return m_attributeProperties; }
+QVariantList PropertiesController::unixProperties() const { return m_unixProperties; }
 bool PropertiesController::canEditAttributes() const { return m_canEditAttributes; }
 bool PropertiesController::hiddenAttribute() const { return m_hiddenAttribute; }
 bool PropertiesController::readOnlyAttribute() const { return m_readOnlyAttribute; }
@@ -212,6 +213,21 @@ void PropertiesController::rebuildPropertyGroups()
         }
         appendGroup(groups, QStringLiteral("access.capabilities"), QStringLiteral("Capabilities"), QStringLiteral("access"), accessRows);
 
+        QVariantList unixRows;
+        for (const QVariant &propVal : m_unixProperties) {
+            const QVariantMap prop = propVal.toMap();
+            const QString label = prop.value(QStringLiteral("label")).toString();
+            const QString value = prop.value(QStringLiteral("value")).toString();
+            if (!label.isEmpty() || !value.isEmpty()) {
+                unixRows.append(makePropertyRow(stableKey(QStringLiteral("unix"), label),
+                                                label,
+                                                value,
+                                                QStringLiteral("access"),
+                                                true));
+            }
+        }
+        appendGroup(groups, QStringLiteral("access.unix"), QStringLiteral("Ownership / UNIX Mode"), QStringLiteral("access"), unixRows);
+
         QVariantList attributeRows;
         for (const QVariant &propVal : m_attributeProperties) {
             const QVariantMap prop = propVal.toMap();
@@ -300,6 +316,7 @@ void PropertiesController::load(const QString &path)
         m_extraProperties.clear();
         m_accessProperties.clear();
         m_attributeProperties.clear();
+        m_unixProperties.clear();
         m_canEditAttributes = false;
         m_hiddenAttribute = false;
         m_readOnlyAttribute = false;
@@ -329,12 +346,14 @@ void PropertiesController::load(const QString &path)
     m_extraProperties.clear();
     m_accessProperties.clear();
     m_attributeProperties.clear();
+    m_unixProperties.clear();
     m_fileCount = 0;
     m_folderCount = 0;
 
     const FileCapabilityInfo capabilities = FileAccessResolver::resolve(path);
     m_accessProperties = FileAccessResolver::accessProperties(capabilities);
     m_attributeProperties = FileAccessResolver::attributeProperties(capabilities);
+    m_unixProperties = FileAccessResolver::unixProperties(capabilities);
     updateAttributeState(capabilities);
 
     QLocale locale;
@@ -406,6 +425,7 @@ void PropertiesController::loadMultiple(const QStringList &paths)
     m_extraProperties.clear();
     m_accessProperties.clear();
     m_attributeProperties.clear();
+    m_unixProperties.clear();
     m_canEditAttributes = false;
     m_hiddenAttribute = false;
     m_readOnlyAttribute = false;
@@ -575,6 +595,7 @@ bool PropertiesController::tryLoadDrive(const QString &path)
         && (static_cast<double>(free) / static_cast<double>(total)) < 0.10;
     m_accessProperties.clear();
     m_attributeProperties.clear();
+    m_unixProperties.clear();
     m_canEditAttributes = false;
     m_hiddenAttribute = false;
     m_readOnlyAttribute = false;

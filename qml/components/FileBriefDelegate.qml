@@ -280,9 +280,12 @@ Item {
 
     SelectionToggleBadge {
         id: selectionToggleBadge
-        x: 8 + root.visualOffsetX
-        y: 4
+        x: 7 + root.visualOffsetX
+        y: Math.round((root.height - height) / 2)
         z: 30
+        badgeSize: Math.max(14, Math.min(18, Math.round(root.height * 0.56)))
+        markSize: Math.max(5, Math.round(badgeSize * 0.38))
+        markStroke: 1
         available: root.panel ? root.panel.showSelectionBadges : true
         controller: root.controller
         panel: root.panel
@@ -297,7 +300,7 @@ Item {
     FileNameEditor {
         id: briefRenameEditor
         anchors.fill: parent
-        anchors.leftMargin: 34
+        anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 28 : 14
         anchors.rightMargin: 6
         anchors.topMargin: 2
         anchors.bottomMargin: 2
@@ -325,7 +328,7 @@ Item {
     RowLayout {
         id: contentRow
         anchors.fill: parent
-        anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 34 : 14
+        anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 28 : 14
         anchors.rightMargin: 8
         spacing: 5
         visible: !root.isRenaming

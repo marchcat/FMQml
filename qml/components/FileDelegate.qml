@@ -215,6 +215,9 @@ Item {
         x: 8 + root.visualOffsetX
         y: 3
         z: 30
+        badgeSize: 16
+        markSize: 6
+        markStroke: 1
         available: root.panel ? root.panel.showSelectionBadges : true
         controller: root.controller
         panel: root.panel

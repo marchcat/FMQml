@@ -322,9 +322,12 @@ Item {
 
     SelectionToggleBadge {
         id: selectionToggleBadge
-        x: 8 + root.visualOffsetX
-        y: 4
+        x: 7 + root.visualOffsetX
+        y: Math.round((root.height - height) / 2)
         z: 30
+        badgeSize: 16
+        markSize: 6
+        markStroke: 1
         available: root.panel ? root.panel.showSelectionBadges : true
         controller: root.controller
         panel: root.panel
@@ -403,7 +406,7 @@ Item {
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 20 : 4
+                anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 16 : 4
                 anchors.rightMargin: 8
                 spacing: 8
                 visible: !root.isRenaming

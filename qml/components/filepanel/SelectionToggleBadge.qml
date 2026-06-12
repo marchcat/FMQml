@@ -1,6 +1,4 @@
 import QtQuick
-import QtQuick.Controls
-import QtQuick.Shapes
 import "../../style"
 
 Rectangle {
@@ -14,11 +12,14 @@ Rectangle {
     property bool currentItem: false
     property bool scrolling: false
     property bool available: true
+    property int badgeSize: 18
+    property int markSize: 7
+    property real markStroke: 1
     readonly property bool panelActive: root.panel ? root.panel.active : true
 
-    width: 18
-    height: 18
-    radius: 9
+    width: root.badgeSize
+    height: root.badgeSize
+    radius: width / 2
     visible: root.available && root.hovered && !root.scrolling && root.panelActive
     opacity: visible ? 1.0 : 0.0
     color: root.selected ? Theme.activeAccent : Theme.withAlpha(Theme.textPrimary, 0.09)
@@ -37,49 +38,42 @@ Rectangle {
         ColorAnimation { duration: Theme.motionFast }
     }
 
-    // Custom vector plus with 1px thin geometry
-    Shape {
-        id: plusShape
+    Item {
+        id: plusMark
         anchors.centerIn: parent
-        width: 8
-        height: 8
+        width: root.markSize
+        height: root.markSize
         visible: !root.selected
-        antialiasing: true
 
-        ShapePath {
-            strokeColor: Theme.textPrimary
-            strokeWidth: 1
-            fillColor: "transparent"
-            capStyle: ShapePath.RoundCap
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width
+            height: root.markStroke
+            radius: height / 2
+            color: Theme.textPrimary
+            opacity: 0.72
+        }
 
-            PathMove { x: 0; y: 4 }
-            PathLine { x: 8; y: 4 }
-
-            PathMove { x: 4; y: 0 }
-            PathLine { x: 4; y: 8 }
+        Rectangle {
+            anchors.centerIn: parent
+            width: root.markStroke
+            height: parent.height
+            radius: width / 2
+            color: Theme.textPrimary
+            opacity: 0.72
         }
     }
 
-    // Custom vector checkmark with 1.2px thin geometry
-    Shape {
-        id: checkShape
+    Text {
+        id: checkText
         anchors.centerIn: parent
-        width: 8
-        height: 6
         visible: root.selected
-        antialiasing: true
-
-        ShapePath {
-            strokeColor: Theme.accentText
-            strokeWidth: 1.2
-            fillColor: "transparent"
-            capStyle: ShapePath.RoundCap
-            joinStyle: ShapePath.RoundJoin
-
-            PathMove { x: 0; y: 2.5 }
-            PathLine { x: 2.8; y: 5.3 }
-            PathLine { x: 8; y: 0.5 }
-        }
+        text: "\u2713"
+        color: Theme.accentText
+        font.pixelSize: Math.max(10, Math.round(root.badgeSize * 0.66))
+        font.weight: Font.DemiBold
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
     }
 
 }

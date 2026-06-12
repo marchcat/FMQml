@@ -615,6 +615,8 @@ endif()
 
 if(UNIX AND NOT APPLE)
     target_sources(fm PRIVATE
+        src/core/LinuxFileEnumerator.cpp
+        src/core/LinuxFileEnumerator.h
         src/core/LinuxDirectoryChangeWatcher.cpp
         src/core/LinuxDirectoryChangeWatcher.h
     )
@@ -759,4 +761,25 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(inotify_directory_change_watcher_test PRIVATE src/core)
     target_link_libraries(inotify_directory_change_watcher_test PRIVATE Qt6::Core)
     add_test(NAME inotify_directory_change_watcher_test COMMAND inotify_directory_change_watcher_test)
+
+    add_executable(linux_root_traversal_test
+        tests/scanners/LinuxRootTraversalTest.cpp
+        src/core/LinuxFileEnumerator.cpp
+        src/core/LinuxFileEnumerator.h
+        src/core/DriveUtils.cpp
+        src/core/DriveUtils.h
+    )
+    target_include_directories(linux_root_traversal_test PRIVATE src src/core)
+    target_link_libraries(linux_root_traversal_test PRIVATE Qt6::Core)
+    add_test(NAME linux_root_traversal_test COMMAND linux_root_traversal_test)
+
+    add_executable(linux_file_access_resolver_test
+        tests/core/LinuxFileAccessResolverTest.cpp
+        src/core/FileAccessResolver.cpp
+        src/core/FileAccessResolver.h
+    )
+    target_compile_definitions(linux_file_access_resolver_test PRIVATE FM_ACCESS_RESOLVER_LOCAL_ONLY)
+    target_include_directories(linux_file_access_resolver_test PRIVATE src/core)
+    target_link_libraries(linux_file_access_resolver_test PRIVATE Qt6::Core)
+    add_test(NAME linux_file_access_resolver_test COMMAND linux_file_access_resolver_test)
 endif()

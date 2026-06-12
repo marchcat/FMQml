@@ -22,6 +22,7 @@ Rectangle {
                                               && root.errorActions.indexOf("restartAsAdmin") >= 0
                                               && typeof adminController !== "undefined"
                                               && adminController
+                                              && adminController.canRelaunchAsAdmin
                                               && !adminController.isElevated
     readonly property bool hasError: errorCode.length > 0 && errorCode !== "none" && errorMessage.length > 0
     readonly property color solidPanelSurface: root.opaque(Theme.panelSurface)

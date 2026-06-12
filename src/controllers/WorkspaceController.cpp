@@ -262,6 +262,7 @@ WorkspaceController::WorkspaceController(QObject *parent)
             }
 
             m_placesModel.refreshDriveInfo();
+            m_volumeMonitor.scheduleRefresh();
             QTimer::singleShot(1200, this, [this]() {
                 m_placesModel.refreshDriveInfo();
             });

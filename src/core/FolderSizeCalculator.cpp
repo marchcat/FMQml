@@ -1,4 +1,7 @@
 #include "FolderSizeCalculator.h"
+#ifdef Q_OS_LINUX
+#include "LinuxFileEnumerator.h"
+#endif
 
 #include <QDir>
 #include <QDirIterator>
@@ -22,6 +25,7 @@ struct SizeChildEntry {
     qint64 size = 0;
     bool isDirectory = false;
     bool isReparseDirectory = false;
+    bool isMountBoundary = false;
 };
 
 #ifdef Q_OS_WIN
@@ -101,7 +105,8 @@ bool enumerateChildren(const QString &path, QList<SizeChildEntry> *children)
             parentPrefix + QString::fromWCharArray(rawName),
             isDirectory ? 0 : sizeFromFindData(findData),
             isDirectory,
-            isDirectory && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+            isDirectory && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0,
+            false
         });
     } while (FindNextFileW(handle, &findData));
 
@@ -123,12 +128,52 @@ bool enumerateChildren(const QString &path, QList<SizeChildEntry> *children)
             info.absoluteFilePath(),
             isDirectory ? 0 : info.size(),
             isDirectory,
-            isDirectory && info.isSymLink()
+            isDirectory && info.isSymLink(),
+            false
         });
     }
     return true;
 }
 #endif
+
+#ifdef Q_OS_LINUX
+bool enumerateChildrenLinux(const QString &path, QList<SizeChildEntry> *children, bool stayOnRootDevice, dev_t rootDevice)
+{
+    LinuxFileEnumerator::Options options;
+    options.includeHidden = true;
+    options.stayOnRootDevice = stayOnRootDevice;
+    options.rootDevice = rootDevice;
+
+    QList<LinuxFileEnumerator::Entry> entries;
+    QString error;
+    if (!LinuxFileEnumerator::enumerateChildren(path, options, &entries, &error)) {
+        return false;
+    }
+
+    children->reserve(children->size() + entries.size());
+    for (const LinuxFileEnumerator::Entry &entry : std::as_const(entries)) {
+        children->append({
+            entry.path,
+            entry.isDirectory ? 0 : entry.size,
+            entry.isDirectory,
+            entry.isDirectory && entry.isSymlink,
+            entry.isMountBoundary
+        });
+    }
+    return true;
+}
+#endif
+
+bool enumerateChildrenForPlatform(const QString &path, QList<SizeChildEntry> *children, bool stayOnRootDevice, quint64 rootDevice)
+{
+#ifdef Q_OS_LINUX
+    return enumerateChildrenLinux(path, children, stayOnRootDevice, static_cast<dev_t>(rootDevice));
+#else
+    Q_UNUSED(stayOnRootDevice)
+    Q_UNUSED(rootDevice)
+    return enumerateChildren(path, children);
+#endif
+}
 }
 
 void FolderSizeCalculator::run()
@@ -148,6 +193,15 @@ void FolderSizeCalculator::run()
 
     QStack<QString> stack;
     stack.push(rootInfo.absoluteFilePath());
+    bool stayOnRootDevice = QDir::cleanPath(rootInfo.absoluteFilePath()) == QLatin1String("/");
+    quint64 rootDevice = 0;
+#ifdef Q_OS_LINUX
+    if (stayOnRootDevice) {
+        const std::optional<dev_t> device = LinuxFileEnumerator::deviceForPath(rootInfo.absoluteFilePath());
+        stayOnRootDevice = device.has_value();
+        rootDevice = static_cast<quint64>(device.value_or(0));
+    }
+#endif
 
     while (!stack.isEmpty()) {
         if (m_cancelled) {
@@ -156,7 +210,7 @@ void FolderSizeCalculator::run()
 
         const QString currentPath = stack.pop();
         QList<SizeChildEntry> children;
-        if (!enumerateChildren(currentPath, &children)) {
+        if (!enumerateChildrenForPlatform(currentPath, &children, stayOnRootDevice, rootDevice)) {
             continue;
         }
 
@@ -166,7 +220,7 @@ void FolderSizeCalculator::run()
             }
 
             if (child.isDirectory) {
-                if (child.isReparseDirectory) {
+                if (child.isReparseDirectory || child.isMountBoundary) {
                     continue;
                 }
                 ++folderCount;

@@ -269,7 +269,10 @@ QtObject {
             runWithArgument: function(arg) {
                 const path = arg.trim()
                 if (path.length > 0 && root.navigateActivePanel) {
-                    root.navigateActivePanel(path)
+                    const opened = root.navigateActivePanel(path)
+                    if (opened && root.workspaceController && root.workspaceController.focusActivePanel) {
+                        Qt.callLater(() => root.workspaceController.focusActivePanel())
+                    }
                 }
             },
             run: function() {}
@@ -1196,10 +1199,12 @@ QtObject {
                 return root.workspaceCommandsEnabled
                     && typeof adminController !== "undefined"
                     && adminController
+                    && adminController.canRelaunchAsAdmin
                     && !adminController.isElevated
             },
             disabledReason: function() {
                 if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                if (typeof adminController !== "undefined" && adminController && !adminController.canRelaunchAsAdmin) return "Administrator relaunch is not supported on this platform"
                 if (typeof adminController !== "undefined" && adminController && adminController.isElevated) return "Already running as administrator"
                 return ""
             },

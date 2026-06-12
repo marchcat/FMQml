@@ -29,6 +29,7 @@ Item {
                                               && operationErrorActions.indexOf("restartAsAdmin") >= 0
                                               && typeof adminController !== "undefined"
                                               && adminController
+                                              && adminController.canRelaunchAsAdmin
                                               && !adminController.isElevated
     readonly property bool busy: queue.busy
     readonly property bool active: busy || queue.error.length > 0

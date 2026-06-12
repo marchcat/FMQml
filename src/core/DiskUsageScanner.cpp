@@ -1,4 +1,7 @@
 #include "DiskUsageScanner.h"
+#ifdef Q_OS_LINUX
+#include "LinuxFileEnumerator.h"
+#endif
 
 #include <QDir>
 #include <QDirIterator>
@@ -24,6 +27,7 @@ struct ChildEntry {
     qint64 size = 0;
     bool isDirectory = false;
     bool isReparseDirectory = false;
+    bool isMountBoundary = false;
 };
 
 struct Frame {
@@ -169,7 +173,8 @@ bool enumerateChildrenNative(const QString &path, QList<ChildEntry> *children, Q
             name,
             isDirectory ? 0 : diskUsageSizeFromFindData(findData),
             isDirectory,
-            isReparse
+            isReparse,
+            false
         });
     } while (FindNextFileW(handle, &findData));
 
@@ -199,18 +204,53 @@ bool enumerateChildrenQt(const QString &path, QList<ChildEntry> *children, QStri
             info.fileName(),
             isDirectory ? 0 : info.size(),
             isDirectory,
-            isDirectory && info.isSymLink()
+            isDirectory && info.isSymLink(),
+            false
         });
     }
     Q_UNUSED(error)
     return true;
 }
 
-bool enumerateChildren(const QString &path, QList<ChildEntry> *children, QString *error)
+#ifdef Q_OS_LINUX
+bool enumerateChildrenLinux(const QString &path, QList<ChildEntry> *children, QString *error, bool stayOnRootDevice, dev_t rootDevice)
+{
+    LinuxFileEnumerator::Options options;
+    options.includeHidden = true;
+    options.stayOnRootDevice = stayOnRootDevice;
+    options.rootDevice = rootDevice;
+
+    QList<LinuxFileEnumerator::Entry> entries;
+    if (!LinuxFileEnumerator::enumerateChildren(path, options, &entries, error)) {
+        return false;
+    }
+
+    children->reserve(children->size() + entries.size());
+    for (const LinuxFileEnumerator::Entry &entry : std::as_const(entries)) {
+        children->append({
+            entry.path,
+            entry.name,
+            entry.isDirectory ? 0 : entry.size,
+            entry.isDirectory,
+            entry.isDirectory && entry.isSymlink,
+            entry.isMountBoundary
+        });
+    }
+    return true;
+}
+#endif
+
+bool enumerateChildren(const QString &path, QList<ChildEntry> *children, QString *error, bool stayOnRootDevice, quint64 rootDevice)
 {
 #ifdef Q_OS_WIN
+    Q_UNUSED(stayOnRootDevice)
+    Q_UNUSED(rootDevice)
     return enumerateChildrenNative(path, children, error);
+#elif defined(Q_OS_LINUX)
+    return enumerateChildrenLinux(path, children, error, stayOnRootDevice, static_cast<dev_t>(rootDevice));
 #else
+    Q_UNUSED(stayOnRootDevice)
+    Q_UNUSED(rootDevice)
     return enumerateChildrenQt(path, children, error);
 #endif
 }
@@ -239,6 +279,15 @@ void DiskUsageScanner::run()
 
     QStack<Frame> stack;
     stack.push({rootInfo.absoluteFilePath(), displayNameForPath(rootInfo.absoluteFilePath()), false, true, {}, {}, 0});
+    bool stayOnRootDevice = QDir::cleanPath(rootInfo.absoluteFilePath()) == QLatin1String("/");
+    quint64 rootDevice = 0;
+#ifdef Q_OS_LINUX
+    if (stayOnRootDevice) {
+        const std::optional<dev_t> device = LinuxFileEnumerator::deviceForPath(rootInfo.absoluteFilePath());
+        stayOnRootDevice = device.has_value();
+        rootDevice = static_cast<quint64>(device.value_or(0));
+    }
+#endif
 
     while (!stack.isEmpty()) {
         if (m_cancelled) {
@@ -254,7 +303,7 @@ void DiskUsageScanner::run()
 
             QList<ChildEntry> children;
             QString error;
-            if (!enumerateChildren(framePath, &children, &error)) {
+            if (!enumerateChildren(framePath, &children, &error, stayOnRootDevice, rootDevice)) {
                 ++m_skippedPaths;
                 ++m_inaccessiblePaths;
                 m_lastError = error.isEmpty()
@@ -278,7 +327,7 @@ void DiskUsageScanner::run()
                     return;
                 }
                 if (child.isDirectory) {
-                    if (child.isReparseDirectory) {
+                    if (child.isReparseDirectory || child.isMountBoundary) {
                         ++m_skippedPaths;
                         ++m_reparsePaths;
                         addSkippedDetail(m_reparsePathDetails, QDir::toNativeSeparators(child.path));

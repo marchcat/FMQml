@@ -14,6 +14,8 @@ Popup {
     property string query: ""
     property int selectedIndex: -1
     property var usageStats: ({ counts: {}, timestamps: {} })
+    property var pendingArgumentCommand: null
+    property string pendingArgumentText: ""
 
     // Argument-aware command state
     property bool argumentMode: false
@@ -343,16 +345,14 @@ Popup {
                 appSettings.recordCommandExecuted(argCmd.id)
             }
             
+            root.pendingArgumentCommand = argCmd
+            root.pendingArgumentText = arg
             root.argumentMode = false
             root.selectedArgumentCommand = null
             root.argumentText = ""
             root.argumentError = ""
             root.pendingCommand = null
             close()
-            
-            if (typeof argCmd.runWithArgument === "function") {
-                Qt.callLater(() => argCmd.runWithArgument(arg))
-            }
             return
         }
 
@@ -629,9 +629,15 @@ Popup {
 
     onClosed: {
         const command = root.pendingCommand
+        const argumentCommand = root.pendingArgumentCommand
+        const argumentText = root.pendingArgumentText
         root.pendingCommand = null
+        root.pendingArgumentCommand = null
+        root.pendingArgumentText = ""
         if (command && typeof command.run === "function") {
             Qt.callLater(() => command.run())
+        } else if (argumentCommand && typeof argumentCommand.runWithArgument === "function") {
+            Qt.callLater(() => argumentCommand.runWithArgument(argumentText))
         }
         root.argumentMode = false
         root.selectedArgumentCommand = null

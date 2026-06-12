@@ -1,4 +1,7 @@
 #include "FileSearchScanner.h"
+#ifdef Q_OS_LINUX
+#include "LinuxFileEnumerator.h"
+#endif
 
 #include <QDir>
 #include <QDirIterator>
@@ -221,7 +224,8 @@ FileSearchScannerEntry entryFromFindData(const WIN32_FIND_DATAW &findData, const
         searchDateTimeFromFileTime(findData.ftLastWriteTime),
         isDirectory,
         (attributes & FILE_ATTRIBUTE_HIDDEN) != 0 || name.startsWith(QLatin1Char('.')),
-        isDirectory && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+        isDirectory && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0,
+        false
     };
 }
 #endif
@@ -236,9 +240,27 @@ FileSearchScannerEntry entryFromFileInfo(const QFileInfo &info)
         info.lastModified(),
         info.isDir(),
         info.isHidden(),
-        info.isDir() && info.isSymLink()
+        info.isDir() && info.isSymLink(),
+        false
     };
 }
+
+#ifdef Q_OS_LINUX
+FileSearchScannerEntry entryFromLinuxEntry(const LinuxFileEnumerator::Entry &entry)
+{
+    return {
+        entry.path,
+        entry.name,
+        entry.parentPath,
+        entry.isDirectory ? 0 : entry.size,
+        entry.modified,
+        entry.isDirectory,
+        entry.isHidden,
+        entry.isDirectory && entry.isSymlink,
+        entry.isMountBoundary
+    };
+}
+#endif
 }
 
 FileSearchScanner::FileSearchScanner(const QString &rootPath, const QString &query, bool includeHidden, bool searchContents, bool caseSensitive, int matchMode, bool includeFolders, int generation)
@@ -310,7 +332,7 @@ void FileSearchScanner::processEntry(const FileSearchScannerEntry &entry, QStack
         return;
     }
 
-    if (entry.isReparseDirectory) {
+    if (entry.isReparseDirectory || entry.isMountBoundary) {
         ++m_skippedPaths;
         ++m_reparsePaths;
         addSkippedDetail(m_reparsePathDetails, nativePath(entry.path));
@@ -459,6 +481,36 @@ bool FileSearchScanner::enumerateFolder(const QString &folderPath, QStack<QStrin
         m_lastError = QStringLiteral("Cannot read %1: %2").arg(nativePath(folderPath), windowsErrorText(code));
         addSkippedDetail(m_inaccessiblePathDetails, m_lastError);
         return false;
+    }
+    return true;
+#elif defined(Q_OS_LINUX)
+    LinuxFileEnumerator::Options options;
+    options.includeHidden = true;
+    if (QDir::cleanPath(QDir::fromNativeSeparators(m_rootPath)) == QLatin1String("/")) {
+        const std::optional<dev_t> rootDevice = LinuxFileEnumerator::deviceForPath(m_rootPath);
+        if (rootDevice) {
+            options.stayOnRootDevice = true;
+            options.rootDevice = *rootDevice;
+        }
+    }
+
+    QList<LinuxFileEnumerator::Entry> entries;
+    QString error;
+    if (!LinuxFileEnumerator::enumerateChildren(folderPath, options, &entries, &error)) {
+        ++m_skippedPaths;
+        ++m_inaccessiblePaths;
+        m_lastError = error.isEmpty()
+            ? QStringLiteral("Cannot read %1").arg(nativePath(folderPath))
+            : error;
+        addSkippedDetail(m_inaccessiblePathDetails, m_lastError);
+        return false;
+    }
+
+    for (const LinuxFileEnumerator::Entry &entry : std::as_const(entries)) {
+        if (m_cancelled) {
+            return true;
+        }
+        processEntry(entryFromLinuxEntry(entry), pending);
     }
     return true;
 #else

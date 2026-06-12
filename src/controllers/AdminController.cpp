@@ -45,6 +45,15 @@ bool AdminController::isElevated() const
     return m_isElevated;
 }
 
+bool AdminController::canRelaunchAsAdmin() const
+{
+#ifdef Q_OS_WIN
+    return true;
+#else
+    return false;
+#endif
+}
+
 bool AdminController::relaunchAsAdmin()
 {
 #ifdef Q_OS_WIN

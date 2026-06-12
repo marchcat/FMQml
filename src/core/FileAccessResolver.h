@@ -36,6 +36,18 @@ struct FileAccessInfo {
     State changeAttributesState = State::Unknown;
 };
 
+struct FileUnixInfo {
+    bool available = false;
+    QString owner;
+    QString group;
+    QString modeString;
+    QString modeOctal;
+    QString fileType;
+    bool setuid = false;
+    bool setgid = false;
+    bool sticky = false;
+};
+
 struct FileCapabilityInfo {
     QString path;
     bool exists = false;
@@ -43,6 +55,7 @@ struct FileCapabilityInfo {
     bool isArchiveLike = false;
     FileAttributesInfo attributes;
     FileAccessInfo access;
+    FileUnixInfo unixInfo;
     QString accessSummary;
     QString attributesSummary;
 };
@@ -53,6 +66,7 @@ public:
     static FileCapabilityInfo resolve(const QString &path);
     static QVariantList accessProperties(const FileCapabilityInfo &info);
     static QVariantList attributeProperties(const FileCapabilityInfo &info);
+    static QVariantList unixProperties(const FileCapabilityInfo &info);
     static bool setHidden(const QString &path, bool enabled, QString *error = nullptr);
     static bool setReadOnly(const QString &path, bool enabled, QString *error = nullptr);
     static void invalidate(const QString &path);

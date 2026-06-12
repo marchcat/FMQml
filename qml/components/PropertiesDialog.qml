@@ -1343,6 +1343,22 @@ Popup {
                         }
 
                         SectionCard {
+                            title: root.propertyGroupTitle("access.unix", "OWNERSHIP / UNIX MODE")
+                            visible: !root.multiMode && root.propertyGroupRows("access.unix").length > 0
+
+                            Repeater {
+                                model: root.propertyGroupRows("access.unix")
+
+                                PropertyRow {
+                                    required property var modelData
+                                    label: modelData && modelData.label ? modelData.label : ""
+                                    value: modelData && modelData.value ? modelData.value : ""
+                                    valueMaximumLineCount: 2
+                                }
+                            }
+                        }
+
+                        SectionCard {
                             title: root.propertyGroupTitle("access.attributes", "ATTRIBUTES")
                             visible: !root.multiMode && root.propertyGroupRows("access.attributes").length > 0
 

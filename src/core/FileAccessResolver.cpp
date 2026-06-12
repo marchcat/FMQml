@@ -6,6 +6,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QMutex>
@@ -14,6 +15,16 @@
 
 #include <optional>
 #include <vector>
+
+#ifdef Q_OS_LINUX
+#include <cerrno>
+#include <fcntl.h>
+#include <grp.h>
+#include <pwd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
 
 #ifdef Q_OS_WIN
 #ifndef WIN32_LEAN_AND_MEAN
@@ -200,6 +211,249 @@ QVariantMap makeAttributeProperty(const QString &label, bool enabled)
     map.insert(QStringLiteral("enabled"), enabled);
     return map;
 }
+
+QVariantMap makeTextProperty(const QString &label, const QString &value)
+{
+    QVariantMap map;
+    map.insert(QStringLiteral("label"), label);
+    map.insert(QStringLiteral("value"), value);
+    return map;
+}
+
+FileAttributesInfo readFileAttributes(const QString &path, const QFileInfo &info);
+
+#ifdef Q_OS_LINUX
+QByteArray linuxAccessNativePath(const QString &path)
+{
+    return QFile::encodeName(QDir::fromNativeSeparators(path));
+}
+
+bool lstatPath(const QString &path, struct stat *st)
+{
+    if (!st) {
+        return false;
+    }
+    const QByteArray encoded = linuxAccessNativePath(path);
+    return ::lstat(encoded.constData(), st) == 0;
+}
+
+QString lookupUserName(uid_t uid)
+{
+    long bufferSize = ::sysconf(_SC_GETPW_R_SIZE_MAX);
+    if (bufferSize < 1024) {
+        bufferSize = 16384;
+    }
+
+    QByteArray buffer(bufferSize, Qt::Uninitialized);
+    struct passwd pwd {};
+    struct passwd *result = nullptr;
+    if (::getpwuid_r(uid, &pwd, buffer.data(), buffer.size(), &result) == 0 && result) {
+        return QString::fromLocal8Bit(result->pw_name);
+    }
+    return QString::number(static_cast<qulonglong>(uid));
+}
+
+QString lookupGroupName(gid_t gid)
+{
+    long bufferSize = ::sysconf(_SC_GETGR_R_SIZE_MAX);
+    if (bufferSize < 1024) {
+        bufferSize = 16384;
+    }
+
+    QByteArray buffer(bufferSize, Qt::Uninitialized);
+    struct group grp {};
+    struct group *result = nullptr;
+    if (::getgrgid_r(gid, &grp, buffer.data(), buffer.size(), &result) == 0 && result) {
+        return QString::fromLocal8Bit(result->gr_name);
+    }
+    return QString::number(static_cast<qulonglong>(gid));
+}
+
+QString fileTypeString(mode_t mode)
+{
+    if (S_ISREG(mode)) return QStringLiteral("Regular file");
+    if (S_ISDIR(mode)) return QStringLiteral("Directory");
+    if (S_ISLNK(mode)) return QStringLiteral("Symbolic link");
+    if (S_ISFIFO(mode)) return QStringLiteral("FIFO");
+    if (S_ISSOCK(mode)) return QStringLiteral("Socket");
+    if (S_ISBLK(mode)) return QStringLiteral("Block device");
+    if (S_ISCHR(mode)) return QStringLiteral("Character device");
+    return QStringLiteral("Unknown");
+}
+
+QChar typeChar(mode_t mode)
+{
+    if (S_ISDIR(mode)) return QLatin1Char('d');
+    if (S_ISLNK(mode)) return QLatin1Char('l');
+    if (S_ISFIFO(mode)) return QLatin1Char('p');
+    if (S_ISSOCK(mode)) return QLatin1Char('s');
+    if (S_ISBLK(mode)) return QLatin1Char('b');
+    if (S_ISCHR(mode)) return QLatin1Char('c');
+    return QLatin1Char('-');
+}
+
+QChar executeChar(mode_t mode, mode_t executeBit, mode_t specialBit)
+{
+    const bool executable = (mode & executeBit) != 0;
+    const bool special = (mode & specialBit) != 0;
+    if (!special) {
+        return executable ? QLatin1Char('x') : QLatin1Char('-');
+    }
+    if (specialBit == S_ISVTX) {
+        return executable ? QLatin1Char('t') : QLatin1Char('T');
+    }
+    return executable ? QLatin1Char('s') : QLatin1Char('S');
+}
+
+QString unixModeString(mode_t mode)
+{
+    QString text;
+    text.reserve(10);
+    text.append(typeChar(mode));
+    text.append((mode & S_IRUSR) ? QLatin1Char('r') : QLatin1Char('-'));
+    text.append((mode & S_IWUSR) ? QLatin1Char('w') : QLatin1Char('-'));
+    text.append(executeChar(mode, S_IXUSR, S_ISUID));
+    text.append((mode & S_IRGRP) ? QLatin1Char('r') : QLatin1Char('-'));
+    text.append((mode & S_IWGRP) ? QLatin1Char('w') : QLatin1Char('-'));
+    text.append(executeChar(mode, S_IXGRP, S_ISGID));
+    text.append((mode & S_IROTH) ? QLatin1Char('r') : QLatin1Char('-'));
+    text.append((mode & S_IWOTH) ? QLatin1Char('w') : QLatin1Char('-'));
+    text.append(executeChar(mode, S_IXOTH, S_ISVTX));
+    return text;
+}
+
+QString unixModeOctal(mode_t mode)
+{
+    QString octal = QStringLiteral("%1").arg(static_cast<uint>(mode & 07777), 4, 8, QLatin1Char('0'));
+    if ((mode & 07000) == 0) {
+        octal.remove(0, 1);
+    }
+    return octal;
+}
+
+FileAccessInfo::State linuxAccessState(const QString &path, int mode)
+{
+    const QByteArray encoded = linuxAccessNativePath(path);
+    if (::faccessat(AT_FDCWD, encoded.constData(), mode, AT_EACCESS) == 0) {
+        return FileAccessInfo::State::Allowed;
+    }
+    if (errno == EACCES || errno == EPERM || errno == EROFS) {
+        return FileAccessInfo::State::Denied;
+    }
+    return FileAccessInfo::State::Unknown;
+}
+
+bool stickyParentAllowsDelete(const struct stat &itemStat, const struct stat &parentStat)
+{
+    if ((parentStat.st_mode & S_ISVTX) == 0) {
+        return true;
+    }
+    const uid_t euid = ::geteuid();
+    return euid == 0 || euid == itemStat.st_uid || euid == parentStat.st_uid;
+}
+
+FileAccessInfo::State linuxDeleteState(const QString &path, const struct stat &itemStat)
+{
+    const QFileInfo info(path);
+    const QString parentPath = info.absolutePath();
+    if (parentPath.isEmpty()) {
+        return FileAccessInfo::State::Unknown;
+    }
+
+    struct stat parentStat {};
+    if (!lstatPath(parentPath, &parentStat)) {
+        return FileAccessInfo::State::Unknown;
+    }
+
+    const FileAccessInfo::State parentAccess = linuxAccessState(parentPath, W_OK | X_OK);
+    if (parentAccess != FileAccessInfo::State::Allowed) {
+        return parentAccess;
+    }
+    return stickyParentAllowsDelete(itemStat, parentStat)
+        ? FileAccessInfo::State::Allowed
+        : FileAccessInfo::State::Denied;
+}
+
+void fillLinuxUnixInfo(FileCapabilityInfo *result, const struct stat &st)
+{
+    if (!result) {
+        return;
+    }
+    result->unixInfo.available = true;
+    result->unixInfo.owner = QStringLiteral("%1 (%2)")
+        .arg(lookupUserName(st.st_uid))
+        .arg(static_cast<qulonglong>(st.st_uid));
+    result->unixInfo.group = QStringLiteral("%1 (%2)")
+        .arg(lookupGroupName(st.st_gid))
+        .arg(static_cast<qulonglong>(st.st_gid));
+    result->unixInfo.modeString = unixModeString(st.st_mode);
+    result->unixInfo.modeOctal = unixModeOctal(st.st_mode);
+    result->unixInfo.fileType = fileTypeString(st.st_mode);
+    result->unixInfo.setuid = (st.st_mode & S_ISUID) != 0;
+    result->unixInfo.setgid = (st.st_mode & S_ISGID) != 0;
+    result->unixInfo.sticky = (st.st_mode & S_ISVTX) != 0;
+}
+
+FileCapabilityInfo resolveLocalLinux(const QString &path, const QFileInfo &info)
+{
+    FileCapabilityInfo result;
+    result.path = path;
+    result.exists = info.exists();
+    result.isDirectory = info.isDir();
+    result.isArchiveLike = false;
+    result.attributes = readFileAttributes(path, info);
+
+    struct stat st {};
+    if (!lstatPath(path, &st)) {
+        result.access.exact = false;
+        result.accessSummary = formatAccessSummary(result);
+        result.attributesSummary = formatAttributesSummary(result);
+        return result;
+    }
+
+    fillLinuxUnixInfo(&result, st);
+    result.isDirectory = S_ISDIR(st.st_mode);
+    result.attributes.readOnly = linuxAccessState(path, W_OK) != FileAccessInfo::State::Allowed;
+
+    if (result.isDirectory) {
+        result.access.browseState = linuxAccessState(path, R_OK);
+        result.access.createChildrenState = linuxAccessState(path, W_OK | X_OK);
+        result.access.traverseState = linuxAccessState(path, X_OK);
+        result.access.deleteState = linuxDeleteState(path, st);
+        result.access.changeAttributesState = accessStateFromBool(::geteuid() == 0 || ::geteuid() == st.st_uid);
+        result.access.canBrowse = isAllowed(result.access.browseState);
+        result.access.canCreateChildren = isAllowed(result.access.createChildrenState);
+        result.access.canTraverse = isAllowed(result.access.traverseState);
+        result.access.canDelete = isAllowed(result.access.deleteState);
+        result.access.canChangeAttributes = isAllowed(result.access.changeAttributesState);
+        result.access.readState = result.access.browseState;
+        result.access.modifyState = result.access.createChildrenState;
+        result.access.executeState = result.access.traverseState;
+        result.access.canRead = result.access.canBrowse;
+        result.access.canModify = result.access.canCreateChildren;
+        result.access.canExecute = result.access.canTraverse;
+    } else {
+        result.access.readState = linuxAccessState(path, R_OK);
+        result.access.modifyState = linuxAccessState(path, W_OK);
+        result.access.executeState = linuxAccessState(path, X_OK);
+        result.access.deleteState = linuxDeleteState(path, st);
+        result.access.changeAttributesState = accessStateFromBool(::geteuid() == 0 || ::geteuid() == st.st_uid);
+        result.access.canRead = isAllowed(result.access.readState);
+        result.access.canModify = isAllowed(result.access.modifyState);
+        result.access.canExecute = isAllowed(result.access.executeState);
+        result.access.canDelete = isAllowed(result.access.deleteState);
+        result.access.canChangeAttributes = isAllowed(result.access.changeAttributesState);
+        result.access.canBrowse = false;
+        result.access.canCreateChildren = false;
+        result.access.canTraverse = false;
+    }
+
+    result.access.exact = !hasUnknownAccessState(result);
+    result.accessSummary = formatAccessSummary(result);
+    result.attributesSummary = formatAttributesSummary(result);
+    return result;
+}
+#endif
 
 #ifdef Q_OS_WIN
 QString lastWindowsErrorString(DWORD errorCode)
@@ -989,6 +1243,8 @@ FileCapabilityInfo FileAccessResolver::resolve(const QString &path)
     FileCapabilityInfo result;
 #ifdef Q_OS_WIN
     result = resolveLocalWindows(path, info);
+#elif defined(Q_OS_LINUX)
+    result = resolveLocalLinux(path, info);
 #else
     result = resolveFallback(path, info);
 #endif
@@ -1029,6 +1285,27 @@ QVariantList FileAccessResolver::attributeProperties(const FileCapabilityInfo &i
     rows.append(makeAttributeProperty(QStringLiteral("Hidden"), info.attributes.hidden));
     rows.append(makeAttributeProperty(QStringLiteral("Read-only"), info.attributes.readOnly));
     rows.append(makeAttributeProperty(QStringLiteral("System"), info.attributes.system));
+    return rows;
+}
+
+QVariantList FileAccessResolver::unixProperties(const FileCapabilityInfo &info)
+{
+    QVariantList rows;
+    if (!info.unixInfo.available) {
+        return rows;
+    }
+    rows.append(makeTextProperty(QStringLiteral("Owner"), info.unixInfo.owner));
+    rows.append(makeTextProperty(QStringLiteral("Group"), info.unixInfo.group));
+    rows.append(makeTextProperty(QStringLiteral("Mode"), info.unixInfo.modeString));
+    rows.append(makeTextProperty(QStringLiteral("Octal"), info.unixInfo.modeOctal));
+    rows.append(makeTextProperty(QStringLiteral("File type"), info.unixInfo.fileType));
+    if (info.unixInfo.setuid || info.unixInfo.setgid || info.unixInfo.sticky) {
+        QStringList flags;
+        if (info.unixInfo.setuid) flags.append(QStringLiteral("setuid"));
+        if (info.unixInfo.setgid) flags.append(QStringLiteral("setgid"));
+        if (info.unixInfo.sticky) flags.append(QStringLiteral("sticky"));
+        rows.append(makeTextProperty(QStringLiteral("Special bits"), flags.join(QStringLiteral(", "))));
+    }
     return rows;
 }
 
