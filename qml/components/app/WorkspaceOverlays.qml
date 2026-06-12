@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQml
+import "../filepanel"
 
 Item {
     id: root
@@ -23,6 +24,7 @@ Item {
     property var batchRenameDialog: null
     property var checksumDialog: null
     property var commandPalette: null
+    property var pluginActionResultDialog: null
     property bool searchReturnAvailable: false
 
     function isOpen(item) {
@@ -118,6 +120,7 @@ Item {
                                                  || root.isOpen(root.fileSearchDialog)
                                                  || root.isOpen(root.batchRenameDialog)
                                                  || root.isOpen(root.checksumDialog)
+                                                 || root.isOpen(root.pluginActionResultDialog)
     readonly property bool anyOverlayOpen: root.workspaceOverlayOpen
                                            || root.isOpen(root.commandPalette)
 
@@ -257,6 +260,10 @@ Item {
             root.checksumDialog.accept()
             return true
         }
+        if (root.isOpen(root.pluginActionResultDialog)) {
+            root.pluginActionResultDialog.close()
+            return true
+        }
         return false
     }
 
@@ -316,6 +323,13 @@ Item {
                                      ? workspaceController.leftPanel
                                      : workspaceController.rightPanel
         dialog.open()
+    }
+
+    function openPluginActionResult(result) {
+        if (!root.pluginActionResultDialog) {
+            root.pluginActionResultDialog = pluginActionResultDialogComponent.createObject(root)
+        }
+        root.pluginActionResultDialog.showResult(result)
     }
 
     Component {
@@ -425,6 +439,11 @@ Item {
             commands: root.commandPaletteCommands
             activePanelController: root.appRoot ? root.appRoot.activePanelController : null
         }
+    }
+
+    Component {
+        id: pluginActionResultDialogComponent
+        PluginActionResultDialog {}
     }
 
     Connections {

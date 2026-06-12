@@ -325,6 +325,7 @@ set(MY_QML_FILES
     qml/components/filepanel/FilePanelSelectionBadge.qml
     qml/components/filepanel/FilePanelFilterPopover.qml
     qml/components/filepanel/FilePanelViewMenu.qml
+    qml/components/filepanel/PluginActionResultDialog.qml
     qml/components/PluginManagerDialog.qml
     qml/components/Sidebar.qml
     qml/components/StorageView.qml

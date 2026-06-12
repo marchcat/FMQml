@@ -40,7 +40,8 @@ Rectangle {
 
     Item {
         id: plusMark
-        anchors.centerIn: parent
+        x: Math.round((parent.width - width) / 2)
+        y: Math.round((parent.height - height) / 2)
         width: root.markSize
         height: root.markSize
         visible: !root.selected

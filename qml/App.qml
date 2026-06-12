@@ -723,6 +723,10 @@ ApplicationWindow {
         workspaceOverlays.openPluginManagerDialog()
     }
 
+    function openPluginActionResult(result) {
+        workspaceOverlays.openPluginActionResult(result)
+    }
+
     function systemTrayModeActive() {
         return typeof systemTrayController !== "undefined"
             && systemTrayController
