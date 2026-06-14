@@ -60,8 +60,36 @@ ApplicationWindow {
     }
 
     function scheduleInitialPanelFocus(reason) {
+        if (root.initialPanelFocusApplied) {
+            return
+        }
         initialPanelFocusRetry.reason = reason || "unspecified"
+        initialPanelFocusRetry.attempt = 0
+        initialPanelFocusRetry.interval = 0
         initialPanelFocusRetry.restart()
+    }
+
+    function retryInitialPanelFocus(reason) {
+        if (root.initialPanelFocusApplied || initialPanelFocusRetry.attempt >= initialPanelFocusRetry.maxAttempts) {
+            return
+        }
+        initialPanelFocusRetry.reason = reason || initialPanelFocusRetry.reason || "retry"
+        initialPanelFocusRetry.interval = 50
+        initialPanelFocusRetry.restart()
+    }
+
+
+    function ensurePanelFocusIfVacant(reason) {
+        if (root.initialPanelFocusApplied
+                && root.active
+                && root.visible
+                && !root.activeFocusItem
+                && !root.anyOverlayOpen
+                && !mainToolbar.textEditingActive
+                && !fileWorkspace.isRenaming
+                && !root.sidebarFocused) {
+            workspaceController.focusActivePanel()
+        }
     }
 
     function applyInitialPanelFocus(reason) {
@@ -82,8 +110,16 @@ ApplicationWindow {
             return
         }
 
+        initialPanelFocusRetry.attempt += 1
         workspaceController.focusActivePanel()
-        root.initialPanelFocusApplied = true
+        Qt.callLater(() => {
+            const focusedPanelView = root.activePanelView()
+            if (focusedPanelView && focusedPanelView.containsActiveFocus) {
+                root.initialPanelFocusApplied = true
+            } else {
+                root.retryInitialPanelFocus(reason)
+            }
+        })
     }
 
     function explicitPathScheme(path) {
@@ -1033,6 +1069,8 @@ ApplicationWindow {
     Timer {
         id: initialPanelFocusRetry
         property string reason: ""
+        property int attempt: 0
+        readonly property int maxAttempts: 40
         interval: 0
         repeat: false
         onTriggered: root.applyInitialPanelFocus(reason)
@@ -1047,6 +1085,13 @@ ApplicationWindow {
     onActiveChanged: {
         if (active) {
             root.scheduleInitialPanelFocus("window-active")
+            Qt.callLater(() => root.ensurePanelFocusIfVacant("window-active"))
+        }
+    }
+
+    onActiveFocusItemChanged: {
+        if (!activeFocusItem) {
+            Qt.callLater(() => root.ensurePanelFocusIfVacant("focus-vacated"))
         }
     }
 

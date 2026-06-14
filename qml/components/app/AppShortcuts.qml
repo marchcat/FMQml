@@ -43,12 +43,14 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F1"
         enabled: !root.appRoot.anyOverlayOpen
         onActivated: root.appRoot.openHelpDialog()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+K"
         enabled: (!root.appRoot.anyOverlayOpen || (typeof propertiesController !== "undefined" && propertiesController && propertiesController.visible))
                  && !(root.mainToolbar && root.mainToolbar.textEditingActive)
@@ -57,6 +59,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+Shift+P"
         enabled: (!root.appRoot.anyOverlayOpen || (typeof propertiesController !== "undefined" && propertiesController && propertiesController.visible))
                  && !(root.mainToolbar && root.mainToolbar.textEditingActive)
@@ -65,18 +68,21 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F3"
         enabled: root.appRoot.splitViewShortcutEnabled
         onActivated: root.appRoot.toggleSplitView()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F4"
         enabled: root.appRoot.splitViewShortcutEnabled
         onActivated: root.appRoot.mirrorActivePanelToOpposite()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F9"
         enabled: !root.appRoot.anyOverlayOpen
                  && !(root.mainToolbar && root.mainToolbar.textEditingActive)
@@ -92,6 +98,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F2"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
@@ -103,6 +110,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Space"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
@@ -130,6 +138,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Delete"
         enabled: root.appRoot.fileViewShortcutsEnabled
                  && root.activePanelAcceptsFileDelete()
@@ -143,6 +152,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Shift+Delete"
         enabled: root.appRoot.fileViewShortcutsEnabled
                  && root.activePanelAcceptsFileDelete()
@@ -156,6 +166,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Escape"
         enabled: root.appRoot.fileViewShortcutsEnabled
                  && ((root.workspaceController.activePanel === 0
@@ -179,8 +190,8 @@ Item {
     }
 
     Shortcut {
-        sequence: "Tab"
         context: Qt.ApplicationShortcut
+        sequence: "Tab"
         enabled: root.appRoot.tabPanelSwitchEnabled
         onActivated: {
             if (root.workspaceController.splitEnabled) {
@@ -191,30 +202,35 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Alt+Left"
         enabled: root.navigationShortcutsEnabled()
         onActivated: root.appRoot.goBackInActivePanel()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Alt+Right"
         enabled: root.navigationShortcutsEnabled()
         onActivated: root.appRoot.goForwardInActivePanel()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Alt+Up"
         enabled: root.navigationShortcutsEnabled()
         onActivated: root.appRoot.goUpInActivePanel()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+L"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.focusActivePath()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+G"
         enabled: (!root.appRoot.anyOverlayOpen || (typeof propertiesController !== "undefined" && propertiesController && propertiesController.visible))
                  && !(root.mainToolbar && root.mainToolbar.textEditingActive)
@@ -223,12 +239,14 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+C"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: root.workspaceController.copyToClipboard()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+X"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
@@ -240,6 +258,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+V"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: {
@@ -251,18 +270,21 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+Z"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.workspaceController.undo()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+Y"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.workspaceController.redo()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+R"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: {
@@ -272,30 +294,35 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+H"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.toggleHiddenFiles()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+1"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.setActiveViewMode(0)
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+2"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.setActiveViewMode(1)
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+3"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.setActiveViewMode(2)
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+Shift+N"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: {
@@ -307,6 +334,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "F7"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: {
@@ -318,6 +346,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+F"
         enabled: root.appRoot.panelShortcutsEnabled
                  && root.shortcutActivePanel
@@ -326,18 +355,21 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+Shift+F"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.openFileSearch()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+P"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.togglePreviewPane()
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+A"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
@@ -349,6 +381,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Ctrl+I"
         enabled: root.appRoot.fileViewShortcutsEnabled
         onActivated: {
@@ -360,6 +393,7 @@ Item {
     }
 
     Shortcut {
+        context: Qt.ApplicationShortcut
         sequence: "Alt+D"
         enabled: root.appRoot.panelShortcutsEnabled
         onActivated: root.appRoot.focusActivePath()
