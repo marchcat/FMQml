@@ -190,7 +190,7 @@ Item {
             anchors.fill: parent
             radius: parent.radius
             color: "transparent"
-            visible: root.pathEditing
+            visible: root.pathEditing && Theme.useGradientColors
             gradient: Gradient {
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0.0; color: Theme.withAlpha(Theme.categoryInfo, 0.14) }

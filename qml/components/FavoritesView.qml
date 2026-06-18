@@ -413,28 +413,12 @@ FocusScope {
         anchors.fill: parent
         z: -1
 
-        Rectangle {
+        AmbientPanelBackground {
             anchors.fill: parent
-            gradient: Gradient {
-                GradientStop {
-                    position: 0.0
-                    color: themeController.isDark
+            startColor: themeController.isDark
                         ? Theme.withAlpha(Theme.categoryNavigation, 0.11)
                         : Theme.withAlpha(Theme.categoryNavigation, 0.075)
-                }
-                GradientStop {
-                    position: 0.48
-                    color: themeController.isDark
-                        ? Theme.withAlpha(root.tagAccent, 0.045)
-                        : Theme.withAlpha(root.tagAccent, 0.032)
-                }
-                GradientStop {
-                    position: 1.0
-                    color: themeController.isDark
-                        ? Theme.withAlpha(Theme.panelSurface, 0.94)
-                        : Theme.withAlpha(Theme.panelSurface, 0.98)
-                }
-            }
+            strength: 0.74
         }
 
         Rectangle {

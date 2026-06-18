@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import "../style"
+import "common"
 
 Item {
     id: root
@@ -31,9 +32,9 @@ Item {
     signal panelVisualStateChanged()
     signal initialFocusReady()
 
-    Rectangle {
+    AmbientPanelBackground {
         anchors.fill: parent
-        color: Theme.panelSurface
+        strength: 0.72
     }
 
     function traceRenameFocus(stage, detail) {

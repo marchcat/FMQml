@@ -109,6 +109,7 @@ QVariantMap launchErrorInfo(const LaunchService::LaunchResult &result, const QSt
     map.insert(QStringLiteral("path"), QDir::toNativeSeparators(path));
     map.insert(QStringLiteral("operation"), QStringLiteral("open"));
     map.insert(QStringLiteral("actions"), QStringList{QStringLiteral("copyPath")});
+    map.insert(QStringLiteral("showDialog"), result.showDialog);
     if (!result.details.isEmpty()) {
         map.insert(QStringLiteral("details"), result.details);
     }
@@ -1931,7 +1932,7 @@ QVariantMap FilePanelController::launchCapabilitiesForPath(const QString &path) 
 
 void FilePanelController::openPathWithWine(const QString &path)
 {
-    if (isVirtualRoot()) {
+    if (isVirtualRoot() || path.isEmpty() || isProviderUriPath(path) || ArchiveSupport::isArchivePath(path)) {
         return;
     }
 
@@ -1946,7 +1947,7 @@ void FilePanelController::openPathWithWine(const QString &path)
 
 void FilePanelController::openPathWithSteamProton(const QString &path)
 {
-    if (isVirtualRoot()) {
+    if (isVirtualRoot() || path.isEmpty() || isProviderUriPath(path) || ArchiveSupport::isArchivePath(path)) {
         return;
     }
 
@@ -1977,7 +1978,7 @@ QVariantMap FilePanelController::launchPathWithSteamProton(const QString &path,
                                                            bool captureLog,
                                                            bool clearXModifiers)
 {
-    if (isVirtualRoot()) {
+    if (isVirtualRoot() || path.isEmpty() || isProviderUriPath(path) || ArchiveSupport::isArchivePath(path)) {
         QVariantMap result;
         result.insert(QStringLiteral("ok"), false);
         result.insert(QStringLiteral("title"), QStringLiteral("Steam Proton launch is not available"));

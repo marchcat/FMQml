@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
 import "../style"
+import "common"
 import "toolbar"
 
 ToolBar {
@@ -23,32 +24,30 @@ ToolBar {
     
     height: 64
 
-    background: Rectangle {
-        radius: Theme.panelRadius
-        topLeftRadius: 0
-        topRightRadius: 0
-        color: Theme.panelSurfaceStrong
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.00; color: Theme.chromeGradientStart }
-            GradientStop { position: 0.42; color: Theme.chromeGradientMid }
-            GradientStop { position: 0.78; color: Theme.chromeGradientEnd }
-            GradientStop { position: 1.00; color: Theme.withAlpha(Theme.panelSurfaceStrong, 0.00) }
-        }
+    background: AmbientPanelBackground {
+        baseColor: Theme.panelSurfaceStrong
+        endColor: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.88 : 0.82)
+        strength: 0.68
+        cornerRadius: Theme.panelRadius
+        topLeftCornerRadius: 0
+        topRightCornerRadius: 0
 
         Rectangle {
             anchors.fill: parent
-            radius: Theme.innerRadius(parent.radius, 1)
+            anchors.margins: 1
+            radius: Theme.innerRadius(parent.cornerRadius, 1)
             topLeftRadius: 0
             topRightRadius: 0
-            color: Theme.withAlpha(Theme.accentText, themeController.isDark ? 0.026 : 0.040)
+            color: Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.08 : 0.14)
         }
 
         Rectangle {
             anchors.top: parent.top
             width: parent.width
             height: 1
-            color: Theme.withAlpha(Theme.accentText, themeController.isDark ? 0.04 : 0.22)
+            color: themeController.isDark
+                   ? Theme.withAlpha(Theme.panelStrokeStrong, 0.38)
+                   : Theme.withAlpha(Theme.panelStrokeStrong, 0.46)
         }
 
         Rectangle {
@@ -59,8 +58,8 @@ ToolBar {
             anchors.rightMargin: Theme.panelRadius
             height: 1
             color: themeController.isDark
-                ? Theme.withAlpha(Theme.accentText, 0.045)
-                : Theme.withAlpha(Theme.border, 0.34)
+                ? Theme.withAlpha(Theme.panelStrokeStrong, 0.52)
+                : Theme.withAlpha(Theme.panelStrokeStrong, 0.62)
         }
     }
 
@@ -170,7 +169,7 @@ ToolBar {
 
     Rectangle {
         id: activePanelStrip
-        visible: root.splitActive
+        visible: root.splitActive && Theme.useGradientColors
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.topMargin: 6

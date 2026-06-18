@@ -13,6 +13,7 @@ class AppSettingsController final : public QObject {
     Q_PROPERTY(bool useHighQualitySystemIcons READ useHighQualitySystemIcons WRITE setUseHighQualitySystemIcons NOTIFY useHighQualitySystemIconsChanged)
     Q_PROPERTY(bool showThumbnails READ showThumbnails WRITE setShowThumbnails NOTIFY showThumbnailsChanged)
     Q_PROPERTY(bool ultraLightMode READ ultraLightMode WRITE setUltraLightMode NOTIFY ultraLightModeChanged)
+    Q_PROPERTY(bool useGradientColors READ useGradientColors WRITE setUseGradientColors NOTIFY useGradientColorsChanged)
     Q_PROPERTY(bool shellFirstQmlRestore READ shellFirstQmlRestore WRITE setShellFirstQmlRestore NOTIFY shellFirstQmlRestoreChanged)
     Q_PROPERTY(bool previewDetailsRaised READ previewDetailsRaised WRITE setPreviewDetailsRaised NOTIFY previewDetailsRaisedChanged)
     Q_PROPERTY(bool useSystemTrayIcon READ useSystemTrayIcon WRITE setUseSystemTrayIcon NOTIFY useSystemTrayIconChanged)
@@ -37,6 +38,8 @@ public:
     void setShowThumbnails(bool enabled);
     bool ultraLightMode() const;
     void setUltraLightMode(bool enabled);
+    bool useGradientColors() const;
+    void setUseGradientColors(bool enabled);
     bool shellFirstQmlRestore() const;
     void setShellFirstQmlRestore(bool enabled);
     bool previewDetailsRaised() const;
@@ -75,6 +78,7 @@ signals:
     void useHighQualitySystemIconsChanged();
     void showThumbnailsChanged();
     void ultraLightModeChanged();
+    void useGradientColorsChanged();
     void shellFirstQmlRestoreChanged();
     void previewDetailsRaisedChanged();
     void useSystemTrayIconChanged();
@@ -100,6 +104,7 @@ private:
     bool m_useHighQualitySystemIcons = true;
     bool m_showThumbnails = true;
     bool m_ultraLightMode = false;
+    bool m_useGradientColors = true;
     bool m_shellFirstQmlRestore = false;
     bool m_previewDetailsRaised = false;
     bool m_useSystemTrayIcon = false;

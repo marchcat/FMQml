@@ -8,6 +8,9 @@ QtObject {
                                             : 100
     readonly property real fontScaleFactor: Math.max(0.9, fontScalePercent / 100.0)
     readonly property string defaultFontFamily: "Segoe UI Variable Text, Segoe UI, Arial, sans-serif"
+    readonly property bool useGradientColors: typeof appSettings !== "undefined" && appSettings
+                                              ? appSettings.useGradientColors
+                                              : true
 
     function withAlpha(color, alpha) {
         return Qt.rgba(color.r, color.g, color.b, alpha)

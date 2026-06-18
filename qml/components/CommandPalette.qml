@@ -682,7 +682,7 @@ Popup {
         radius: Theme.panelRadius
         color: Theme.panelSurfaceStrong
         gradient: Gradient {
-            GradientStop { position: 0.0; color: Theme.panelSurface }
+            GradientStop { position: 0.0; color: Theme.useGradientColors ? Theme.panelSurface : Theme.panelSurfaceStrong }
             GradientStop { position: 1.0; color: Theme.panelSurfaceStrong }
         }
         border.color: Theme.withAlpha(Theme.accent, 0.18)
@@ -696,7 +696,7 @@ Popup {
             radius: 130
             rotation: -16
             color: Theme.withAlpha(Theme.accent, 0.08)
-            opacity: 0.8
+            opacity: Theme.useGradientColors ? 0.8 : 0.0
         }
 
         Rectangle {

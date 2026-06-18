@@ -632,19 +632,11 @@ Pane {
         }
     }
 
-    background: Rectangle {
-        radius: Theme.panelRadius
-        topLeftRadius: 0
-        bottomLeftRadius: 0
-        color: Theme.panelSurface
-
-        Rectangle {
-            anchors.fill: parent
-            radius: Theme.innerRadius(parent.radius, 1)
-            topLeftRadius: 0
-            bottomLeftRadius: 0
-            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.028 : 0.018)
-        }
+    background: AmbientPanelBackground {
+        cornerRadius: Theme.panelRadius
+        topLeftCornerRadius: 0
+        bottomLeftCornerRadius: 0
+        strength: 0.70
 
         Rectangle {
             anchors.right: parent.right

@@ -80,7 +80,7 @@ Rectangle {
         anchors.fill: parent
         radius: parent.radius
         color: "transparent"
-        visible: searchField.activeFocus
+        visible: searchField.activeFocus && Theme.useGradientColors
         gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: Theme.withAlpha(Theme.categoryInfo, 0.14) }

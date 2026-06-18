@@ -122,7 +122,7 @@ bool hasPeSignature(const QByteArray &header)
         return false;
     }
     if (header.size() < 0x40) {
-        return true;
+        return false;
     }
 
     const auto b = [](char value) { return static_cast<quint32>(static_cast<unsigned char>(value)); };
@@ -131,7 +131,7 @@ bool hasPeSignature(const QByteArray &header)
         | (b(header.at(0x3e)) << 16)
         | (b(header.at(0x3f)) << 24);
     if (offset + 4 > static_cast<quint32>(header.size())) {
-        return true;
+        return false;
     }
     return header.mid(static_cast<qsizetype>(offset), 4) == QByteArray("PE\0\0", 4);
 }
@@ -1050,8 +1050,25 @@ LaunchCapabilities launchCapabilities(const QString &path)
     capabilities.isWindowsApplication = capabilities.category == LaunchCategory::WindowsApplication;
     capabilities.canOpenWithWine = capabilities.isWindowsApplication;
     capabilities.canOpenWithSteamProton = capabilities.isWindowsApplication;
-    if (capabilities.isWindowsApplication) {
+    switch (capabilities.category) {
+    case LaunchCategory::WindowsApplication:
+        capabilities.canOpen = false;
         capabilities.openBlockedReason = QStringLiteral("Use Open with Wine or Open with Steam Proton from the context menu.");
+        break;
+    case LaunchCategory::NonExecutableScript:
+        capabilities.canOpen = false;
+        capabilities.openBlockedReason = QStringLiteral("Mark this script as executable, then try opening it again.");
+        break;
+    case LaunchCategory::DesktopLauncherBlocked:
+        capabilities.canOpen = false;
+        capabilities.openBlockedReason = QStringLiteral("Mark this desktop launcher as executable before opening it.");
+        break;
+    case LaunchCategory::Unsupported:
+        capabilities.canOpen = false;
+        capabilities.openBlockedReason = QStringLiteral("This file type is not supported by the Linux launch path yet.");
+        break;
+    default:
+        break;
     }
 #else
     capabilities.category = LaunchCategory::Document;

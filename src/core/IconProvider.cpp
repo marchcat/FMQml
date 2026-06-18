@@ -295,6 +295,26 @@ QIcon linuxDesktopEntryIcon(const QString &path)
     }
     return QIcon::fromTheme(iconName);
 }
+
+QStringList linuxWindowsExecutableIconCandidates(const QString &suffix)
+{
+    static const QSet<QString> suffixes = {
+        QStringLiteral("exe"), QStringLiteral("dll"), QStringLiteral("msi"),
+        QStringLiteral("bat"), QStringLiteral("cmd"), QStringLiteral("ps1"),
+        QStringLiteral("com"), QStringLiteral("sys"), QStringLiteral("scr"),
+        QStringLiteral("cpl"), QStringLiteral("appx"), QStringLiteral("msix"),
+    };
+    if (!suffixes.contains(suffix.toLower())) {
+        return {};
+    }
+
+    return {
+        QStringLiteral("application-x-executable"),
+        QStringLiteral("application-vnd.microsoft.portable-executable"),
+        QStringLiteral("application-x-msdownload"),
+        QStringLiteral("application-x-ms-dos-executable"),
+    };
+}
 #endif
 
 bool canExtractEmbeddedIcon(const QFileInfo &fi)
@@ -1109,6 +1129,11 @@ QImage IconProvider::getGenericIcon(const QString &path, const QSize &requestedS
 #else
         if (suffix == QLatin1String("desktop") && info.exists()) {
             icon = linuxDesktopEntryIcon(info.absoluteFilePath());
+        }
+
+        if (icon.isNull()) {
+            icon = firstThemeIcon(linuxWindowsExecutableIconCandidates(suffix),
+                                  QStringLiteral("windows-executable"));
         }
 
         QMimeDatabase db;

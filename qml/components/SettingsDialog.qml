@@ -25,6 +25,7 @@ Dialog {
     property bool highQualitySystemIconsEnabled: true
     property bool thumbnailsEnabled: true
     property bool ultraLightModeEnabled: false
+    property bool gradientColorsEnabled: true
     property bool shellFirstQmlRestoreEnabled: false
     property bool systemTrayIconEnabled: false
     property bool allowOnlyOneInstanceEnabled: false
@@ -100,6 +101,9 @@ Dialog {
         ultraLightModeEnabled = typeof appSettings !== "undefined" && appSettings
                                 ? appSettings.ultraLightMode
                                 : false
+        gradientColorsEnabled = typeof appSettings !== "undefined" && appSettings
+                                ? appSettings.useGradientColors
+                                : true
         shellFirstQmlRestoreEnabled = typeof appSettings !== "undefined" && appSettings
                                       ? appSettings.shellFirstQmlRestore
                                       : false
@@ -170,6 +174,14 @@ Dialog {
         if (typeof appSettings !== "undefined" && appSettings
                 && appSettings.ultraLightMode !== enabled) {
             appSettings.ultraLightMode = enabled
+        }
+    }
+
+    function setGradientColorsEnabled(enabled) {
+        gradientColorsEnabled = enabled
+        if (typeof appSettings !== "undefined" && appSettings
+                && appSettings.useGradientColors !== enabled) {
+            appSettings.useGradientColors = enabled
         }
     }
 
@@ -767,6 +779,14 @@ Dialog {
                         }
 
                         SettingsToggleRow {
+                            title: "Gradient colors"
+                            subtitle: "Use subtle gradient surfaces in app chrome"
+                            checked: root.gradientColorsEnabled
+                            accentColor: root.dialogAccent
+                            onToggled: (checked) => root.setGradientColorsEnabled(checked)
+                        }
+
+                        SettingsToggleRow {
                             title: "Shell-first startup"
                             subtitle: "Show the main shell before QML layout restore; applies after restart"
                             checked: root.shellFirstQmlRestoreEnabled
@@ -1087,6 +1107,9 @@ Dialog {
         }
         function onUltraLightModeChanged() {
             root.ultraLightModeEnabled = appSettings ? appSettings.ultraLightMode : false
+        }
+        function onUseGradientColorsChanged() {
+            root.gradientColorsEnabled = appSettings ? appSettings.useGradientColors : true
         }
         function onShellFirstQmlRestoreChanged() {
             root.shellFirstQmlRestoreEnabled = appSettings ? appSettings.shellFirstQmlRestore : false

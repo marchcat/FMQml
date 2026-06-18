@@ -23,11 +23,9 @@ Pane {
     property int externalScrollFileCountThreshold: 96
     signal detailsVisualStateChanged()
     readonly property bool showActiveHighlight: root.active && root.workspaceController.splitEnabled
-    readonly property bool catppuccinLatteTheme: !themeController.customThemeLoaded
-                                                  && themeController.schemeName === "Catppuccin Latte"
-    readonly property real activePanelFillAlpha: root.catppuccinLatteTheme ? 0.064 : (themeController.isDark ? 0.040 : 0.082)
-    readonly property real activePanelStrokeOpacity: root.catppuccinLatteTheme ? 0.78 : 1.0
-    readonly property real activePanelIndicatorOpacity: root.catppuccinLatteTheme ? 0.78 : (themeController.isDark ? 0.72 : 0.96)
+    readonly property real activePanelFillAlpha: themeController.isDark ? 0.075 : 0.105
+    readonly property real activePanelStrokeOpacity: themeController.isDark ? 0.88 : 0.96
+    readonly property real activePanelIndicatorOpacity: themeController.isDark ? 0.86 : 0.94
     readonly property int viewMode: root.controller.viewMode
     readonly property bool virtualRootMode: root.controller.isDeviceRoot || root.controller.isFavoritesRoot
     readonly property var favoritesBackend: typeof favoritesController !== "undefined" ? favoritesController : null
@@ -1620,14 +1618,13 @@ Pane {
     background: Item {
         id: backgroundWrapper
 
-        Rectangle {
+        AmbientPanelBackground {
             id: panelBg
             anchors.fill: parent
-            radius: Theme.panelRadius
-            color: Theme.panelSurface
+            cornerRadius: Theme.panelRadius
+            strength: 0.68
             border.color: Theme.panelStrokeSubtle
             border.width: 1
-            antialiasing: true
 
             Rectangle {
                 anchors.fill: parent

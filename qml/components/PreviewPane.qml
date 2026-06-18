@@ -266,10 +266,11 @@ Pane {
         strokeColor: Theme.panelStroke
         cornerRadius: Theme.panelRadius
 
-        Rectangle {
+        AmbientPanelBackground {
             anchors.fill: parent
-            radius: Theme.innerRadius(parent.cornerRadius, 1)
-            color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.045 : 0.065)
+            cornerRadius: Theme.innerRadius(parent.cornerRadius, 1)
+            baseColor: "transparent"
+            strength: 0.62
         }
     }
 

@@ -21,6 +21,9 @@ as the reference point for restrained gradient use, without turning the app into
 a decorative one-hue surface. Gradients must be optional and controlled by a new
 `useGradientColors` setting.
 
+Follow-up implementation notes after the first gradient pass:
+`docs/gradient-visual-refresh-follow-up.md`.
+
 Current state:
 
 - Theme colors are centralized in `ThemeController` and `qml/style/Theme.qml`.

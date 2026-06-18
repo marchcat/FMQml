@@ -15,6 +15,7 @@ Rectangle {
     readonly property string errorPath: errorInfo && errorInfo.path ? String(errorInfo.path) : ""
     property string displayErrorPath: errorPath
     readonly property var errorActions: errorInfo && errorInfo.actions ? errorInfo.actions : []
+    readonly property bool persistentError: errorInfo && errorInfo.showDialog === true
     readonly property bool canRetry: root.errorActions.indexOf("retry") >= 0
     readonly property bool canRefresh: root.errorActions.indexOf("refresh") >= 0
     readonly property bool canCopyPath: root.errorActions.indexOf("copyPath") >= 0 && root.errorPath.length > 0
@@ -69,7 +70,7 @@ Rectangle {
             return
         }
 
-        if (bannerHover.hovered) {
+        if (root.persistentError || bannerHover.hovered) {
             autoDismissTimer.stop()
             return
         }
@@ -84,6 +85,7 @@ Rectangle {
     onHasErrorChanged: updateAutoDismissTimer()
     onErrorCodeChanged: updateAutoDismissTimer()
     onErrorMessageChanged: updateAutoDismissTimer()
+    onPersistentErrorChanged: updateAutoDismissTimer()
     onVisibleChanged: updateAutoDismissTimer()
 
     RowLayout {

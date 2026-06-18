@@ -33,7 +33,7 @@ Window {
         gradient: Gradient {
             orientation: Gradient.Vertical
             GradientStop { position: 0.0; color: Theme.bg }
-            GradientStop { position: 1.0; color: Theme.withAlpha(Theme.accent, themeController.isDark ? 0.05 : 0.03) }
+            GradientStop { position: 1.0; color: Theme.useGradientColors ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.05 : 0.03) : Theme.bg }
         }
     }
 
@@ -44,9 +44,9 @@ Window {
         height: 3
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: Theme.categoryInfo }
+            GradientStop { position: 0.0; color: Theme.useGradientColors ? Theme.categoryInfo : Theme.accent }
             GradientStop { position: 0.48; color: Theme.accent }
-            GradientStop { position: 1.0; color: Theme.warmAccent }
+            GradientStop { position: 1.0; color: Theme.useGradientColors ? Theme.warmAccent : Theme.accent }
         }
     }
 
@@ -90,9 +90,9 @@ Window {
         color: "transparent"
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.08 : 0.05) }
-            GradientStop { position: 0.52; color: Qt.rgba(0, 0, 0, 0) }
-            GradientStop { position: 1.0; color: Theme.withAlpha(Theme.warmAccent, themeController.isDark ? 0.05 : 0.03) }
+            GradientStop { position: 0.0; color: Theme.useGradientColors ? Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.08 : 0.05) : "transparent" }
+            GradientStop { position: 0.52; color: "transparent" }
+            GradientStop { position: 1.0; color: Theme.useGradientColors ? Theme.withAlpha(Theme.warmAccent, themeController.isDark ? 0.05 : 0.03) : "transparent" }
         }
     }
 

@@ -5,6 +5,7 @@ import QtQuick.Window
 import QtQml
 import FM
 import "components"
+import "components/common"
 import "style"
 
 ApplicationWindow {
@@ -1209,9 +1210,9 @@ ApplicationWindow {
             Layout.fillHeight: true
             clip: true
 
-            Rectangle {
+            AmbientPanelBackground {
                 anchors.fill: parent
-                color: Theme.panelSurface
+                strength: 0.95
             }
 
             SplitView {

@@ -204,13 +204,13 @@ ThemeController::ThemePalette makePalette(
         : border.darker(165);
     palette.menuItemPressed = surfaceHover.darker(118);
     palette.chromeGradientStart = dark
-        ? alpha(secondaryAccent, 0.22)
-        : alpha(secondaryAccent, 0.16);
+        ? alpha(secondaryAccent, 0.24)
+        : alpha(secondaryAccent, 0.18);
     palette.chromeGradientMid = dark
-        ? alpha(accent, 0.18)
-        : alpha(accent, 0.12);
+        ? alpha(accent, 0.19)
+        : alpha(accent, 0.13);
     palette.chromeGradientEnd = dark
-        ? alpha(warmAccent, 0.12)
+        ? alpha(warmAccent, 0.13)
         : alpha(warmAccent, 0.08);
     palette.glassShadow = dark
         ? alpha(QColor(Qt::black), 0.36)
@@ -722,8 +722,8 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#34D399")),
             QColor(QStringLiteral("#FB923C")));
         palette.chromeGradientStart = withAlpha(palette.categoryInfo, 0.24);
-        palette.chromeGradientMid = withAlpha(palette.accent, 0.20);
-        palette.chromeGradientEnd = withAlpha(palette.categoryNavigation, 0.16);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.19);
+        palette.chromeGradientEnd = withAlpha(palette.categoryNavigation, 0.13);
         return palette;
     }
 
@@ -771,9 +771,9 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
         palette.menuBorder = QColor(QStringLiteral("#DDAEAE"));
         palette.menuSeparator = QColor(QStringLiteral("#CA8D8F"));
         palette.menuItemPressed = QColor(QStringLiteral("#FFD8D5"));
-        palette.chromeGradientStart = withAlpha(palette.activeGlow, 0.24);
-        palette.chromeGradientMid = withAlpha(palette.activeAccent, 0.18);
-        palette.chromeGradientEnd = withAlpha(palette.secondaryAccent, 0.12);
+        palette.chromeGradientStart = withAlpha(QColor(QStringLiteral("#F6A8B7")), 0.40);
+        palette.chromeGradientMid = withAlpha(palette.activeGlow, 0.28);
+        palette.chromeGradientEnd = withAlpha(QColor(QStringLiteral("#FFFFFF")), 0.08);
         return palette;
     }
 
@@ -803,9 +803,9 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#F59E0B")),
             QColor(QStringLiteral("#22C55E")),
             QColor(QStringLiteral("#FB923C")));
-        palette.chromeGradientStart = withAlpha(palette.danger, 0.15);
-        palette.chromeGradientMid = withAlpha(palette.accent, 0.20);
-        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.14);
+        palette.chromeGradientStart = withAlpha(palette.danger, 0.19);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.18);
+        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.13);
         return palette;
     }
 
@@ -835,9 +835,9 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#9BCFAD")),
             QColor(QStringLiteral("#8FCAB8")),
             QColor(QStringLiteral("#8AA0B8")));
-        palette.chromeGradientStart = withAlpha(palette.categoryNavigation, 0.17);
+        palette.chromeGradientStart = withAlpha(palette.categoryNavigation, 0.22);
         palette.chromeGradientMid = withAlpha(palette.accent, 0.18);
-        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.12);
+        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.13);
         return palette;
     }
 
@@ -900,8 +900,8 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
     }
 
     case CatppuccinLatte:
-    default:
-        return makePalette(
+    default: {
+        ThemePalette palette = makePalette(
             QStringLiteral("catppuccin-latte"),
             QStringLiteral("Catppuccin Latte"),
             false,
@@ -926,6 +926,11 @@ ThemeController::ThemePalette ThemeController::paletteForScheme(ThemeScheme sche
             QColor(QStringLiteral("#117E83")),
             QColor(QStringLiteral("#2F7D22")),
             QColor(QStringLiteral("#D75600")));
+        palette.chromeGradientStart = withAlpha(palette.secondaryAccent, 0.13);
+        palette.chromeGradientMid = withAlpha(palette.accent, 0.09);
+        palette.chromeGradientEnd = withAlpha(palette.warmAccent, 0.06);
+        return palette;
+    }
     }
 }
 

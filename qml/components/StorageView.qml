@@ -472,23 +472,9 @@ Item {
         anchors.fill: parent
         z: -1
 
-        // Soft linear background gradient
-        Rectangle {
+        AmbientPanelBackground {
             anchors.fill: parent
-            gradient: Gradient {
-                GradientStop {
-                    position: 0.0
-                    color: themeController.isDark
-                        ? Theme.withAlpha(Theme.accent, 0.10)
-                        : Theme.withAlpha(Theme.secondaryAccent, 0.08)
-                }
-                GradientStop {
-                    position: 1.0
-                    color: themeController.isDark
-                        ? Theme.withAlpha(Theme.panelSurface, 0.94)
-                        : Theme.withAlpha(Theme.panelSurface, 0.98)
-                }
-            }
+            strength: 0.78
         }
 
         // Ambient glow blobs

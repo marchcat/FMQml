@@ -105,8 +105,8 @@ Rectangle {
         radius: parent.radius
         gradient: Gradient {
             GradientStop { position: 0.00; color: pBg }
-            GradientStop { position: 0.66; color: Theme.withAlpha(pPanelSoft, lightMode ? 0.70 : 0.38) }
-            GradientStop { position: 1.00; color: Theme.withAlpha(pAccent, lightMode ? 0.035 : 0.075) }
+            GradientStop { position: 0.66; color: Theme.useGradientColors ? Theme.withAlpha(pPanelSoft, lightMode ? 0.70 : 0.38) : pBg }
+            GradientStop { position: 1.00; color: Theme.useGradientColors ? Theme.withAlpha(pAccent, lightMode ? 0.035 : 0.075) : pBg }
         }
     }
 
@@ -125,9 +125,9 @@ Rectangle {
             border.width: h4("chromeGradientStart", "chromeGradientMid", "chromeGradientEnd", "panelBorder") ? 2 : 1
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0.00; color: pChromeStart }
-                GradientStop { position: 0.52; color: pChromeMid }
-                GradientStop { position: 1.00; color: pChromeEnd }
+                GradientStop { position: 0.00; color: Theme.useGradientColors ? pChromeStart : pPanelStrong }
+                GradientStop { position: 0.52; color: Theme.useGradientColors ? pChromeMid : pPanelStrong }
+                GradientStop { position: 1.00; color: Theme.useGradientColors ? pChromeEnd : pPanelStrong }
             }
 
             ColumnLayout {

@@ -275,6 +275,7 @@ set(MY_QML_FILES
     qml/components/dialogs/DialogListRow.qml
     qml/components/dialogs/DialogSection.qml
     qml/components/dialogs/DialogShell.qml
+    qml/components/common/AmbientPanelBackground.qml
     qml/components/common/EmptyState.qml
     qml/components/common/IconTile.qml
     qml/components/common/InlineBadge.qml

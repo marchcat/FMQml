@@ -113,6 +113,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 width: 4
+                visible: Theme.useGradientColors
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: Theme.withAlpha(Theme.bg, themeController.isDark ? 0.25 : 0.08) }
