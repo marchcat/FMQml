@@ -91,6 +91,13 @@ Item {
         return false
     }
 
+    function isPointOnDragSurface(x, y) {
+        if (fullLoader.item && typeof fullLoader.item.isPointOnDragSurface === "function") {
+            return fullLoader.item.isPointOnDragSurface(x, y)
+        }
+        return false
+    }
+
     onPathChanged: resetTransientState()
 
     ListView.onPooled: resetTransientState()

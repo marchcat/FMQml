@@ -24,8 +24,8 @@ Item {
     property bool panelActive: true
     property bool isRenaming: false
     readonly property int iconSize: Math.max(Theme.scaledSize(16),
-                                             Math.min(Theme.scaledSize(24),
-                                                      Math.round(Math.max(Theme.scaledSize(16), height - Theme.scaledSize(10)))))
+                                             Math.min(Theme.scaledSize(40),
+                                                      Math.round(Math.max(Theme.scaledSize(16), height - Theme.scaledSize(8)))))
     readonly property int fontSize: Theme.fontSizeBody
 
     signal clicked(var mouse)

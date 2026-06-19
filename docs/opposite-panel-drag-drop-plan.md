@@ -1,5 +1,548 @@
 # Opposite Panel Drag And Drop Plan
 
+## Implementation Status - 2026-06-19
+
+Current state: the deliberately limited internal opposite-panel drag/drop flow
+is implemented and builds. The feature is intentionally scoped as a
+panel-to-panel command shortcut, not general OS drag/drop.
+
+Important safety update: this internal mouse-driven workflow is guarded by a
+persisted experimental setting named `useLimitedDragNDrop`, default `false`.
+When this setting is off, the application must not create or run the internal
+opposite-panel drag/drop objects or the new delegate drag mouse-routing logic.
+The stable default must allow only incoming external local-file drops into
+FMQml panels through `FilePanelDropOverlay.qml`.
+
+Implemented files:
+
+- `src/controllers/FilePanelController.h`
+- `src/controllers/FilePanelController.cpp`
+- `src/controllers/WorkspaceController.h`
+- `src/controllers/WorkspaceController.cpp`
+- `qml/components/FileWorkspace.qml`
+- `qml/components/FilePanel.qml`
+- `qml/components/FileDelegate.qml`
+- `qml/components/FileBriefDelegate.qml`
+- `qml/components/FileTableDelegate.qml`
+- `qml/components/filepanel/FilePanelDragCoordinator.qml`
+- `qml/components/filepanel/FilePanelDragPreview.qml`
+- `qml/components/filepanel/FilePanelOppositeDropOverlay.qml`
+- `qml/components/filepanel/OppositePanelDropMenu.qml`
+
+### Completed: snapshot capability helpers
+
+`FilePanelController` now exposes C++ helpers for validating an explicit
+snapshot path list:
+
+```cpp
+bool canCopyPaths(const QStringList &paths) const;
+bool canDeletePaths(const QStringList &paths) const;
+```
+
+These helpers reuse the same private path checks already used by the existing
+selection methods:
+
+- `pathCanCopy(...)`
+- `pathCanDelete(...)`
+- virtual-root/read-only-container checks
+
+Existing behavior is preserved by making:
+
+```cpp
+canCopySelection()   -> canCopyPaths(selectedPaths())
+canDeleteSelection() -> canDeletePaths(selectedPaths())
+```
+
+Reason: internal drag must operate on the drag-start snapshot, not on live
+selection at menu-trigger time.
+
+### Completed: explicit WorkspaceController drop API
+
+`WorkspaceController` now exposes explicit QML-callable methods that do not
+depend on `activePanel`:
+
+```cpp
+Q_INVOKABLE QVariantMap oppositePanelDropCapabilities(
+    int sourcePanel,
+    const QStringList &sources,
+    int destinationPanel);
+
+Q_INVOKABLE bool copyDroppedSelectionToPanel(
+    int sourcePanel,
+    const QStringList &sources,
+    int destinationPanel,
+    const QString &destinationPath);
+
+Q_INVOKABLE bool moveDroppedSelectionToPanel(
+    int sourcePanel,
+    const QStringList &sources,
+    int destinationPanel,
+    const QString &destinationPath);
+```
+
+Panel side convention:
+
+- `0` = left panel
+- `1` = right panel
+
+`WorkspaceController::panelBySide(int side)` was added as the private lookup
+helper.
+
+### Capability result contract
+
+`oppositePanelDropCapabilities(...)` returns a `QVariantMap` with:
+
+- `canCopy: bool`
+- `canMove: bool`
+- `reason: string`
+- `copyReason: string`
+- `moveReason: string`
+- `destinationPath: string`
+
+The method validates:
+
+- split view is enabled;
+- source and destination panels exist;
+- source and destination are different;
+- destination is exactly the opposite panel;
+- sources are not empty;
+- operation queue is not busy;
+- source and destination are not virtual roots;
+- source can copy the snapshot paths;
+- destination can create in its current path;
+- copy rejects all-sources-already-in-destination;
+- move rejects remote-provider source/destination parity with existing
+  Shift+F5 behavior;
+- move requires source delete capability for the snapshot paths.
+
+Destination path is reported as the destination panel's current path at the
+time capabilities are queried.
+
+### Execute method behavior
+
+`copyDroppedSelectionToPanel(...)`:
+
+- re-runs capability validation;
+- rejects if `destinationPath` no longer matches the destination panel's
+  current path;
+- then calls existing `copyPathsToPanel(...)`.
+
+`moveDroppedSelectionToPanel(...)`:
+
+- re-runs capability validation;
+- rejects if `destinationPath` no longer matches the destination panel's
+  current path;
+- then calls `OperationQueue::moveTo(...)`.
+
+Destination comparison uses `pathsReferToSameDropDestination(...)`:
+
+- URI paths compare trimmed strings case-insensitively;
+- local paths compare through existing `normalizedLocalPath(...)`.
+
+This is important because the first QML menu implementation should capture the
+destination at menu-open/drop time and pass it back unchanged. If either panel
+navigates before the user chooses Copy/Move, the operation is rejected instead
+of silently targeting a new folder.
+
+### Existing actions now use the new path
+
+Existing active-panel commands were converted to thin wrappers:
+
+- `copyActiveSelectionToOpposite()`
+- `moveActiveSelectionToOpposite()`
+
+They still read the active panel only at command entry to capture:
+
+- source panel side;
+- selected path snapshot;
+- destination panel side;
+- destination current path.
+
+They then call the new explicit drop execute methods. This keeps existing
+keyboard/menu copy-to-opposite and move-to-opposite behavior aligned with the
+future drag/drop path.
+
+### Verification performed
+
+Build command:
+
+```powershell
+cmd.exe /s /c "`"C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat`" -arch=x64 -host_arch=x64 && cmake --build build\6_11_1_MS-Release --config Release --target fm"
+```
+
+Result: build completed successfully and linked `fm.exe`.
+
+Note: running `cmake --build ...` directly from the default PowerShell session
+previously failed because the MSVC standard include environment was not loaded.
+Use the VS Developer Command Prompt wrapper above for reliable verification in
+this workspace.
+
+### Completed: initial QML drag coordinator and target overlay
+
+`FilePanelDragCoordinator.qml` now owns one internal drag snapshot:
+
+- `sourcePanelSide`
+- `destinationPanelSide`
+- `sourceController`
+- `destinationController`
+- `paths`
+- `itemCount`
+- `destinationPath`
+- `canCopy`
+- `canMove`
+- `reason`
+- `copyReason`
+- `moveReason`
+
+It exposes the Phase 2 helper surface:
+
+- `canStartDrag(panelSide, path)`
+- `startDrag(panelSide, path)`
+- `isOppositePanel(panelSide)`
+- `canDropOn(panelSide)`
+- `cancelDrag(reason)`
+
+`startDrag(...)` captures `selectedPaths()` from the source panel and calls
+`workspaceController.oppositePanelDropCapabilities(...)`. This keeps the QML
+state aligned with the explicit C++ drop API and avoids using live selection
+after session start.
+
+Cancellation is wired for:
+
+- split view closing;
+- operation queue becoming busy;
+- either panel changing path;
+- inline rename becoming active at the workspace layer.
+
+`FileWorkspace.qml` creates one coordinator and passes it to both panels.
+`FilePanel.qml` now has:
+
+- `panelSide`
+- `dragCoordinator`
+- `dropTargetActive`
+- `dropTargetAllowed`
+- `dropTargetDeniedReason`
+
+`FilePanelOppositeDropOverlay.qml` shows internal opposite-panel target
+feedback only with tint and outline, without an explanatory text label. It is
+separate from `FilePanelDropOverlay.qml`, which remains the external `DropArea`
+path.
+
+### Completed: delegate drag wiring and selection interaction
+
+Normal delegates now start the internal drag session after the shared movement
+threshold:
+
+- `FileDelegate.qml` for list rows;
+- `FileBriefDelegate.qml` through the adaptive path;
+- `FileTableDelegate.qml` through the adaptive path;
+- the normal grid delegate embedded in `FilePanel.qml`.
+
+Lightweight resize delegates remain non-draggable.
+
+Important event-routing behavior:
+
+- press on empty panel space starts the existing rubber-band selection path;
+- press/drag on an already selected item can start drag from the full item
+  surface, because this matches the expected "drag selected things" workflow;
+- first drag from an unselected item is deliberately narrow so rubber-band
+  selection remains easy to start;
+- list/details initial drag starts only from the file icon area;
+- brief initial drag starts only from a compact center handle inside the visual
+  icon frame, so larger density-driven icons do not make the first-drag hitbox
+  too greedy;
+- grid initial drag starts from the visible icon/thumbnail surface only;
+- adaptive brief/details delegates proxy `isPointOnDragSurface(...)` to their
+  loaded full delegate so selection and drag rules stay consistent across view
+  mode reuse;
+- when the item is already selected, list/details/brief/grid allow dragging
+  from the full row/tile, which avoids forcing the user to re-hit the icon for
+  an already selected selection;
+- delegates use `preventStealing` while a drag candidate is active so the
+  view/rubber-band layer does not steal the mouse before the threshold;
+- rubber-band selection and internal item drag use the same movement threshold;
+- starting rubber-band selection explicitly cancels any active internal drag
+  session;
+- plain click still uses the existing selection path;
+- dragging an unselected item first calls the existing click selection path,
+  then starts a drag snapshot for the resulting selection.
+
+Current visual behavior:
+
+- dragging selected items toward the opposite panel highlights that whole panel;
+- release over the opposite panel opens the explicit Copy/Move/Cancel menu;
+- releasing elsewhere cancels the drag without executing an operation.
+
+Manual usability fixes completed after the initial implementation:
+
+- details and brief views no longer let the full row greedily capture the first
+  drag from an unselected item;
+- click selection in details and brief remains visible and active after the drag
+  routing changes;
+- grid first-drag hitbox was tightened to the visible icon/thumbnail surface;
+- selected items in all normal views can still be dragged from the whole
+  selected item surface;
+- brief view density now changes spacing independently from text size, while
+  the visual icon can grow into available row height without expanding the
+  initial drag hitbox.
+
+### Completed: initial drop action menu
+
+`OppositePanelDropMenu.qml` now shows the explicit drop confirmation menu after
+releasing an internal selection drag over the opposite panel.
+
+The menu freezes the coordinator snapshot at popup time:
+
+- source panel side;
+- destination panel side;
+- source path list;
+- item count;
+- destination path;
+- copy/move capability flags and reasons.
+
+It shows exactly:
+
+- `Copy N items`
+- `Move N items`
+- `Cancel operation`
+
+Copy and Move call the explicit controller APIs:
+
+- `copyDroppedSelectionToPanel(...)`
+- `moveDroppedSelectionToPanel(...)`
+
+If the active panel changes while the drop menu is open, the menu closes and
+the pending drag/drop operation is canceled. This keeps a stale confirmation
+menu from executing after the user has moved context to another panel.
+
+`FilePanel` now receives the release mouse point from normal delegates, checks
+whether the release point is inside the opposite panel, and opens the menu only
+for an allowed opposite-panel drop. Releasing elsewhere cancels the drag
+without executing an operation.
+
+### Completed: initial drag preview visual
+
+`FilePanelDragPreview.qml` now shows a floating internal drag affordance while
+an internal selection drag is active.
+
+The preview:
+
+- follows the pointer across the workspace;
+- shows a compact stack of up to three selected item icons;
+- always shows a numeric badge with the drag snapshot item count;
+- stays separate from Qt external drag/drop visuals.
+
+Because the floating drag preview and numeric badge now communicate what is
+being dragged, the opposite-panel overlay intentionally has no central text
+label such as `Drop to copy or move to this panel`.
+
+`FilePanelDragCoordinator.qml` now stores preview item metadata for the drag
+snapshot and current pointer position in workspace coordinates. Normal list,
+brief, table, and grid delegates update the pointer position while dragging.
+
+### Completed: drag cursor feedback
+
+Internal selection drag now uses explicit allowed/disallowed cursor feedback:
+
+- while an internal drag is active, the cursor is forbidden outside the allowed
+  opposite panel target;
+- over the allowed opposite panel target, the cursor returns to the normal
+  arrow;
+- source/active panel areas therefore do not suggest that dropping there is
+  valid;
+- cursor state is driven by the shared `FilePanelDragCoordinator` pointer
+  position, not by `activePanel`;
+- `WorkspaceController::setDragCursorShape(...)` and
+  `WorkspaceController::clearDragCursorShape()` use Qt override cursor APIs so
+  feedback still works while the mouse is grabbed by the delegate that started
+  the drag;
+- `FileWorkspace.qml` clears the override cursor when the drag ends and when
+  the workspace is destroyed.
+
+Reason: QML `MouseArea.cursorShape` and overlay `HoverHandler` were not enough
+for this interaction because the delegate that starts the drag can keep the
+mouse grab during the whole gesture.
+
+### Not implemented yet
+
+Remaining work for this internal opposite-panel feature:
+
+- run the default-off and experimental-on QA blocks from
+  `docs/qa-regression-suite.md`;
+- keep future internal drag/drop changes behind `useLimitedDragNDrop`.
+
+Manual smoke note: basic use in the normal views was reported working on
+2026-06-19, including Copy, Move, Cancel, drag preview, initial drag hitboxes,
+selected-item full-surface drag, rubber-band selection, and cursor feedback.
+
+QA regression documentation now includes focused panel-to-panel drag/drop
+coverage, including rubber-band interaction and menu cancellation on panel
+switch.
+
+The existing `qml/components/filepanel/FilePanelDropOverlay.qml` remains the
+incoming external `DropArea` path. Keep internal selection drag separate from
+this external drop behavior.
+
+### Continue From Here
+
+Next recommended step: run the default-off QA block first. Only after
+default-off behavior is clean should the experimental-on panel-to-panel QA block
+be run.
+
+### Implemented: guard internal drag/drop behind `useLimitedDragNDrop`
+
+Reason: the risky part of this feature is not the file operation execution
+path. The risky part is the mouse UX: delegate `MouseArea` routing,
+`dragCandidate`, `preventStealing`, drag hitbox checks, cursor overrides,
+floating previews, and opposite-panel overlays. These can interfere with the
+baseline rubber-band selection rectangle, which is a core file-manager feature.
+
+The required default-off rule is strict:
+
+- `FilePanelDragCoordinator` must not be created.
+- `FilePanelDragPreview` must not be created.
+- `FilePanelOppositeDropOverlay` must not be created.
+- `OppositePanelDropMenu` must not be created.
+- The workspace-wide cursor capture/override overlay must not be created.
+- `FilePanel.dragCoordinator` must be `null`.
+- Normal delegates must not enter the internal drag-candidate path.
+- `preventStealing` must not be enabled because of internal drag state.
+- `beginRubberBandPress(...)` must not run the drag-vs-rubber-band routing
+  branch.
+- External local-file drops into FMQml must continue to work through
+  `FilePanelDropOverlay.qml`.
+
+Start-here implementation checklist:
+
+- `src/controllers/AppSettingsController.h`
+- `src/controllers/AppSettingsController.cpp`
+- `qml/components/SettingsDialog.qml`
+- `qml/components/FileWorkspace.qml`
+- `qml/components/FilePanel.qml`
+- `qml/components/FileDelegate.qml`
+- `qml/components/FileBriefDelegate.qml`
+- `qml/components/FileTableDelegate.qml`
+
+The first implementation pass should add the setting and make the default-off
+path inert before adding any new cursor affordance. The second pass should add
+the guarded ready-to-drag cursor behavior. The third pass should run QA.
+
+Implementation plan:
+
+1. Extend `AppSettingsController` with persisted
+   `Q_PROPERTY(bool useLimitedDragNDrop ...)`, default `false`, stored in the
+   `appearance` group and included in settings export/import.
+2. Add an experimental toggle in `SettingsDialog.qml`, preferably in the app or
+   workspace section, with copy that makes clear this enables panel-to-panel
+   drag/drop testing.
+3. In `FileWorkspace.qml`, replace the eagerly-created
+   `FilePanelDragCoordinator` with a `Loader` active only when
+   `appSettings.useLimitedDragNDrop` is true. Expose:
+
+   ```qml
+   readonly property bool limitedDragNDropEnabled: typeof appSettings !== "undefined"
+                                                   && appSettings
+                                                   && appSettings.useLimitedDragNDrop
+   readonly property var panelDragCoordinator: dragCoordinatorLoader.item
+   ```
+
+   Pass `dragCoordinator: limitedDragNDropEnabled ? panelDragCoordinator : null`
+   and `limitedDragNDropEnabled` to both panels.
+4. Also create `FilePanelDragPreview` and the workspace cursor overlay through
+   loaders guarded by `limitedDragNDropEnabled`, not by `visible: false`.
+5. In `FilePanel.qml`, add `property bool limitedDragNDropEnabled: false` and
+   a derived `internalDragEnabled` that requires both the setting and a
+   non-null coordinator. Gate `dropTargetActive`, `dropTargetAllowed`,
+   `dropTargetDeniedReason`, `externalDropSuppressed`,
+   `updateSelectionDragCandidate(...)`, `updateSelectionDragPosition(...)`,
+   `finishSelectionDrag(...)`, and `selectionDragCursorShape()` through this
+   property.
+6. Create `OppositePanelDropMenu` and `FilePanelOppositeDropOverlay` through
+   guarded loaders in `FilePanel.qml` so they do not exist while the setting is
+   off.
+7. In `FileDelegate.qml`, `FileBriefDelegate.qml`,
+   `FileTableDelegate.qml`, and the embedded grid delegate in `FilePanel.qml`,
+   make `dragCandidate` require `panel.internalDragEnabled`. Cursor feedback and
+   drag-specific `preventStealing` must also require `panel.internalDragEnabled`.
+8. In `beginRubberBandPress(...)`, run the item drag ownership branch only when
+   `internalDragEnabled` is true. When it is false, the code must follow the
+   baseline rubber-band/click path.
+9. Keep the C++ opposite-panel execution API unless a later cleanup explicitly
+   removes it. The guard is primarily QML/session UX protection; existing
+   keyboard/menu copy-to-opposite and move-to-opposite behavior should not be
+   accidentally broken.
+
+Suggested QML shape for the `FileWorkspace.qml` loader guard:
+
+```qml
+readonly property bool limitedDragNDropEnabled: typeof appSettings !== "undefined"
+                                                && appSettings
+                                                && appSettings.useLimitedDragNDrop
+readonly property var panelDragCoordinator: dragCoordinatorLoader.item
+
+Loader {
+    id: dragCoordinatorLoader
+    active: root.limitedDragNDropEnabled
+    sourceComponent: FilePanelDragCoordinator {
+        workspaceController: root.workspaceController
+        renamingActive: root.isRenaming
+        onActiveChanged: root.updatePanelDragCursor()
+        onPointerXChanged: root.updatePanelDragCursor()
+        onPointerYChanged: root.updatePanelDragCursor()
+        onCanCopyChanged: root.updatePanelDragCursor()
+        onCanMoveChanged: root.updatePanelDragCursor()
+        onDestinationPanelSideChanged: root.updatePanelDragCursor()
+    }
+}
+```
+
+All existing references to `panelDragCoordinator.active` in `FileWorkspace.qml`
+must become null-safe through `panelDragCoordinator && panelDragCoordinator.active`
+or equivalent helpers. When the loader becomes inactive, the workspace should
+clear any override cursor.
+
+Suggested `FilePanel.qml` derived property:
+
+```qml
+property bool limitedDragNDropEnabled: false
+readonly property bool internalDragEnabled: root.limitedDragNDropEnabled
+                                           && root.dragCoordinator
+```
+
+This property is the only flag delegate code should consult. Do not let
+delegates read `appSettings` directly for this behavior.
+
+Planned experimental cursor affordance, also behind the same guard:
+
+- When `useLimitedDragNDrop` is true and no drag is active, hovering an
+  unselected item's drag surface should show a ready-to-drag cursor such as
+  `Qt.OpenHandCursor`.
+- Hovering a selected item should show the same affordance over the draggable
+  selected-item surface, including multi-selection cases.
+- While an internal drag is active, keep the existing allowed/disallowed cursor
+  feedback: normal arrow over the allowed opposite-panel target, forbidden
+  elsewhere.
+- When `useLimitedDragNDrop` is false, no ready-to-drag cursor should appear
+  anywhere.
+
+### Current Risks / Watch Points
+
+- Do not use `activePanel` in new QML drag execution paths.
+- Do not use live selection after drag start; always use the coordinator's
+  `paths` snapshot.
+- Do not broaden external drag/drop behavior.
+- Do not let experimental internal drag mouse handling run in the default
+  settings state.
+- Do not create disabled internal drag objects with `visible: false`; prefer
+  guarded `Loader` creation so the default-off path has no active session
+  state, connections, cursor overrides, or event-routing side effects.
+- Do not target folders under the pointer; destination is always the opposite
+  panel `currentPath`.
+- Keep filesystem/provider permission decisions in C++ controller APIs, not in
+  large QML JavaScript blocks.
+- If QML session state grows complex, keep it to UI/session state only and move
+  policy back to C++.
+
 ## Goal
 
 Add a deliberately limited internal drag-and-drop workflow for selected files
@@ -380,10 +923,10 @@ Recommended visual:
 - Reuse or extend `FilePanelDropOverlay.qml`.
 - For allowed opposite drop:
   - accent-tinted outline/fill over the panel content area;
-  - label such as `Drop to copy or move to this panel`.
+  - no central text label.
 - For disallowed:
   - muted/warning outline;
-  - label such as `Cannot drop here`.
+  - no central text label.
 - Disable the existing external drop overlay during internal drag if the two
   behaviors conflict.
 

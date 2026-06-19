@@ -1418,10 +1418,14 @@ bool FilePanelController::canCreateInCurrentPath() const
 
 bool FilePanelController::canCopySelection() const
 {
+    return canCopyPaths(selectedPaths());
+}
+
+bool FilePanelController::canCopyPaths(const QStringList &paths) const
+{
     if (isVirtualRoot()) {
         return false;
     }
-    const QStringList paths = selectedPaths();
     if (paths.isEmpty()) {
         return false;
     }
@@ -1453,10 +1457,14 @@ bool FilePanelController::canRenameSelection() const
 
 bool FilePanelController::canDeleteSelection() const
 {
+    return canDeletePaths(selectedPaths());
+}
+
+bool FilePanelController::canDeletePaths(const QStringList &paths) const
+{
     if (isVirtualRoot() || isReadOnlyContainerPath(currentPath())) {
         return false;
     }
-    const QStringList paths = selectedPaths();
     if (paths.isEmpty()) {
         return false;
     }

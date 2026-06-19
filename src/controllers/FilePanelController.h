@@ -96,8 +96,10 @@ public:
     QString pendingNavigationPath() const;
     bool canCreateInCurrentPath() const;
     bool canCopySelection() const;
+    bool canCopyPaths(const QStringList &paths) const;
     bool canRenameSelection() const;
     bool canDeleteSelection() const;
+    bool canDeletePaths(const QStringList &paths) const;
     bool canDuplicateSelection() const;
     bool canCompressSelection() const;
     bool canPasteIntoCurrentPath() const;

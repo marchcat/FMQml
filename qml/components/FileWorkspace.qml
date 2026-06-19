@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import "../style"
 import "common"
+import "filepanel"
 
 Item {
     id: root
@@ -27,6 +28,10 @@ Item {
     readonly property int drawerBottomChromeHeight: root.workspaceController.splitEnabled
                                                     ? rightPanel.bottomChromeHeight
                                                     : leftPanel.bottomChromeHeight
+    readonly property bool limitedDragNDropEnabled: typeof appSettings !== "undefined"
+                                                    && appSettings
+                                                    && appSettings.useLimitedDragNDrop
+    readonly property var panelDragCoordinator: dragCoordinatorLoader.item
     property var pendingSplitState: null
 
     signal panelVisualStateChanged()
@@ -79,6 +84,39 @@ Item {
         rightPanel.SplitView.preferredWidth = 0
     }
 
+    function dragPointerInsidePanel(panel) {
+        if (!root.panelDragCoordinator || !root.panelDragCoordinator.active || !panel) {
+            return false
+        }
+        const point = panel.mapFromItem(root, root.panelDragCoordinator.pointerX, root.panelDragCoordinator.pointerY)
+        return point.x >= 0 && point.y >= 0
+                && point.x <= panel.width && point.y <= panel.height
+    }
+
+    function dragPointerOverAllowedTarget() {
+        if (!root.panelDragCoordinator || !root.panelDragCoordinator.active) {
+            return false
+        }
+        const targetPanel = root.panelDragCoordinator.destinationPanelSide === 0 ? leftPanel
+                            : (root.panelDragCoordinator.destinationPanelSide === 1 ? rightPanel : null)
+        return targetPanel
+                && root.panelDragCoordinator.canDropOn(root.panelDragCoordinator.destinationPanelSide)
+                && root.dragPointerInsidePanel(targetPanel)
+    }
+
+    function updatePanelDragCursor() {
+        if (!root.workspaceController) {
+            return
+        }
+        if (!root.panelDragCoordinator || !root.panelDragCoordinator.active) {
+            root.workspaceController.clearDragCursorShape()
+            return
+        }
+        root.workspaceController.setDragCursorShape(root.dragPointerOverAllowedTarget()
+                                                   ? Qt.ArrowCursor
+                                                   : Qt.ForbiddenCursor)
+    }
+
     Timer {
         id: restoreSplitStateLater
         interval: 0
@@ -88,6 +126,27 @@ Item {
                 return
             }
             splitView.restoreState(root.pendingSplitState)
+        }
+    }
+
+    Loader {
+        id: dragCoordinatorLoader
+        active: root.limitedDragNDropEnabled
+        sourceComponent: FilePanelDragCoordinator {
+            workspaceController: root.workspaceController
+            renamingActive: root.isRenaming
+
+            onActiveChanged: root.updatePanelDragCursor()
+            onPointerXChanged: root.updatePanelDragCursor()
+            onPointerYChanged: root.updatePanelDragCursor()
+            onCanCopyChanged: root.updatePanelDragCursor()
+            onCanMoveChanged: root.updatePanelDragCursor()
+            onDestinationPanelSideChanged: root.updatePanelDragCursor()
+        }
+        onActiveChanged: {
+            if (!active && root.workspaceController) {
+                root.workspaceController.clearDragCursorShape()
+            }
         }
     }
 
@@ -105,6 +164,10 @@ Item {
             SplitView.preferredWidth: 0
             controller: root.workspaceController.leftPanel
             workspaceController: root.workspaceController
+            panelSide: 0
+            limitedDragNDropEnabled: root.limitedDragNDropEnabled
+            dragCoordinator: root.limitedDragNDropEnabled ? root.panelDragCoordinator : null
+            oppositePanelItem: rightPanel
             propertiesController: root.propertiesController
             quickLookPopup: root.quickLookPopup
             liveResizeActive: root.liveResizeActive
@@ -138,6 +201,10 @@ Item {
 
             controller: root.workspaceController.rightPanel
             workspaceController: root.workspaceController
+            panelSide: 1
+            limitedDragNDropEnabled: root.limitedDragNDropEnabled
+            dragCoordinator: root.limitedDragNDropEnabled ? root.panelDragCoordinator : null
+            oppositePanelItem: leftPanel
             propertiesController: root.propertiesController
             quickLookPopup: root.quickLookPopup
             liveResizeActive: root.liveResizeActive
@@ -202,11 +269,49 @@ Item {
         z: 20
     }
 
+    Loader {
+        anchors.fill: parent
+        z: 40
+        active: root.limitedDragNDropEnabled
+        sourceComponent: Item {
+            anchors.fill: parent
+
+            FilePanelDragPreview {
+                dragCoordinator: root.panelDragCoordinator
+            }
+        }
+    }
+
+    Loader {
+        active: root.limitedDragNDropEnabled
+               && root.panelDragCoordinator
+               && root.panelDragCoordinator.active
+        anchors.fill: parent
+        z: 39
+
+        sourceComponent: Item {
+            anchors.fill: parent
+
+            HoverHandler {
+                enabled: true
+                cursorShape: root.dragPointerOverAllowedTarget()
+                             ? Qt.ArrowCursor
+                             : Qt.ForbiddenCursor
+            }
+        }
+    }
+
     Component.onCompleted: {
         Qt.callLater(() => {
             root.focusActivePanelView()
             root.initialFocusReady()
         })
+    }
+
+    Component.onDestruction: {
+        if (root.workspaceController) {
+            root.workspaceController.clearDragCursorShape()
+        }
     }
 
     Connections {

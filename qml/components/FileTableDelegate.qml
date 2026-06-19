@@ -54,6 +54,12 @@ Item {
 
     property bool isRenaming: false
     property real visualOffsetX: 0
+    property real dragStartX: 0
+    property real dragStartY: 0
+    property bool dragCandidate: false
+    property bool dragStarted: false
+    property bool badgePressed: false
+    property bool suppressClickAfterDrag: false
 
     component CellSeparator : Rectangle {
         anchors.right: parent.right
@@ -288,11 +294,73 @@ Item {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: false
+        preventStealing: root.dragCandidate || root.badgePressed
+        cursorShape: root.panel
+                     && root.panel.internalDragEnabled
+                     && typeof root.panel.itemDragAffordanceCursor === "function"
+                     ? root.panel.itemDragAffordanceCursor(root, mouseX, mouseY)
+                     : Qt.ArrowCursor
         scrollGestureEnabled: false
         onWheel: (wheel) => { wheel.accepted = false }
-        onPressed: root.cancelRenameOnPress("table-item-press")
+        onPressed: (mouse) => {
+            root.cancelRenameOnPress("table-item-press")
+            root.badgePressed = mouse.button === Qt.LeftButton
+                                && root.isPointOnBadge(mouse.x, mouse.y)
+            root.dragCandidate = root.panel
+                                 && root.panel.internalDragEnabled
+                                 && mouse.button === Qt.LeftButton
+                                 && !root.isRenaming
+                                 && !root.badgePressed
+                                 && (root.isSelected || root.isPointOnDragSurface(mouse.x, mouse.y))
+            root.dragStarted = false
+            root.dragStartX = mouse.x
+            root.dragStartY = mouse.y
+        }
+
+        onPositionChanged: (mouse) => {
+            if (root.badgePressed) {
+                return
+            }
+            if (!root.dragCandidate || !root.panel) {
+                return
+            }
+            if (root.dragStarted) {
+                root.panel.updateSelectionDragPosition(mouse, root)
+            } else {
+                root.dragStarted = root.panel.updateSelectionDragCandidate(
+                            root.index, root.path, root.dragStartX, root.dragStartY,
+                            mouse.x, mouse.y, mouse)
+                if (root.dragStarted) {
+                    root.panel.updateSelectionDragPosition(mouse, root)
+                }
+            }
+        }
+
+        onReleased: (mouse) => {
+            if (root.dragStarted && root.panel) {
+                root.panel.finishSelectionDrag(mouse, root)
+                root.suppressClickAfterDrag = true
+                suppressClickReset.restart()
+            }
+            root.dragCandidate = false
+            root.dragStarted = false
+            root.badgePressed = false
+        }
+
+        onCanceled: {
+            if (root.dragStarted && root.panel && root.panel.internalDragEnabled && root.panel.dragCoordinator) {
+                root.panel.dragCoordinator.cancelDrag("Drag canceled.")
+            }
+            root.dragCandidate = false
+            root.dragStarted = false
+            root.badgePressed = false
+        }
 
         onClicked: (mouse) => {
+            if (root.suppressClickAfterDrag) {
+                root.suppressClickAfterDrag = false
+                return
+            }
             if (mouse.button === Qt.RightButton) {
                 var colNamePos = root.mapToItem(colName, mouse.x, mouse.y)
                 if (colNamePos.x >= 0 && colNamePos.x <= colName.width) {
@@ -311,10 +379,31 @@ Item {
             root.doubleClicked()
         }
     }
+
+    Timer {
+        id: suppressClickReset
+        interval: 0
+        repeat: false
+        onTriggered: root.suppressClickAfterDrag = false
+    }
     function isPointOnBadge(x, y) {
         if (!selectionToggleBadge || !selectionToggleBadge.visible) return false
         const mapped = selectionToggleBadge.mapFromItem(root, x, y)
         return mapped.x >= 0 && mapped.y >= 0 && mapped.x < selectionToggleBadge.width && mapped.y < selectionToggleBadge.height
+    }
+
+    function isWithinItem(item, x, y, padding) {
+        if (!item || !item.visible) {
+            return false
+        }
+        const mapped = item.mapFromItem(root, x, y)
+        const pad = padding || 0
+        return mapped.x >= -pad && mapped.y >= -pad
+                && mapped.x < item.width + pad && mapped.y < item.height + pad
+    }
+
+    function isPointOnDragSurface(x, y) {
+        return root.isWithinItem(nameIcon, x, y, 2)
     }
 
     SelectionToggleBadge {
@@ -410,6 +499,7 @@ Item {
                 visible: !root.isRenaming
 
                 FileIconCell {
+                    id: nameIcon
                     Layout.preferredWidth: 16
                     Layout.preferredHeight: 16
                     Layout.alignment: Qt.AlignVCenter

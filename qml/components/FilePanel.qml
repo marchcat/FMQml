@@ -13,6 +13,10 @@ Pane {
 
     required property var controller
     required property var workspaceController
+    property int panelSide: -1
+    property var dragCoordinator: null
+    property var oppositePanelItem: null
+    property bool limitedDragNDropEnabled: false
     property var propertiesController
     property var quickLookPopup
     property bool active: false
@@ -23,6 +27,17 @@ Pane {
     property int externalScrollFileCountThreshold: 96
     signal detailsVisualStateChanged()
     readonly property bool showActiveHighlight: root.active && root.workspaceController.splitEnabled
+    readonly property bool internalDragEnabled: root.limitedDragNDropEnabled && Boolean(root.dragCoordinator)
+    readonly property bool dropTargetActive: root.internalDragEnabled
+                                             && root.dragCoordinator
+                                             && root.dragCoordinator.active
+                                             && root.dragCoordinator.isOppositePanel(root.panelSide)
+    readonly property bool dropTargetAllowed: root.internalDragEnabled
+                                              && root.dragCoordinator
+                                              && root.dragCoordinator.canDropOn(root.panelSide)
+    readonly property string dropTargetDeniedReason: root.internalDragEnabled && root.dragCoordinator
+                                                     ? root.dragCoordinator.deniedReasonFor(root.panelSide)
+                                                     : ""
     readonly property real activePanelFillAlpha: themeController.isDark ? 0.075 : 0.105
     readonly property real activePanelStrokeOpacity: themeController.isDark ? 0.88 : 0.96
     readonly property real activePanelIndicatorOpacity: themeController.isDark ? 0.86 : 0.94
@@ -208,6 +223,7 @@ Pane {
     property real resizeFrozenBriefCellWidth: 0
     property real resizeFrozenGridCellWidth: 0
     property bool showPanelBreadcrumbs: true
+    readonly property int selectionDragThreshold: 10
     readonly property bool startupLazyPanelMenus: true
     property var filePanelContextMenuItem: null
     property var filePanelEmptyMenuItem: null
@@ -1782,6 +1798,7 @@ Pane {
         if (root.virtualRootMode || root.isRenaming || root.panelKeysBlockedByOverlay() || mouse.button !== Qt.LeftButton) {
             return
         }
+        root.cancelSelectionDragForRubberBand()
         root.activated()
         root.rubberBandView = view
         root.rubberBandStartX = contentX
@@ -1819,6 +1836,23 @@ Pane {
                 return
             }
         }
+        if (item && root.internalDragEnabled) {
+            const mapped = item.mapFromItem(view, mouse.x, mouse.y)
+            const selectedItemDrag = item.isSelected === true
+                    && root.dragCoordinator
+                    && root.dragCoordinator.canStartDrag(root.panelSide, item.path)
+            const itemOwnsDrag = selectedItemDrag
+                    || typeof item.isPointOnDragSurface !== "function"
+                    || item.isPointOnDragSurface(mapped.x, mapped.y)
+            if (!itemOwnsDrag) {
+                root.rubberBandPressView = view
+                root.rubberBandPressIndex = item.index
+                root.beginRubberBand(view, mouse)
+                return
+            }
+            mouse.accepted = false
+            return
+        }
         root.rubberBandPressView = view
         root.rubberBandPressIndex = item ? item.index : -1
         root.beginRubberBand(view, mouse)
@@ -1837,7 +1871,8 @@ Pane {
         root.rubberBandCurrentY = contentY
         const dx = contentX - root.rubberBandStartX
         const dy = contentY - root.rubberBandStartY
-        if (!root.rubberBandActive && Math.sqrt(dx * dx + dy * dy) >= 5) {
+        if (!root.rubberBandActive
+                && (dx * dx + dy * dy) >= root.selectionDragThreshold * root.selectionDragThreshold) {
             root.rubberBandActive = true
             root.rubberBandMoved = true
             root.clearSelection()
@@ -2144,6 +2179,106 @@ Pane {
             !root.isCurrentPathArchive && !root.isCurrentPathRemote && isIsoImageFile === true)
     }
 
+    function selectedPathsContain(path) {
+        if (!root.controller || !root.controller.selectedPaths) {
+            return false
+        }
+        const selected = root.controller.selectedPaths()
+        return selected && selected.indexOf(path) >= 0
+    }
+
+    function updateSelectionDragCandidate(index, path, startX, startY, currentX, currentY, mouse) {
+        if (!root.internalDragEnabled || !root.dragCoordinator || root.dragCoordinator.active || root.isRenaming) {
+            return false
+        }
+        const dx = currentX - startX
+        const dy = currentY - startY
+        if ((dx * dx + dy * dy) < root.selectionDragThreshold * root.selectionDragThreshold) {
+            return false
+        }
+        if (!root.selectedPathsContain(path)) {
+            root.handleItemClick(index, mouse)
+        }
+        return root.dragCoordinator.startDrag(root.panelSide, path)
+    }
+
+    function cancelSelectionDragForRubberBand() {
+        if (root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active) {
+            root.dragCoordinator.cancelDrag("Rubber-band selection started.")
+        }
+    }
+
+    function updateSelectionDragPosition(mouse, sourceItem) {
+        if (root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active && mouse && sourceItem) {
+            root.dragCoordinator.updateDragPosition(sourceItem, mouse.x, mouse.y)
+        }
+    }
+
+    function selectionDragCursorShape() {
+        if (!root.internalDragEnabled || !root.dragCoordinator || !root.dragCoordinator.active || !root.oppositePanelItem) {
+            return Qt.ArrowCursor
+        }
+        if (!root.dragCoordinator.parent) {
+            return Qt.ForbiddenCursor
+        }
+        const point = root.oppositePanelItem.mapFromItem(
+                    root.dragCoordinator.parent,
+                    root.dragCoordinator.pointerX,
+                    root.dragCoordinator.pointerY)
+        const overOppositePanel = point.x >= 0
+                && point.y >= 0
+                && point.x <= root.oppositePanelItem.width
+                && point.y <= root.oppositePanelItem.height
+        return overOppositePanel && root.dragCoordinator.canDropOn(root.oppositePanelItem.panelSide)
+                ? Qt.ArrowCursor
+                : Qt.ForbiddenCursor
+    }
+
+    function itemDragAffordanceCursor(item, x, y) {
+        if (!root.internalDragEnabled || !item || root.isRenaming) {
+            return Qt.ArrowCursor
+        }
+        if (root.dragCoordinator && root.dragCoordinator.active) {
+            return root.selectionDragCursorShape()
+        }
+        if (item.isSelected === true) {
+            return Qt.OpenHandCursor
+        }
+        if (typeof item.isPointOnDragSurface === "function" && item.isPointOnDragSurface(x, y)) {
+            return Qt.OpenHandCursor
+        }
+        return Qt.ArrowCursor
+    }
+
+    function finishSelectionDrag(mouse, sourceItem) {
+        if (!root.internalDragEnabled || !root.dragCoordinator || !root.dragCoordinator.active) {
+            return
+        }
+        root.updateSelectionDragPosition(mouse, sourceItem)
+        if (!mouse || !sourceItem || !root.oppositePanelItem) {
+            root.dragCoordinator.cancelDrag("Drag released.")
+            return
+        }
+        const point = root.oppositePanelItem.mapFromItem(sourceItem, mouse.x, mouse.y)
+        const overOppositePanel = point.x >= 0
+                && point.y >= 0
+                && point.x <= root.oppositePanelItem.width
+                && point.y <= root.oppositePanelItem.height
+        if (!overOppositePanel || !root.dragCoordinator.canDropOn(root.oppositePanelItem.panelSide)) {
+            const reason = root.dragCoordinator.deniedReasonFor(root.oppositePanelItem.panelSide)
+            if (overOppositePanel && reason.length > 0) {
+                root.showStatusMessage(reason)
+            }
+            root.dragCoordinator.cancelDrag("Drag released outside drop target.")
+            return
+        }
+        const menuPoint = root.mapFromItem(sourceItem, mouse.x, mouse.y)
+        if (!oppositePanelDropMenuLoader.item
+                || !oppositePanelDropMenuLoader.item.popupDropMenu(root, menuPoint.x, menuPoint.y)) {
+            root.dragCoordinator.cancelDrag("Drop menu failed.")
+        }
+    }
+
     function loadingFolderName() {
         return filePanelLoadingPolicy.loadingFolderName()
     }
@@ -2189,10 +2324,35 @@ Pane {
         sourceComponent: filePanelEmptyMenuComponent
     }
 
+    Loader {
+        id: oppositePanelDropMenuLoader
+        active: root.internalDragEnabled
+        sourceComponent: OppositePanelDropMenu {
+            workspaceController: root.workspaceController
+            dragCoordinator: root.dragCoordinator
+            onStatusMessageRequested: (message) => root.showStatusMessage(message)
+        }
+    }
+
     FilePanelDropOverlay {
         anchors.fill: parent
         workspaceController: root.workspaceController
+        panelSide: root.panelSide
         currentPath: root.controller.currentPath
+        externalDropSuppressed: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+        onStatusMessageRequested: (message) => root.showStatusMessage(message)
+    }
+
+    Loader {
+        anchors.fill: parent
+        z: 12
+        active: root.internalDragEnabled
+        sourceComponent: FilePanelOppositeDropOverlay {
+            anchors.fill: parent
+            active: root.dropTargetActive
+            allowed: root.dropTargetAllowed
+            deniedReason: root.dropTargetDeniedReason
+        }
     }
 
     Timer {
@@ -2422,6 +2582,9 @@ Pane {
                             enabled: root.emptyAreaInputEnabled()
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             preventStealing: true
+                            cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                         ? root.selectionDragCursorShape()
+                                         : Qt.ArrowCursor
                             scrollGestureEnabled: false
                             onPressed: (mouse) => root.beginRubberBandPress(listView, mouse)
                             onPositionChanged: (mouse) => root.updateRubberBand(listView, mouse)
@@ -2475,8 +2638,8 @@ Pane {
                 enabled: visible
                 clip: true
                 flow: GridView.FlowLeftToRight
-                cellWidth: root.lightweightDelegates && root.resizeFrozenBriefCellWidth > 0
-                           ? Math.max(root.resizeFrozenBriefCellWidth, Math.max(160, Math.floor(width / 2)))
+                cellWidth: root.lightweightDelegates
+                           ? Math.max(160, width)
                            : Math.max(160, Math.floor(width / 2))
                 cellHeight: root.briefRowHeight
                 model: root.fileViewsModelEnabled && root.viewMode === 2 && !root.virtualRootMode ? root.controller.directoryModel : null
@@ -2558,6 +2721,9 @@ Pane {
                     enabled: root.emptyAreaInputEnabled()
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => root.beginRubberBandPress(briefView, mouse)
                     onPositionChanged: (mouse) => root.updateRubberBand(briefView, mouse)
@@ -2677,6 +2843,12 @@ Pane {
                     property bool isRenaming: false
                     property bool currentItem: GridView.isCurrentItem
                     property bool panelActive: root.active
+                    property real dragStartX: 0
+                    property real dragStartY: 0
+                    property bool dragCandidate: false
+                    property bool dragStarted: false
+                    property bool badgePressed: false
+                    property bool suppressClickAfterDrag: false
                     readonly property bool lightweightActive: root.lightweightDelegates && !isRenaming
                     readonly property color selectedStateFill: Theme.withAlpha(
                         Theme.activeAccent,
@@ -2800,6 +2972,20 @@ Pane {
                         var mapped = badge.mapFromItem(gridMouseArea, x, y)
                         return mapped.x >= 0 && mapped.y >= 0
                             && mapped.x < badge.width && mapped.y < badge.height
+                    }
+
+                    function isPointOnDragSurface(x, y) {
+                        function within(item) {
+                            if (!item || !item.visible) {
+                                return false
+                            }
+                            const mapped = item.mapFromItem(gridDelegate, x, y)
+                            return mapped.x >= 0 && mapped.y >= 0
+                                    && mapped.x < item.width && mapped.y < item.height
+                        }
+                        return within(thumbnail)
+                                || within(gridNativeIcon)
+                                || within(gridFallbackIcon)
                     }
 
                     function queueThumbnailLoad(clearExisting) {
@@ -3084,6 +3270,7 @@ Pane {
                     transform: Translate { y: gridDelegate.visualOffsetY }
 
                     Item {
+                        id: gridIconFrame
                         Layout.alignment: Qt.AlignHCenter
                         Layout.preferredWidth: root.gridIconSize
                         Layout.preferredHeight: root.gridIconSize
@@ -3168,10 +3355,71 @@ Pane {
                         acceptedButtons: Qt.LeftButton | Qt.RightButton
                         visible: !gridDelegate.lightweightActive
                         scrollGestureEnabled: false
+                        preventStealing: gridDelegate.dragCandidate || gridDelegate.badgePressed
+                        cursorShape: root.internalDragEnabled
+                                     ? root.itemDragAffordanceCursor(gridDelegate, mouseX, mouseY)
+                                     : Qt.ArrowCursor
                         onWheel: (wheel) => { wheel.accepted = false }
-                        onPressed: root.cancelInlineRenameForNavigation("grid-item-press")
+                        onPressed: (mouse) => {
+                            root.cancelInlineRenameForNavigation("grid-item-press")
+                            gridDelegate.badgePressed = mouse.button === Qt.LeftButton
+                                                         && gridDelegate.isPointOnBadge(mouse.x, mouse.y)
+                            gridDelegate.dragCandidate = root.internalDragEnabled
+                                                         && mouse.button === Qt.LeftButton
+                                                         && !gridDelegate.isRenaming
+                                                         && !gridDelegate.badgePressed
+                                                         && (gridDelegate.isSelected
+                                                             || gridDelegate.isPointOnDragSurface(mouse.x, mouse.y))
+                            gridDelegate.dragStarted = false
+                            gridDelegate.dragStartX = mouse.x
+                            gridDelegate.dragStartY = mouse.y
+                        }
+
+                        onPositionChanged: (mouse) => {
+                            if (gridDelegate.badgePressed) {
+                                return
+                            }
+                            if (!gridDelegate.dragCandidate) {
+                                return
+                            }
+                            if (gridDelegate.dragStarted) {
+                                root.updateSelectionDragPosition(mouse, gridDelegate)
+                            } else {
+                                gridDelegate.dragStarted = root.updateSelectionDragCandidate(
+                                            gridDelegate.index, gridDelegate.path,
+                                            gridDelegate.dragStartX, gridDelegate.dragStartY,
+                                            mouse.x, mouse.y, mouse)
+                                if (gridDelegate.dragStarted) {
+                                    root.updateSelectionDragPosition(mouse, gridDelegate)
+                                }
+                            }
+                        }
+
+                        onReleased: (mouse) => {
+                            if (gridDelegate.dragStarted) {
+                                root.finishSelectionDrag(mouse, gridDelegate)
+                                gridDelegate.suppressClickAfterDrag = true
+                                gridSuppressClickReset.restart()
+                            }
+                            gridDelegate.dragCandidate = false
+                            gridDelegate.dragStarted = false
+                            gridDelegate.badgePressed = false
+                        }
+
+                        onCanceled: {
+                            if (gridDelegate.dragStarted && root.internalDragEnabled && root.dragCoordinator) {
+                                root.dragCoordinator.cancelDrag("Drag canceled.")
+                            }
+                            gridDelegate.dragCandidate = false
+                            gridDelegate.dragStarted = false
+                            gridDelegate.badgePressed = false
+                        }
 
                         onClicked: (mouse) => {
+                            if (gridDelegate.suppressClickAfterDrag) {
+                                gridDelegate.suppressClickAfterDrag = false
+                                return
+                            }
                             if (mouse.button === Qt.RightButton) root.handleItemRightClick(index, path, isArchiveFile, isIsoImageFile)
                             else if (gridDelegate.isPointOnBadge(mouse.x, mouse.y)) root.controller.directoryModel.toggleSelected(gridDelegate.index)
                             else root.handleItemClick(index, mouse)
@@ -3179,6 +3427,13 @@ Pane {
                         onDoubleClicked: (mouse) => {
                             root.openItem(index)
                         }
+                    }
+
+                    Timer {
+                        id: gridSuppressClickReset
+                        interval: 0
+                        repeat: false
+                        onTriggered: gridDelegate.suppressClickAfterDrag = false
                     }
 
                     SelectionToggleBadge {
@@ -3207,6 +3462,9 @@ Pane {
                     enabled: root.emptyAreaInputEnabled()
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => root.beginRubberBandPress(gridView, mouse)
                     onPositionChanged: (mouse) => root.updateRubberBand(gridView, mouse)
@@ -3281,6 +3539,9 @@ Pane {
                     height: Math.max(0, gridView.y)
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => gridEdgeRubberBandAreas.begin(gridTopRubberBandEdge, mouse)
                     onPositionChanged: (mouse) => gridEdgeRubberBandAreas.update(gridTopRubberBandEdge, mouse)
@@ -3302,6 +3563,9 @@ Pane {
                     height: gridView.height
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => gridEdgeRubberBandAreas.begin(gridLeftRubberBandEdge, mouse)
                     onPositionChanged: (mouse) => gridEdgeRubberBandAreas.update(gridLeftRubberBandEdge, mouse)
@@ -3323,6 +3587,9 @@ Pane {
                     height: gridView.height
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => gridEdgeRubberBandAreas.begin(gridRightRubberBandEdge, mouse)
                     onPositionChanged: (mouse) => gridEdgeRubberBandAreas.update(gridRightRubberBandEdge, mouse)
@@ -3344,6 +3611,9 @@ Pane {
                     height: Math.max(0, contentArea.height - root.bottomChromeHeight - y)
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: true
+                    cursorShape: root.internalDragEnabled && root.dragCoordinator && root.dragCoordinator.active
+                                 ? root.selectionDragCursorShape()
+                                 : Qt.ArrowCursor
                     scrollGestureEnabled: false
                     onPressed: (mouse) => gridEdgeRubberBandAreas.begin(gridBottomRubberBandEdge, mouse)
                     onPositionChanged: (mouse) => gridEdgeRubberBandAreas.update(gridBottomRubberBandEdge, mouse)

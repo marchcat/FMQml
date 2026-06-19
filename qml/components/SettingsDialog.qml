@@ -30,6 +30,7 @@ Dialog {
     property bool shellFirstQmlRestoreEnabled: false
     property bool systemTrayIconEnabled: false
     property bool allowOnlyOneInstanceEnabled: false
+    property bool limitedDragNDropEnabled: false
     property string fontFamilyValue: typeof appSettings !== "undefined" && appSettings
                                      ? appSettings.fontFamily
                                      : ""
@@ -117,6 +118,9 @@ Dialog {
         allowOnlyOneInstanceEnabled = typeof appSettings !== "undefined" && appSettings
                                       ? appSettings.allowOnlyOneInstance
                                       : false
+        limitedDragNDropEnabled = typeof appSettings !== "undefined" && appSettings
+                                  ? appSettings.useLimitedDragNDrop
+                                  : false
         fontFamilyValue = typeof appSettings !== "undefined" && appSettings
                           ? appSettings.fontFamily
                           : ""
@@ -221,6 +225,14 @@ Dialog {
         if (typeof appSettings !== "undefined" && appSettings
                 && appSettings.allowOnlyOneInstance !== enabled) {
             appSettings.allowOnlyOneInstance = enabled
+        }
+    }
+
+    function setLimitedDragNDropEnabled(enabled) {
+        limitedDragNDropEnabled = enabled
+        if (typeof appSettings !== "undefined" && appSettings
+                && appSettings.useLimitedDragNDrop !== enabled) {
+            appSettings.useLimitedDragNDrop = enabled
         }
     }
 
@@ -459,6 +471,14 @@ Dialog {
                             checked: root.allowOnlyOneInstanceEnabled
                             accentColor: root.dialogAccent
                             onToggled: (checked) => root.setAllowOnlyOneInstanceEnabled(checked)
+                        }
+
+                        SettingsToggleRow {
+                            title: "Experimental panel drag and drop"
+                            subtitle: "Allow dragging selected items to the opposite panel"
+                            checked: root.limitedDragNDropEnabled
+                            accentColor: root.dialogAccent
+                            onToggled: (checked) => root.setLimitedDragNDropEnabled(checked)
                         }
 
                         SettingsContentBlock {
@@ -1146,6 +1166,9 @@ Dialog {
         }
         function onAllowOnlyOneInstanceChanged() {
             root.allowOnlyOneInstanceEnabled = appSettings ? appSettings.allowOnlyOneInstance : false
+        }
+        function onUseLimitedDragNDropChanged() {
+            root.limitedDragNDropEnabled = appSettings ? appSettings.useLimitedDragNDrop : false
         }
         function onFontFamilyChanged() {
             root.fontFamilyValue = appSettings ? appSettings.fontFamily : ""

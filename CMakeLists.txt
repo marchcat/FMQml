@@ -335,7 +335,11 @@ set(MY_QML_FILES
     qml/components/filepanel/FileViewsReusePolicy.qml
     qml/components/filepanel/FilePanelContextMenu.qml
     qml/components/filepanel/FilePanelEmptyMenu.qml
+    qml/components/filepanel/FilePanelDragCoordinator.qml
+    qml/components/filepanel/FilePanelDragPreview.qml
     qml/components/filepanel/FilePanelDropOverlay.qml
+    qml/components/filepanel/FilePanelOppositeDropOverlay.qml
+    qml/components/filepanel/OppositePanelDropMenu.qml
     qml/components/filepanel/FilePanelShell.qml
     qml/components/filepanel/FileIconCell.qml
     qml/components/filepanel/FileNameEditor.qml

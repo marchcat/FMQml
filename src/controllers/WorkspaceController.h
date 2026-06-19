@@ -32,6 +32,7 @@ class WorkspaceController final : public QObject {
 
 public:
     explicit WorkspaceController(QObject *parent = nullptr);
+    ~WorkspaceController() override;
 
     FilePanelController *leftPanel();
     FilePanelController *rightPanel();
@@ -57,11 +58,30 @@ public:
     Q_INVOKABLE void activateLeft();
     Q_INVOKABLE void activateRight();
     Q_INVOKABLE void focusActivePanel();
+    Q_INVOKABLE void setDragCursorShape(int shape);
+    Q_INVOKABLE void clearDragCursorShape();
     Q_INVOKABLE void mirrorActivePanelToOpposite();
     Q_INVOKABLE void copyActiveSelectionToOpposite();
+    Q_INVOKABLE QVariantMap oppositePanelDropCapabilities(int sourcePanel,
+                                                          const QStringList &sources,
+                                                          int destinationPanel);
+    Q_INVOKABLE QVariantMap externalDropCapabilities(const QVariantList &urls,
+                                                     int destinationPanel,
+                                                     const QString &destinationPath);
+    Q_INVOKABLE bool copyDroppedSelectionToPanel(int sourcePanel,
+                                                 const QStringList &sources,
+                                                 int destinationPanel,
+                                                 const QString &destinationPath);
+    Q_INVOKABLE bool copyExternalUrlsToPanel(const QVariantList &urls,
+                                             int destinationPanel,
+                                             const QString &destinationPath);
     Q_INVOKABLE void duplicateActiveSelection();
     Q_INVOKABLE void compressActiveSelection(const QString &format = QStringLiteral("7z"));
     Q_INVOKABLE void moveActiveSelectionToOpposite();
+    Q_INVOKABLE bool moveDroppedSelectionToPanel(int sourcePanel,
+                                                 const QStringList &sources,
+                                                 int destinationPanel,
+                                                 const QString &destinationPath);
     Q_INVOKABLE void deleteActiveSelection();
     Q_INVOKABLE void requestDelete(const QStringList &paths, const QString &label, const QVariantList &items = {});
     Q_INVOKABLE bool confirmDelete(const QStringList &paths);
@@ -112,6 +132,7 @@ signals:
     void deviceEjectFailed(const QString &rootPath, const QString &displayName, const QString &message);
 
 private:
+    FilePanelController *panelBySide(int side);
     FilePanelController *panelForPath(const QString &path);
     void handleVolumeRemoved(const QString &rootPath, const QString &displayName);
     void handleProviderPlaceRemoved(const QString &rootPath, const QString &displayName, const QString &section);
@@ -137,4 +158,6 @@ private:
     QString m_pendingPasswordExtractDestination;
     bool m_isCut = false;
     bool m_replayingHistory = false;
+    bool m_dragCursorOverridden = false;
+    int m_dragCursorShape = -1;
 };
