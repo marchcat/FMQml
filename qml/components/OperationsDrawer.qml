@@ -206,15 +206,16 @@ Item {
         }
     }
 
-    Rectangle {
+    AmbientPanelBackground {
         id: compactChip
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         width: 248
         height: 54
-        radius: 16
+        cornerRadius: 16
         visible: root.chipVisible
-        color: root.drawerSurface
+        baseColor: root.drawerSurface
+        strength: 0.46
         border.color: root.drawerBorder
         border.width: 1
 
@@ -230,7 +231,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             anchors.margins: 1
-            radius: Math.max(0, parent.radius - 1)
+            radius: Math.max(0, parent.cornerRadius - 1)
             color: root.drawerWash
             border.color: "transparent"
             border.width: 0
@@ -341,16 +342,17 @@ Item {
         }
     }
 
-    Rectangle {
+    AmbientPanelBackground {
         id: expandedCard
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         width: 360
         height: content.implicitHeight + 28
-        radius: 18
+        cornerRadius: 18
         visible: root.cardVisible
         scale: visible ? 1.0 : 0.98
-        color: root.drawerSurface
+        baseColor: root.drawerSurface
+        strength: 0.50
         border.color: root.drawerBorder
         border.width: 1
 
@@ -368,7 +370,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             anchors.margins: 1
-            radius: Math.max(0, parent.radius - 1)
+            radius: Math.max(0, parent.cornerRadius - 1)
             color: root.drawerWash
             border.color: "transparent"
             border.width: 0

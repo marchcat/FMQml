@@ -75,18 +75,16 @@ Rectangle {
         shadowVerticalOffset: 2 + (searchField.activeFocus ? 2 : 0)
     }
 
-    Rectangle {
+    AmbientPanelBackground {
         id: editGlow
         anchors.fill: parent
-        radius: parent.radius
-        color: "transparent"
+        cornerRadius: parent.radius
+        baseColor: "transparent"
+        startColor: Theme.withAlpha(Theme.categoryInfo, 0.14)
+        midColor: "transparent"
+        endColor: Theme.withAlpha(Theme.warmAccent, 0.06)
+        strength: 0.58
         visible: searchField.activeFocus && Theme.useGradientColors
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: Theme.withAlpha(Theme.categoryInfo, 0.14) }
-            GradientStop { position: 0.42; color: "transparent" }
-            GradientStop { position: 1.0; color: Theme.withAlpha(Theme.warmAccent, 0.06) }
-        }
     }
 
     RecolorSvgIcon {

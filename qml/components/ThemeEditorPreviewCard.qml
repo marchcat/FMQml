@@ -93,6 +93,10 @@ Rectangle {
     readonly property color pCatAction: previewColor("categoryAction", Theme.categoryAction)
     readonly property color pCatUtility: previewColor("categoryUtility", Theme.categoryUtility)
     readonly property color pCatSystem: previewColor("categorySystem", Theme.categorySystem)
+    readonly property real underlayStrength: 0.72
+    readonly property real panelStrength: 0.68
+    readonly property real dialogStrength: 0.50
+    readonly property real lowerChromeStrength: 0.28
 
     radius: Theme.radiusLg
     clip: true
@@ -103,10 +107,18 @@ Rectangle {
     Rectangle {
         anchors.fill: parent
         radius: parent.radius
-        gradient: Gradient {
-            GradientStop { position: 0.00; color: pBg }
-            GradientStop { position: 0.66; color: Theme.useGradientColors ? Theme.withAlpha(pPanelSoft, lightMode ? 0.70 : 0.38) : pBg }
-            GradientStop { position: 1.00; color: Theme.useGradientColors ? Theme.withAlpha(pAccent, lightMode ? 0.035 : 0.075) : pBg }
+        color: pBg
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            visible: Theme.useGradientColors
+            opacity: underlayStrength
+            gradient: Gradient {
+                GradientStop { position: 0.00; color: pChromeStart }
+                GradientStop { position: 0.52; color: pChromeMid }
+                GradientStop { position: 1.00; color: pChromeEnd }
+            }
         }
     }
 
@@ -119,15 +131,23 @@ Rectangle {
             Layout.fillWidth: true
             implicitHeight: 68
             radius: 10
+            color: pPanelStrong
             border.color: h4("chromeGradientStart", "chromeGradientMid", "chromeGradientEnd", "panelBorder")
                           ? Theme.accent
                           : Theme.withAlpha(pPanelBrd, 0.78)
             border.width: h4("chromeGradientStart", "chromeGradientMid", "chromeGradientEnd", "panelBorder") ? 2 : 1
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.00; color: Theme.useGradientColors ? pChromeStart : pPanelStrong }
-                GradientStop { position: 0.52; color: Theme.useGradientColors ? pChromeMid : pPanelStrong }
-                GradientStop { position: 1.00; color: Theme.useGradientColors ? pChromeEnd : pPanelStrong }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: Theme.useGradientColors
+                opacity: panelStrength
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.00; color: pChromeStart }
+                    GradientStop { position: 0.52; color: pChromeMid }
+                    GradientStop { position: 1.00; color: pChromeEnd }
+                }
             }
 
             ColumnLayout {
@@ -294,6 +314,18 @@ Rectangle {
                 color: pPanel
                 border.color: h2("panelSurface", "panelBorder") ? Theme.accent : Theme.withAlpha(pPanelBrd, 0.84)
                 border.width: h2("panelSurface", "panelBorder") ? 2 : 1
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    visible: Theme.useGradientColors
+                    opacity: panelStrength
+                    gradient: Gradient {
+                        GradientStop { position: 0.00; color: pChromeStart }
+                        GradientStop { position: 0.42; color: pChromeMid }
+                        GradientStop { position: 1.00; color: pChromeEnd }
+                    }
+                }
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -810,6 +842,19 @@ Rectangle {
             border.color: h3("statusRailFill", "panelSurface", "panelBorder") ? Theme.accent : Theme.withAlpha(pPanelBrd, 0.78)
             border.width: h3("statusRailFill", "panelSurface", "panelBorder") ? 2 : 1
 
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: Theme.useGradientColors
+                opacity: lowerChromeStrength
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.00; color: pChromeStart }
+                    GradientStop { position: 0.52; color: pChromeMid }
+                    GradientStop { position: 1.00; color: pChromeEnd }
+                }
+            }
+
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 10
@@ -914,6 +959,19 @@ Rectangle {
             color: pPanelStrong
             border.color: h2("menuBorder", "panelSurfaceStrong") ? Theme.accent : pMenuBrd
             border.width: h2("menuBorder", "panelSurfaceStrong") ? 2 : 1
+
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                visible: Theme.useGradientColors
+                opacity: dialogStrength
+                gradient: Gradient {
+                    GradientStop { position: 0.00; color: pChromeStart }
+                    GradientStop { position: 0.42; color: pChromeMid }
+                    GradientStop { position: 1.00; color: pChromeEnd }
+                }
+            }
+
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true

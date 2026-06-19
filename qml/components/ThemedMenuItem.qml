@@ -116,7 +116,7 @@ MenuItem {
                    : (root.destructive && root.hovered) ? Theme.danger : Theme.textPrimary
             font.pixelSize: Theme.fontSizeLabel
             font.letterSpacing: 0
-            font.weight: root.highlighted || root.active ? Font.DemiBold : Font.Normal
+            font.weight: root.active ? Font.DemiBold : Font.Normal
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
             Layout.fillWidth: true

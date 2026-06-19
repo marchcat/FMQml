@@ -3,8 +3,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import ".."
 import "../../style"
+import "../common"
 
-Rectangle {
+AmbientPanelBackground {
     id: root
 
     property var controller
@@ -78,7 +79,8 @@ Rectangle {
 
     implicitHeight: Math.max(44, Theme.controlHeight + 6)
     visible: root.visibleForSelection
-    color: Theme.panelSurfaceStrong
+    baseColor: Theme.panelSurfaceStrong
+    strength: 0.28
     border.width: 0
 
     Connections {

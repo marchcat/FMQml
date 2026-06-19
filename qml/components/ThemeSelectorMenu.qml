@@ -197,6 +197,9 @@ Menu {
                     surfaceColor: root.systemThemePreviewColors.surface || Theme.surface
                     accentColor: root.systemThemePreviewColors.accent || Theme.accent
                     glowColor: root.systemThemePreviewColors.activeGlow || Theme.activeGlow
+                    chromeStartColor: root.systemThemePreviewColors.chromeGradientStart || Theme.chromeGradientStart
+                    chromeMidColor: root.systemThemePreviewColors.chromeGradientMid || Theme.chromeGradientMid
+                    chromeEndColor: root.systemThemePreviewColors.chromeGradientEnd || Theme.chromeGradientEnd
                     selected: !themeController.customThemeLoaded && themeController.mode === root.systemThemeMode
                     onActivated: {
                         themeController.mode = root.systemThemeMode
@@ -214,6 +217,9 @@ Menu {
                         surfaceColor: modelData.colors && modelData.colors.surface ? modelData.colors.surface : Theme.surface
                         accentColor: modelData.colors && modelData.colors.accent ? modelData.colors.accent : Theme.accent
                         glowColor: modelData.colors && modelData.colors.activeGlow ? modelData.colors.activeGlow : Theme.activeGlow
+                        chromeStartColor: modelData.colors && modelData.colors.chromeGradientStart ? modelData.colors.chromeGradientStart : Theme.chromeGradientStart
+                        chromeMidColor: modelData.colors && modelData.colors.chromeGradientMid ? modelData.colors.chromeGradientMid : Theme.chromeGradientMid
+                        chromeEndColor: modelData.colors && modelData.colors.chromeGradientEnd ? modelData.colors.chromeGradientEnd : Theme.chromeGradientEnd
                         selected: !themeController.customThemeLoaded && themeController.mode !== root.systemThemeMode && themeController.scheme === index
                         onActivated: root.applyScheme(index)
                     }

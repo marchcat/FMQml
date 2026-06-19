@@ -2213,9 +2213,7 @@ Pane {
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: root.panelToolbarHeight
-            color: root.showActiveHighlight
-                   ? Theme.panelSurfaceStrong
-                   : Theme.withAlpha(Theme.panelSurfaceStrong, themeController.isDark ? 0.18 : 0.32)
+            color: Theme.panelSurfaceStrong
             radius: Theme.innerRadius(Theme.panelRadius, 1)
             bottomLeftRadius: 0
             bottomRightRadius: 0
@@ -3089,6 +3087,19 @@ Pane {
                         Layout.alignment: Qt.AlignHCenter
                         Layout.preferredWidth: root.gridIconSize
                         Layout.preferredHeight: root.gridIconSize
+                        readonly property bool thumbnailReady: gridDelegate.thumbnailRequestActive
+                                                               && thumbnail.status === Image.Ready
+                        readonly property bool nativeIconRequested: root.effectiveUseNativeIcons
+                                                                  && gridNativeIcon.source.toString().length > 0
+                        readonly property bool nativeIconReady: nativeIconRequested
+                                                               && gridNativeIcon.status === Image.Ready
+                        readonly property bool nativeIconFailed: nativeIconRequested
+                                                                && gridNativeIcon.status === Image.Error
+                        readonly property bool showBundledIcon: !thumbnailReady
+                                                               && (!nativeIconRequested
+                                                                   || !root.effectiveUseNativeIcons
+                                                                   || nativeIconFailed)
+                        readonly property bool showNativeIcon: !thumbnailReady && nativeIconReady
 
                         Image {
                             id: gridFallbackIcon
@@ -3097,8 +3108,7 @@ Pane {
                             height: width
                             source: root.bundledIconForPath(path, isDirectory, suffix, iconName)
                             sourceSize: Qt.size(width, height)
-                            visible: (!gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready)
-                                     && (!root.effectiveUseNativeIcons || gridNativeIcon.status !== Image.Ready)
+                            visible: parent.showBundledIcon
                             opacity: isImage ? 0.72 : 1.0
                             smooth: true
                             mipmap: false
@@ -3112,41 +3122,19 @@ Pane {
                             height: gridFallbackIcon.height
                             source: root.effectiveUseNativeIcons ? root.panelIconSource(path, isDirectory, suffix, iconName) : ""
                             sourceSize: Qt.size(width, height)
-                            visible: root.effectiveUseNativeIcons
-                                     && (!gridDelegate.thumbnailRequestActive || thumbnail.status !== Image.Ready)
-                                     && status === Image.Ready
+                            visible: parent.showNativeIcon
                             opacity: isImage ? 0.72 : 1.0
                             smooth: true
                             mipmap: false
                             asynchronous: true
                         }
 
-                        Image {
-                            anchors.centerIn: parent
-                            width: Math.round(root.gridIconSize * 0.9)
-                            height: width
-                            source: "../assets/filetypes-next/image.svg"
-                            sourceSize: Qt.size(width, height)
-                            visible: gridDelegate.thumbnailRequestActive && isImage && (thumbnail.status !== Image.Ready)
-                            opacity: 0.74
-                            smooth: true
-                            mipmap: false
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: Theme.radiusLg
-                            visible: gridDelegate.thumbnailRequestActive && thumbnail.status !== Image.Ready
-                            color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, themeController.isDark ? 0.18 : 0.12)
-                        }
-
                         Rectangle {
                             anchors.fill: parent
                             radius: Theme.radiusLg
                             color: "#ffffff"
-                            visible: gridDelegate.thumbnailRequestActive
+                            visible: parent.thumbnailReady
                                      && String(suffix || "").toLowerCase() === "pdf"
-                                     && thumbnail.status === Image.Ready
                         }
 
                         Image {
@@ -3158,6 +3146,7 @@ Pane {
                             asynchronous: true
                             cache: true
                             smooth: true
+                            visible: parent.thumbnailReady
                         }
                     }
                     Label {

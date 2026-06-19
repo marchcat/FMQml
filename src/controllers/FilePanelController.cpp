@@ -201,6 +201,37 @@ bool localAutocompleteAllowedFor(const QString &inputPath, const QString &curren
         && !isNonLocalAutocompletePath(currentPath);
 }
 
+QString expandHomeShortcutPath(const QString &path)
+{
+    QString value = path.trimmed();
+    if (value != QLatin1String("~")
+        && !value.startsWith(QStringLiteral("~/"))
+        && !value.startsWith(QStringLiteral("~\\"))) {
+        return value;
+    }
+
+    QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    if (home.isEmpty()) {
+        home = QDir::homePath();
+    }
+    if (home.isEmpty()) {
+        return value;
+    }
+
+    const QString normalizedHome = QDir::cleanPath(QDir::fromNativeSeparators(home));
+    if (value == QLatin1String("~")) {
+        return normalizedHome;
+    }
+
+    const QString tail = QDir::fromNativeSeparators(value.mid(2));
+    QString expanded = QDir::cleanPath(QDir(normalizedHome).filePath(tail));
+    if ((value.endsWith(QLatin1Char('/')) || value.endsWith(QLatin1Char('\\')))
+        && !expanded.endsWith(QLatin1Char('/'))) {
+        expanded += QLatin1Char('/');
+    }
+    return expanded;
+}
+
 bool providerNavigationSuggestionsAllowedFor(const QString &inputPath)
 {
     return isProviderUriPath(inputPath);
@@ -716,7 +747,7 @@ QVariantList directorySuggestionEntriesForInput(const QString &inputPath,
         return suggestions;
     }
 
-    QString cleanPath = inputPath.trimmed();
+    QString cleanPath = expandHomeShortcutPath(inputPath);
     if (cleanPath.isEmpty()) {
         return suggestions;
     }
@@ -1623,7 +1654,7 @@ bool FilePanelController::requestOpenPath(const QString &path, bool addToHistory
         return false;
     }
 
-    const QString trimmedPath = path.trimmed();
+    const QString trimmedPath = expandHomeShortcutPath(path);
     if (trimmedPath.isEmpty()) {
         ++m_navigationRequestId;
         setNavigationPending(false);

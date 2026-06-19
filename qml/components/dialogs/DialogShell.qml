@@ -1,8 +1,9 @@
 import QtQuick
 import QtQuick.Effects
 import "../../style"
+import "../common"
 
-Rectangle {
+AmbientPanelBackground {
     id: root
 
     property color shellColor: Theme.panelSurface
@@ -15,8 +16,9 @@ Rectangle {
     property int shadowBlur: 20
     property int shadowVerticalOffset: 8
 
-    color: root.shellColor
-    radius: root.shellRadius
+    baseColor: root.shellColor
+    strength: 0.5
+    cornerRadius: root.shellRadius
     border.color: root.shellBorderColor
     border.width: 1
 

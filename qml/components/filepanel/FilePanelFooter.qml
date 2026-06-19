@@ -2,8 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../style"
+import "../common"
 
-Rectangle {
+AmbientPanelBackground {
     id: root
 
     property var controller
@@ -117,10 +118,11 @@ Rectangle {
     readonly property int zoomStep: viewMode === 1 ? 4 : 2
 
     implicitHeight: Math.max(34, Theme.controlHeight - 2)
-    color: Theme.panelSurfaceStrong
-    radius: Theme.innerRadius(Theme.panelRadius, 1)
-    topLeftRadius: 0
-    topRightRadius: 0
+    baseColor: Theme.panelSurfaceStrong
+    strength: 0.28
+    cornerRadius: Theme.innerRadius(Theme.panelRadius, 1)
+    topLeftCornerRadius: 0
+    topRightCornerRadius: 0
     border.width: 0
 
     Rectangle {

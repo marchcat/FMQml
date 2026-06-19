@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
 import "../style"
+import "common"
 
 Popup {
     id: root
@@ -16,6 +17,9 @@ Popup {
     property var usageStats: ({ counts: {}, timestamps: {} })
     property var pendingArgumentCommand: null
     property string pendingArgumentText: ""
+    readonly property bool transparentSurface: typeof appSettings !== "undefined" && appSettings
+                                               ? appSettings.commandPaletteTransparency
+                                               : true
 
     // Argument-aware command state
     property bool argumentMode: false
@@ -678,44 +682,14 @@ Popup {
         }
     }
 
-    background: Rectangle {
-        radius: Theme.panelRadius
-        color: Theme.panelSurfaceStrong
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Theme.useGradientColors ? Theme.panelSurface : Theme.panelSurfaceStrong }
-            GradientStop { position: 1.0; color: Theme.panelSurfaceStrong }
-        }
-        border.color: Theme.withAlpha(Theme.accent, 0.18)
+    background: AmbientPanelBackground {
+        cornerRadius: Theme.panelRadius
+        baseColor: root.transparentSurface ? Theme.panelSurfaceStrong : Theme.panelSurface
+        strength: root.transparentSurface ? 0.6 : 0
+        border.color: root.transparentSurface
+                      ? Theme.withAlpha(Theme.accent, 0.18)
+                      : Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.42 : 0.30)
         border.width: 1
-
-        Rectangle {
-            x: -120
-            y: -90
-            width: 260
-            height: 220
-            radius: 130
-            rotation: -16
-            color: Theme.withAlpha(Theme.accent, 0.08)
-            opacity: Theme.useGradientColors ? 0.8 : 0.0
-        }
-
-        Rectangle {
-            x: parent.width - 150
-            y: parent.height - 130
-            width: 220
-            height: 180
-            radius: 110
-            rotation: 18
-            color: Theme.withAlpha(Theme.accent, 0.05)
-            opacity: 0.75
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: Theme.withAlpha(Theme.surface, 0.35)
-            opacity: 0.65
-        }
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -1070,9 +1044,11 @@ Popup {
                         radius: Theme.radiusLg
                         color: isCurrent
                                 ? Theme.withAlpha(Theme.accent, 0.16)
-                                : (hovered ? Theme.withAlpha(Theme.surfaceHover, 0.92) : "transparent")
-                        border.color: isCurrent ? Theme.withAlpha(Theme.accent, 0.80) : "transparent"
-                        border.width: isCurrent ? 1 : 0
+                                : (hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.08 : 0.055) : "transparent")
+                        border.color: isCurrent
+                                      ? Theme.withAlpha(Theme.accent, 0.80)
+                                      : (hovered ? Theme.withAlpha(Theme.accent, themeController.isDark ? 0.24 : 0.18) : "transparent")
+                        border.width: isCurrent || hovered ? 1 : 0
                     }
 
                      contentItem: RowLayout {

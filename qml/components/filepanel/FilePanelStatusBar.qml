@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../style"
+import "../common"
 
 Item {
     id: root
@@ -30,9 +31,10 @@ Item {
         }
     }
 
-    Rectangle {
+    AmbientPanelBackground {
         anchors.fill: parent
-        color: Theme.panelSurfaceStrong
+        baseColor: Theme.panelSurfaceStrong
+        strength: 0.34
         border.color: root.active ? Theme.withAlpha(Theme.activeAccent, 0.4) : Theme.panelBorder
         border.width: 1
 

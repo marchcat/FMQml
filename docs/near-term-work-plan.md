@@ -21,24 +21,27 @@ as the reference point for restrained gradient use, without turning the app into
 a decorative one-hue surface. Gradients must be optional and controlled by a new
 `useGradientColors` setting.
 
-Follow-up implementation notes after the first gradient pass:
+Status: functionally closed after the gradient visual refresh passes. The
+setting, shared ambient surface, theme tokens, primary chrome, dialog shells,
+command palette, file-panel lower chrome, operations drawer, toolbar path/search
+focus states, and theme previews are implemented. Future work in this area
+should be targeted visual bug fixing or small polish only, not another broad
+gradient expansion.
+
+Status details and guardrails:
 `docs/gradient-visual-refresh-follow-up.md`.
 
 Current state:
 
 - Theme colors are centralized in `ThemeController` and `qml/style/Theme.qml`.
-- Some QML areas already use gradients directly, including splash and theme
-  previews.
-- `AppSettingsController` already owns appearance toggles such as
-  `ultraLightMode`, but there is no global gradient feature gate.
+- `useGradientColors` is persisted through `AppSettingsController` and exposed
+  to QML as `appSettings.useGradientColors`.
+- `AmbientPanelBackground` is the shared component for ambient chrome.
 - `suggest/04-themes-and-colors.md` forbids raw component colors and requires
   semantic theme tokens.
 
 Design constraints:
 
-- Add `useGradientColors` as an application setting, defaulting to enabled only
-  if the final visual pass remains calm in both dark and light themes. If there
-  is doubt, default it to disabled and expose it clearly in Settings.
 - Every gradient must be behind `useGradientColors`. When disabled, surfaces
   must use the existing flat theme tokens.
 - Gradients should be subtle surface treatment, not large saturated decoration.
@@ -46,36 +49,14 @@ Design constraints:
   gradient tokens or helper functions to the theme layer.
 - Avoid gradients in dense repeated rows where they hurt scanability.
 
-Implementation plan:
+Closed implementation:
 
-1. Add settings plumbing.
-   - Add `useGradientColors` to `AppSettingsController`, persistence,
-     export/import, and Settings UI.
-   - Expose it to QML as `appSettings.useGradientColors`.
-   - Verify: restart app and confirm the setting persists.
-
-2. Add theme-level gradient tokens/helpers.
-   - Add semantic tokens for app background, panel surface, control surface,
-     selected/current item, and accent wash if needed.
-   - Expose helper properties or small reusable components so QML does not
-     duplicate gradient definitions.
-   - Verify: dark and light built-in themes have coherent fallback colors.
-
-3. Apply gradients only to primary surfaces first.
-   - Candidate areas: app background band, sidebar/header surfaces, path bar,
-     active panel emphasis, command palette/dialog shells, Settings header.
-   - Keep file rows, context menus, and dense lists mostly flat unless there is
-     a measured readability improvement.
-   - Verify: no text overlap, no low-contrast text, no accidental purple/blue
-     wash across the whole app.
-
-4. Audit existing gradients.
-   - Gate existing splash/theme-preview gradients where they represent real app
-     chrome.
-   - Theme preview may still show gradient samples, but it must reflect the
-     setting state.
-   - Verify: `rg -n "gradient:|GradientStop|#[0-9A-Fa-f]" qml` and inspect
-     any changed QML for raw colors.
+- Settings plumbing, persistence, export/import, and Settings UI.
+- Theme-level gradient tokens and QML exposure.
+- Shared `AmbientPanelBackground`.
+- Primary surfaces, dialogs, command palette, lower panel chrome, operations
+  drawer shell, path/search focused wash, and theme previews.
+- Existing gradient audit for current pass.
 
 Acceptance checks:
 

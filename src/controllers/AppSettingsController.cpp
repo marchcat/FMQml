@@ -149,6 +149,7 @@ AppSettingsController::AppSettingsController(QObject *parent)
     m_ultraLightMode = settings.value(QStringLiteral("ultraLightMode"),
                                       settings.value(QStringLiteral("simplifyVisualsForPerformance"), false)).toBool();
     m_useGradientColors = settings.value(QStringLiteral("useGradientColors"), true).toBool();
+    m_commandPaletteTransparency = settings.value(QStringLiteral("commandPaletteTransparency"), true).toBool();
     m_shellFirstQmlRestore = settings.value(QStringLiteral("shellFirstQmlRestore"), false).toBool();
     settings.remove(QStringLiteral("useNativeFileEnumerators"));
     m_previewDetailsRaised = settings.value(QStringLiteral("previewDetailsRaised"), false).toBool();
@@ -258,6 +259,25 @@ void AppSettingsController::setUseGradientColors(bool enabled)
     settings.setValue(QStringLiteral("useGradientColors"), m_useGradientColors);
     settings.endGroup();
     emit useGradientColorsChanged();
+}
+
+bool AppSettingsController::commandPaletteTransparency() const
+{
+    return m_commandPaletteTransparency;
+}
+
+void AppSettingsController::setCommandPaletteTransparency(bool enabled)
+{
+    if (m_commandPaletteTransparency == enabled) {
+        return;
+    }
+
+    m_commandPaletteTransparency = enabled;
+    QSettings settings;
+    settings.beginGroup(QLatin1String(AppearanceGroup));
+    settings.setValue(QStringLiteral("commandPaletteTransparency"), m_commandPaletteTransparency);
+    settings.endGroup();
+    emit commandPaletteTransparencyChanged();
 }
 
 bool AppSettingsController::shellFirstQmlRestore() const
@@ -725,6 +745,7 @@ QVariantMap AppSettingsController::appearanceSettings() const
     appearance[QStringLiteral("showThumbnails")] = m_showThumbnails;
     appearance[QStringLiteral("ultraLightMode")] = m_ultraLightMode;
     appearance[QStringLiteral("useGradientColors")] = m_useGradientColors;
+    appearance[QStringLiteral("commandPaletteTransparency")] = m_commandPaletteTransparency;
     appearance[QStringLiteral("shellFirstQmlRestore")] = m_shellFirstQmlRestore;
     appearance[QStringLiteral("previewDetailsRaised")] = m_previewDetailsRaised;
     appearance[QStringLiteral("useSystemTrayIcon")] = m_useSystemTrayIcon;
@@ -745,6 +766,8 @@ void AppSettingsController::applyAppearanceSettings(const QVariantMap &appearanc
                                                         m_ultraLightMode)).toBool());
     setUseGradientColors(appearance.value(QStringLiteral("useGradientColors"),
                                           m_useGradientColors).toBool());
+    setCommandPaletteTransparency(appearance.value(QStringLiteral("commandPaletteTransparency"),
+                                                   m_commandPaletteTransparency).toBool());
     setShellFirstQmlRestore(appearance.value(QStringLiteral("shellFirstQmlRestore"),
                                              m_shellFirstQmlRestore).toBool());
     setPreviewDetailsRaised(appearance.value(QStringLiteral("previewDetailsRaised"),

@@ -1,84 +1,41 @@
-# Gradient Visual Refresh Follow-Up
+# Gradient Visual Refresh Status
 
-This document records the next pass after the first gradient integration.
+This document records the state after the gradient visual refresh passes.
 
-## Current direction
+## Current state
 
-The first iteration established the main gradient system:
+The gradient system is functionally closed.
 
-- `useGradientColors` gates gradient chrome.
-- `AmbientPanelBackground` provides a shared ambient surface.
+- `useGradientColors` gates gradient chrome and remains available in Settings.
+- `AmbientPanelBackground` is the shared ambient surface for app chrome.
 - Main workspace underlay, file panels, sidebar, preview pane, toolbar,
-  Favorites, and This PC already use the shared visual language.
-- Built-in theme gradient intensity has been tuned enough for the first pass.
+  Favorites, This PC, dialog shells, command palette, lower file-panel chrome,
+  operations drawer, and toolbar path/search focus states use the shared visual
+  language.
+- Theme selector and Theme Editor preview now account for the real ambient
+  strengths used by app underlay, panels, dialogs, and lower chrome.
+- Built-in theme gradient intensity has been tuned enough for the current pass.
 
-The next iteration should preserve the visual richness while improving
-consistency and readability. Dense file-management areas should remain quiet.
+The design direction is restrained: gradients add depth to top-level chrome,
+while dense file-management areas stay quiet and readable.
 
-## Next candidates
+## Implemented surface strengths
 
-1. Dialog shells
-   - File: `qml/components/dialogs/DialogShell.qml`.
-   - This would affect Settings, Theme Editor, Properties, Disk Usage, Batch
-     Rename, Checksum, Plugin Manager, Steam Proton, Help, and similar dialogs.
-   - Add `AmbientPanelBackground` at shell level with low strength, around
-     `0.45-0.55`.
-   - Avoid adding separate gradients to every section or row.
+Current representative strengths:
 
-2. Command palette
-   - File: `qml/components/CommandPalette.qml`.
-   - It still has its own local gradient.
-   - Replace the shell background with `AmbientPanelBackground`, likely using
-     `baseColor: Theme.panelSurfaceStrong` and strength around `0.55-0.65`.
-   - Keep command rows flat and readable.
+- app/window underlay: around `0.95`;
+- workspace and panel-level surfaces: around `0.68-0.74`;
+- toolbar/sidebar/preview surfaces: around `0.62-0.70`;
+- command palette shell: around `0.60`;
+- dialog shells and operations drawer card: around `0.50`;
+- operations drawer compact chip: around `0.46`;
+- file-panel footer and selection actions: around `0.28`;
+- file-panel status rail/bar: around `0.34`.
 
-3. File panel footer and status chrome
-   - Files:
-     - `qml/components/filepanel/FilePanelFooter.qml`
-     - `qml/components/filepanel/FilePanelStatusBar.qml`
-     - `qml/components/filepanel/FilePanelStatusRail.qml`
-     - `qml/components/filepanel/FilePanelSelectionActions.qml`
-   - These currently read as flat `panelSurfaceStrong` bands.
-   - Apply a very subtle chrome-gradient so the lower panel chrome matches the
-     rest of the app without competing with file rows.
+These are visual tuning values, not a public API. Prefer matching nearby
+surfaces over adding new one-off strengths.
 
-4. Operations drawer
-   - File: `qml/components/OperationsDrawer.qml`.
-   - Apply ambient treatment to the drawer shell only.
-   - Individual operation rows should stay mostly flat for scanability.
-
-5. Path bar and toolbar input islands
-   - Files:
-     - `qml/components/PathBar.qml`
-     - `qml/components/toolbar/ToolbarPathEditor.qml`
-     - `qml/components/toolbar/ToolbarSearch.qml`
-   - Use a light control-surface wash for focused and active states.
-   - Do not reduce address/search text contrast.
-
-6. Theme selector and theme editor preview
-   - Files:
-     - `qml/components/ThemeSelectorMenu.qml`
-     - `qml/components/ThemeEditorPreviewCard.qml`
-   - Sync previews with the real ambient strengths used by underlay, panel,
-     toolbar, and dialog surfaces.
-   - This is important now that gradients are no longer one global intensity.
-
-7. Properties dialog content panels
-   - File: `qml/components/PropertiesDialog.qml`.
-   - Start with the main shell and perhaps the hero/top section.
-   - Avoid applying gradients to every property row.
-
-8. Disk Usage dialog
-   - File: `qml/components/DiskUsageDialog.qml`.
-   - Good candidate for gradient shell and selected high-level cards.
-   - Charts, tables, and dense rows should remain flat.
-
-9. Quick Look
-   - File: `qml/components/QuickLook.qml`.
-   - If it opens as a standalone preview overlay, align it with the same
-     dialog/surface language so it does not feel visually separate.
-
-## Areas to avoid
+## Areas intentionally kept flat
 
 Do not apply gradients broadly to:
 
@@ -86,20 +43,28 @@ Do not apply gradients broadly to:
 - context menus: `ThemedContextMenu`, `ThemedMenuItem`, `ColumnPickerMenu`;
 - dense dialog rows and repeated list rows;
 - preview content areas for text, images, PDF, audio, video, and rendered file
-  content.
+  content;
+- operation rows inside `OperationsDrawer`.
 
-These areas prioritize readability and accurate content inspection.
+These areas prioritize scanability and accurate content inspection.
 
-## Suggested order
+## Remaining polish only
 
-1. `DialogShell`
-2. `CommandPalette`
-3. File panel footer/status chrome
-4. `OperationsDrawer`
-5. Theme selector/editor preview sync
-6. Path/search focused control wash
+Do not continue adding gradients speculatively. Future work should be treated as
+targeted polish or bug fixing only.
+
+Possible candidates if they visibly stand out:
+
+- `PropertiesDialog.qml`: only the hero/top section, not every property row.
+- `DiskUsageDialog.qml`: only high-level cards, not charts, tables, or dense
+  rows.
+- `QuickLook.qml`: only if it looks visually disconnected from dialog chrome.
+- `PathBar.qml`: only if the breadcrumb surface reads noticeably flatter than
+  the toolbar path/search controls.
 
 ## Verification
+
+For future changes in this area:
 
 - Check at least one dark theme and both light themes.
 - Pay special attention to Porcelain Bloom and Catppuccin Latte.
@@ -109,3 +74,7 @@ These areas prioritize readability and accurate content inspection.
   - `ctest --test-dir build --output-on-failure`
   - `git diff --check`
   - `rg -n "gradient:|GradientStop|#[0-9A-Fa-f]" qml`
+
+When auditing `rg` output, expect existing hits in SVG assets, splash, and theme
+preview components. New feature QML should not introduce raw component-local
+colors.

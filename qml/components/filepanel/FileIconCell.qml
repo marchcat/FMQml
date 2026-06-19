@@ -28,6 +28,13 @@ Item {
         ? root.explicitIconSource
         : root.iconSourceFor(root.path, root.isDirectory, root.suffix, root.useNativeIcons)
     readonly property bool pdfThumbnail: !root.isDirectory && String(root.suffix || "").toLowerCase() === "pdf"
+    readonly property bool thumbnailReady: root.showThumbnail && thumbImg.status === Image.Ready
+    readonly property bool nativeIconRequested: root.useNativeIcons && root.nativeIconSource.length > 0
+    readonly property bool nativeIconReady: root.nativeIconRequested && nativeIconImg.status === Image.Ready
+    readonly property bool nativeIconFailed: root.nativeIconRequested && nativeIconImg.status === Image.Error
+    readonly property bool showBundledIcon: !root.thumbnailReady
+                                           && (!root.nativeIconRequested || !root.useNativeIcons || root.nativeIconFailed)
+    readonly property bool showNativeIcon: !root.thumbnailReady && root.nativeIconReady
 
     function bundledIconForSuffix(isDirectory, suffix) {
         return fileTypeIconResolver.iconForSuffix(String(suffix || ""), isDirectory)
@@ -103,8 +110,7 @@ Item {
         cache: true
         smooth: true
         mipmap: false
-        visible: (!root.showThumbnail || thumbImg.status !== Image.Ready)
-                 && (!root.useNativeIcons || nativeIconImg.status !== Image.Ready)
+        visible: root.showBundledIcon
     }
 
     Image {
@@ -116,16 +122,14 @@ Item {
         cache: true
         smooth: true
         mipmap: false
-        visible: root.useNativeIcons
-                 && (!root.showThumbnail || thumbImg.status !== Image.Ready)
-                 && status === Image.Ready
+        visible: root.showNativeIcon
     }
 
     Rectangle {
         anchors.fill: parent
         radius: root.thumbCornerRadius
         color: "#ffffff"
-        visible: root.pdfThumbnail && root.showThumbnail && thumbImg.status === Image.Ready
+        visible: root.pdfThumbnail && root.thumbnailReady
     }
 
     Image {
@@ -137,7 +141,7 @@ Item {
         asynchronous: true
         cache: true
         smooth: true
-        visible: root.showThumbnail && status === Image.Ready
+        visible: root.thumbnailReady
 
         layer.enabled: visible
         layer.effect: null

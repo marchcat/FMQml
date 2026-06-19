@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
 import ".."
+import "../common"
 import "../../style"
 
 Item {
@@ -19,7 +20,6 @@ Item {
     property int suggestionRequestId: 0
     property bool suggestionsLoading: false
     property bool applyFirstSuggestionOnReady: false
-    property bool pendingSuggestionAllowTrailingSeparator: false
     property var openPathHandler: null
     property var prepareNavigationHandler: null
     readonly property bool autocompleteUnavailable: (root.pathEditing || root.pathEditProgress > 0.0)
@@ -185,18 +185,16 @@ Item {
             shadowVerticalOffset: 2 + (root.pathEditProgress * 2)
         }
 
-        Rectangle {
+        AmbientPanelBackground {
             id: editGlow
             anchors.fill: parent
-            radius: parent.radius
-            color: "transparent"
+            cornerRadius: parent.radius
+            baseColor: "transparent"
+            startColor: Theme.withAlpha(Theme.categoryInfo, 0.14)
+            midColor: "transparent"
+            endColor: Theme.withAlpha(Theme.warmAccent, 0.06)
+            strength: 0.58
             visible: root.pathEditing && Theme.useGradientColors
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: Theme.withAlpha(Theme.categoryInfo, 0.14) }
-                GradientStop { position: 0.42; color: "transparent" }
-                GradientStop { position: 1.0; color: Theme.withAlpha(Theme.warmAccent, 0.06) }
-            }
         }
 
         Rectangle {
@@ -373,7 +371,7 @@ Item {
                 id: suggestionRequestTimer
                 interval: 90
                 repeat: false
-                onTriggered: pathEditor.requestSuggestionsNow(root.suggestionRequestId, root.pendingSuggestionAllowTrailingSeparator)
+                onTriggered: pathEditor.requestSuggestionsNow(root.suggestionRequestId)
             }
 
             function cancelPendingSuggestions() {
@@ -384,18 +382,12 @@ Item {
                 }
             }
 
-            function requestSuggestionsNow(requestId, allowTrailingSeparator) {
+            function requestSuggestionsNow(requestId) {
                 const text = pathEditor.text.trim()
                 if (requestId !== root.suggestionRequestId || !root.pathEditing || !root.controller) {
                     return
                 }
                 if (!root.localAutocompleteAvailable(text)) {
-                    root.suggestionsLoading = false
-                    root.applyFirstSuggestionOnReady = false
-                    suggestionsPopup.close()
-                    return
-                }
-                if ((text.endsWith("/") || text.endsWith("\\")) && allowTrailingSeparator !== true) {
                     root.suggestionsLoading = false
                     root.applyFirstSuggestionOnReady = false
                     suggestionsPopup.close()
@@ -419,12 +411,11 @@ Item {
                 root.ignoreTextChange = false
             }
 
-            function updateSuggestions(allowTrailingSeparator, immediate) {
+            function updateSuggestions(immediate) {
                 suggestionsModel.clear()
                 root.applyFirstSuggestionOnReady = false
                 const text = pathEditor.text.trim()
                 root.suggestionRequestId += 1
-                root.pendingSuggestionAllowTrailingSeparator = allowTrailingSeparator === true
                 suggestionRequestTimer.stop()
                 if (root.controller && root.controller.cancelDirectorySuggestions) {
                     root.controller.cancelDirectorySuggestions()
@@ -434,17 +425,12 @@ Item {
                     suggestionsPopup.close()
                     return
                 }
-                if ((text.endsWith("/") || text.endsWith("\\")) && allowTrailingSeparator !== true) {
-                    root.suggestionsLoading = false
-                    suggestionsPopup.close()
-                    return
-                }
                 if (text.length > 0 && root.controller) {
                     root.suggestionsLoading = true
                     suggestionsList.currentIndex = -1
                     suggestionsPopup.open()
                     if (immediate === true) {
-                        requestSuggestionsNow(root.suggestionRequestId, root.pendingSuggestionAllowTrailingSeparator)
+                        requestSuggestionsNow(root.suggestionRequestId)
                     } else {
                         suggestionRequestTimer.restart()
                     }
@@ -516,7 +502,7 @@ Item {
                         suggestionsPopup.close()
                         event.accepted = true
                     } else if (pathEditor.text.trim().length > 0) {
-                        updateSuggestions(pathEditor.text.trim().endsWith("/") || pathEditor.text.trim().endsWith("\\"), true)
+                        updateSuggestions(true)
                         root.applyFirstSuggestionOnReady = true
                         event.accepted = true
                     }

@@ -26,6 +26,7 @@ Dialog {
     property bool thumbnailsEnabled: true
     property bool ultraLightModeEnabled: false
     property bool gradientColorsEnabled: true
+    property bool commandPaletteTransparencyEnabled: true
     property bool shellFirstQmlRestoreEnabled: false
     property bool systemTrayIconEnabled: false
     property bool allowOnlyOneInstanceEnabled: false
@@ -104,6 +105,9 @@ Dialog {
         gradientColorsEnabled = typeof appSettings !== "undefined" && appSettings
                                 ? appSettings.useGradientColors
                                 : true
+        commandPaletteTransparencyEnabled = typeof appSettings !== "undefined" && appSettings
+                                            ? appSettings.commandPaletteTransparency
+                                            : true
         shellFirstQmlRestoreEnabled = typeof appSettings !== "undefined" && appSettings
                                       ? appSettings.shellFirstQmlRestore
                                       : false
@@ -155,6 +159,9 @@ Dialog {
     }
 
     function setThumbnailsEnabled(enabled) {
+        if (enabled && !nativeIconsEnabled) {
+            return
+        }
         thumbnailsEnabled = enabled
         if (typeof appSettings !== "undefined" && appSettings && appSettings.showThumbnails !== enabled) {
             appSettings.showThumbnails = enabled
@@ -182,6 +189,14 @@ Dialog {
         if (typeof appSettings !== "undefined" && appSettings
                 && appSettings.useGradientColors !== enabled) {
             appSettings.useGradientColors = enabled
+        }
+    }
+
+    function setCommandPaletteTransparencyEnabled(enabled) {
+        commandPaletteTransparencyEnabled = enabled
+        if (typeof appSettings !== "undefined" && appSettings
+                && appSettings.commandPaletteTransparency !== enabled) {
+            appSettings.commandPaletteTransparency = enabled
         }
     }
 
@@ -764,8 +779,9 @@ Dialog {
 
                         SettingsToggleRow {
                             title: "Thumbnails"
-                            subtitle: "Show generated previews in Grid and Brief views"
-                            checked: root.thumbnailsEnabled
+                            subtitle: "Show generated previews in Grid and Brief views when native icons are enabled"
+                            checked: root.nativeIconsEnabled && root.thumbnailsEnabled
+                            toggleEnabled: root.nativeIconsEnabled
                             accentColor: root.dialogAccent
                             onToggled: (checked) => root.setThumbnailsEnabled(checked)
                         }
@@ -784,6 +800,14 @@ Dialog {
                             checked: root.gradientColorsEnabled
                             accentColor: root.dialogAccent
                             onToggled: (checked) => root.setGradientColorsEnabled(checked)
+                        }
+
+                        SettingsToggleRow {
+                            title: "Command palette transparency"
+                            subtitle: "Use the ambient translucent command palette surface"
+                            checked: root.commandPaletteTransparencyEnabled
+                            accentColor: root.dialogAccent
+                            onToggled: (checked) => root.setCommandPaletteTransparencyEnabled(checked)
                         }
 
                         SettingsToggleRow {
@@ -1110,6 +1134,9 @@ Dialog {
         }
         function onUseGradientColorsChanged() {
             root.gradientColorsEnabled = appSettings ? appSettings.useGradientColors : true
+        }
+        function onCommandPaletteTransparencyChanged() {
+            root.commandPaletteTransparencyEnabled = appSettings ? appSettings.commandPaletteTransparency : true
         }
         function onShellFirstQmlRestoreChanged() {
             root.shellFirstQmlRestoreEnabled = appSettings ? appSettings.shellFirstQmlRestore : false

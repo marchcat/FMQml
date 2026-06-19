@@ -14,6 +14,9 @@ Item {
     property color surfaceColor: Theme.surface
     property color accentColor: Theme.accent
     property color glowColor: Theme.activeGlow
+    property color chromeStartColor: Theme.chromeGradientStart
+    property color chromeMidColor: Theme.chromeGradientMid
+    property color chromeEndColor: Theme.chromeGradientEnd
     property bool selected: false
     readonly property color cardFill: root.selected
                                       ? Theme.withAlpha(root.accentColor, themeController.isDark ? 0.17 : 0.10)
@@ -99,6 +102,19 @@ Item {
                 border.color: root.previewStroke
                 border.width: 1
                 antialiasing: true
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    visible: Theme.useGradientColors
+                    opacity: 0.68
+                    gradient: Gradient {
+                        orientation: Gradient.Vertical
+                        GradientStop { position: 0.0; color: root.chromeStartColor }
+                        GradientStop { position: 0.42; color: root.chromeMidColor }
+                        GradientStop { position: 1.0; color: root.chromeEndColor }
+                    }
+                }
             }
 
             Rectangle {
