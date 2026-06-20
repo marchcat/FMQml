@@ -2244,6 +2244,7 @@ public:
         QVector<qint64> itemProgress(prepared.size(), 0);
         QMutex progressMutex;
         QMutex progressCallbackMutex;
+        qint64 aggregateProgress = 0;
         std::atomic_bool canceled{false};
         int totalRetries = 0;
 
@@ -2276,10 +2277,10 @@ public:
                             qint64 aggregate = 0;
                             {
                                 QMutexLocker locker(&progressMutex);
-                                itemProgress[i] = std::clamp<qint64>(processed, 0, prepared.at(i).item.size);
-                                for (const qint64 value : itemProgress) {
-                                    aggregate += value;
-                                }
+                                const qint64 boundedProcessed = std::clamp<qint64>(processed, 0, prepared.at(i).item.size);
+                                aggregateProgress += boundedProcessed - itemProgress[i];
+                                itemProgress[i] = boundedProcessed;
+                                aggregate = aggregateProgress;
                             }
                             QMutexLocker callbackLocker(&progressCallbackMutex);
                             return !progress || progress(uploadItem.item.sourceFilePath, aggregate, totalBytes);
@@ -2316,7 +2317,11 @@ public:
                 if (!entry.path.isEmpty()) {
                     m_createdPaths.insert(normalizedPath(uploadItem.item.destinationPath), entry.path);
                 }
-                itemProgress[result.index] = uploadItem.item.size;
+                {
+                    QMutexLocker locker(&progressMutex);
+                    aggregateProgress += uploadItem.item.size - itemProgress[result.index];
+                    itemProgress[result.index] = uploadItem.item.size;
+                }
             }
         }
 

@@ -77,6 +77,11 @@ bool isDescendantPath(const FileProvider &provider, const QString &path, const Q
     return normalizedPathValue.at(normalizedAncestor.size()) == QLatin1Char('/');
 }
 
+bool providerBatchLoggingEnabled()
+{
+    return qEnvironmentVariableIntValue("FMQML_PROVIDER_BATCH_LOG") > 0;
+}
+
 QString archiveContainerKey(const QString &path)
 {
     if (!ArchiveSupport::isArchivePath(path)) {
@@ -1325,6 +1330,26 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         const QString destinationPath = request.type == Type::Duplicate
             ? duplicateDestinationPath(source)
             : (request.destination.isEmpty() ? QString() : destProvider->childPath(request.destination, destinationName));
+        if (request.type == Type::Copy) {
+            const int batchCount = copyNextSmallLocalFilesToProviderBatch(
+                request.sources,
+                i,
+                request.destination,
+                totalBytes,
+                currentProgressBytes);
+            if (m_abort) {
+                result.aborted = true;
+                return result;
+            }
+            if (batchCount > 0) {
+                result.succeededCount += batchCount;
+                i += batchCount - 1;
+                QMetaObject::invokeMethod(this, [this, i]() {
+                    setCompletedItems(i + 1);
+                }, Qt::QueuedConnection);
+                continue;
+            }
+        }
         const int failureCountBefore = result.failedCount;
 
         try {
@@ -1886,10 +1911,108 @@ bool OperationQueue::copySmallLocalFilesToProviderBatch(const QStringList &sourc
     return true;
 }
 
-bool OperationQueue::copySmallLocalDirectoryToProviderBatch(const QString &sourcePath,
-                                                            const QString &destinationPath,
-                                                            qint64 totalBytes,
-                                                            qint64 &copiedBytes)
+int OperationQueue::copyNextSmallLocalFilesToProviderBatch(const QStringList &sources,
+                                                           int startIndex,
+                                                           const QString &destination,
+                                                           qint64 totalBytes,
+                                                           qint64 &copiedBytes)
+{
+    if (startIndex < 0 || startIndex >= sources.size() || destination.isEmpty()) {
+        return 0;
+    }
+
+    FileProvider *destProvider = getProviderForPath(destination);
+    if (!destProvider || destProvider->scheme() == QLatin1String("file")
+        || !destProvider->supportsLocalFileBatchCopy()) {
+        return 0;
+    }
+
+    constexpr qint64 smallBatchLimit = 5 * 1024 * 1024;
+    QVector<LocalFileCopyItem> items;
+    qint64 batchBytes = 0;
+
+    for (int i = startIndex; i < sources.size(); ++i) {
+        const QString &source = sources.at(i);
+        FileProvider *srcProvider = getProviderForPath(source);
+        if (!srcProvider || srcProvider->scheme() != QLatin1String("file") || isRealDirectory(source)) {
+            break;
+        }
+
+        const std::optional<FileEntry> sourceInfo = srcProvider->entryInfo(source);
+        if (!sourceInfo || sourceInfo->size > smallBatchLimit) {
+            break;
+        }
+
+        const QString targetPath = destProvider->childPath(destination, destinationNameForCopy(srcProvider, source));
+        if (targetPath.isEmpty() || pathExists(targetPath)) {
+            break;
+        }
+
+        batchBytes += sourceInfo->size;
+        items.push_back(LocalFileCopyItem{source, targetPath, sourceInfo->size});
+    }
+
+    if (items.size() < 2) {
+        return 0;
+    }
+
+    if (providerBatchLoggingEnabled()) {
+        qInfo() << "Provider mixed file batch upload"
+                << "startIndex" << startIndex
+                << "files" << items.size()
+                << "bytes" << batchBytes;
+    }
+
+    const qint64 baseBytes = copiedBytes;
+    QString batchError;
+    const bool copied = destProvider->copyFromLocalFiles(
+        items,
+        [this, baseBytes, totalBytes](const QString &currentFilePath, qint64 processed, qint64 total) -> bool {
+            Q_UNUSED(total)
+            if (!currentFilePath.isEmpty()) {
+                const QString fileName = QFileInfo(currentFilePath).fileName();
+                if (!fileName.isEmpty()) {
+                    QMetaObject::invokeMethod(this, [this, fileName]() {
+                        setCurrentLabel(fileName);
+                    }, Qt::QueuedConnection);
+                }
+            }
+            if (m_abort) {
+                return false;
+            }
+            const qint64 progressBytes = std::clamp<qint64>(baseBytes + processed, 0, totalBytes);
+            const double progress = static_cast<double>(progressBytes) / static_cast<double>((std::max<qint64>)(1, totalBytes));
+            QMetaObject::invokeMethod(this, [this, progress]() {
+                setProgress(progress);
+            }, Qt::QueuedConnection);
+            updateMetrics(progressBytes, totalBytes);
+            return true;
+        },
+        &batchError);
+
+    if (!copied) {
+        if (m_abort) {
+            return items.size();
+        }
+        if (!batchError.trimmed().isEmpty()) {
+            throw std::runtime_error(batchError.toStdString());
+        }
+        return 0;
+    }
+
+    copiedBytes = (std::min)(totalBytes, copiedBytes + batchBytes);
+    const double progress = static_cast<double>(copiedBytes) / static_cast<double>((std::max<qint64>)(1, totalBytes));
+    QMetaObject::invokeMethod(this, [this, progress]() {
+        setProgress(progress);
+    }, Qt::QueuedConnection);
+    updateMetrics(copiedBytes, totalBytes);
+    return items.size();
+}
+
+bool OperationQueue::copyLocalDirectoryToProviderBatch(const QString &sourcePath,
+                                                       const QString &destinationPath,
+                                                       qint64 totalBytes,
+                                                       qint64 &copiedBytes)
 {
     FileProvider *srcProvider = getProviderForPath(sourcePath);
     FileProvider *destProvider = getProviderForPath(destinationPath);
@@ -1903,41 +2026,44 @@ bool OperationQueue::copySmallLocalDirectoryToProviderBatch(const QString &sourc
 
     constexpr qint64 smallBatchLimit = 5 * 1024 * 1024;
 
-    // Local pre-check of the directory tree
-    qint64 checkFileCount = 0;
-    QVector<QString> checkStack;
-    checkStack.push_back(sourcePath);
-    while (!checkStack.isEmpty()) {
-        if (m_abort) {
-            return false;
-        }
-        const QString current = checkStack.back();
-        checkStack.pop_back();
-
-        QDir dir(current);
-        const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-        for (const QFileInfo &entry : entries) {
-            if (entry.isDir() && !entry.isSymLink()) {
-                checkStack.push_back(entry.absoluteFilePath());
-            } else if (entry.isFile()) {
-                if (entry.size() > smallBatchLimit) {
-                    return false;
-                }
-                checkFileCount++;
-            }
-        }
-    }
-
-    if (checkFileCount < 2) {
-        return false;
-    }
-
     struct DirectoryFrame {
         QString source;
         QString destination;
     };
 
+    QVector<CopyFrame> largeFiles;
     QVector<LocalFileCopyItem> items;
+    qint64 smallFileCount = 0;
+    QVector<QString> checkStack;
+    checkStack.push_back(sourcePath);
+    while (!checkStack.isEmpty()) {
+        if (m_abort) {
+            return true;
+        }
+
+        const QString current = checkStack.back();
+        checkStack.pop_back();
+
+        const QStringList children = srcProvider->childPaths(current);
+        for (const QString &child : children) {
+            const std::optional<FileEntry> childInfo = srcProvider->entryInfo(child);
+            if (srcProvider->isDirectory(child)) {
+                checkStack.push_back(child);
+                continue;
+            }
+            if (!childInfo) {
+                return false;
+            }
+            if (childInfo->size <= smallBatchLimit) {
+                ++smallFileCount;
+            }
+        }
+    }
+
+    if (smallFileCount < 2) {
+        return false;
+    }
+
     QVector<DirectoryFrame> stack;
     stack.push_back({sourcePath, destinationPath});
     qint64 batchBytes = 0;
@@ -1963,20 +2089,36 @@ bool OperationQueue::copySmallLocalDirectoryToProviderBatch(const QString &sourc
         for (const QString &child : children) {
             const QString childDestination = destProvider->childPath(frame.destination, destinationNameForCopy(srcProvider, child));
             const std::optional<FileEntry> childInfo = srcProvider->entryInfo(child);
+            if (childDestination.isEmpty() || pathExists(childDestination)) {
+                return false;
+            }
             if (srcProvider->isDirectory(child)) {
                 stack.push_back({child, childDestination});
                 continue;
             }
-            if (!childInfo || childInfo->size > smallBatchLimit || pathExists(childDestination)) {
+            if (!childInfo) {
                 return false;
             }
-            batchBytes += childInfo->size;
-            items.push_back(LocalFileCopyItem{child, childDestination, childInfo->size});
+            if (childInfo->size > smallBatchLimit) {
+                largeFiles.push_back({child, childDestination});
+            } else {
+                batchBytes += childInfo->size;
+                items.push_back(LocalFileCopyItem{child, childDestination, childInfo->size});
+            }
         }
     }
 
     if (items.size() < 2) {
         return false;
+    }
+
+    if (providerBatchLoggingEnabled()) {
+        qInfo() << "Provider mixed directory batch upload"
+                << "source" << sourcePath
+                << "destination" << destinationPath
+                << "smallFiles" << items.size()
+                << "smallBytes" << batchBytes
+                << "largeFiles" << largeFiles.size();
     }
 
     const qint64 baseBytes = copiedBytes;
@@ -2022,6 +2164,14 @@ bool OperationQueue::copySmallLocalDirectoryToProviderBatch(const QString &sourc
         setProgress(progress);
     }, Qt::QueuedConnection);
     updateMetrics(copiedBytes, totalBytes);
+
+    for (const CopyFrame &largeFile : std::as_const(largeFiles)) {
+        if (m_abort) {
+            return true;
+        }
+        copyPath(largeFile.sourcePath, largeFile.destinationPath, totalBytes, copiedBytes);
+    }
+
     return true;
 }
 
@@ -2029,7 +2179,7 @@ void OperationQueue::copyPath(const QString &sourcePath, const QString &destinat
 {
     if (m_abort) return;
 
-    if (copySmallLocalDirectoryToProviderBatch(sourcePath, destinationPath, totalBytes, copiedBytes)) {
+    if (copyLocalDirectoryToProviderBatch(sourcePath, destinationPath, totalBytes, copiedBytes)) {
         return;
     }
 
