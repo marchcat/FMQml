@@ -4,6 +4,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantMap>
+#include <QVariant>
 #include <QtPlugin>
 
 inline constexpr int FM_FILE_ACTION_PLUGIN_API_VERSION = 1;
@@ -15,6 +16,7 @@ struct FileActionContext {
     QString destinationPath;
     QStringList selectedPaths;
     bool targetIsDirectory = false;
+    QVariantMap parameters;
 };
 
 struct FileActionDescriptor {

@@ -423,7 +423,9 @@ Pane {
         if (value === "favorites://" || iconName === "star") {
             return "pinned"
         }
-        if (value === "gdrive://" || iconName === "gdrive") {
+        if (modelSection === "cloud"
+                || value === "gdrive://" || iconName === "gdrive"
+                || value === "mega:///" || iconName === "mega") {
             return "cloud"
         }
         return "folders"
@@ -542,6 +544,9 @@ Pane {
         if (iconName === "gdrive") {
             return "../assets/filetypes-next/gdrive.svg"
         }
+        if (iconName === "mega") {
+            return "../assets/filetypes-next/mega.svg"
+        }
         return "../assets/icons/" + iconName + ".svg"
     }
 
@@ -575,6 +580,7 @@ Pane {
             base = Theme.actionIconColor("drive")
             break
         case "gdrive":
+        case "mega":
             base = Theme.actionIconColor("navigation")
             break
         case "folder":
@@ -948,7 +954,7 @@ Pane {
                                 Layout.maximumHeight: root.placeIconSize
                                 sourcePath: root.iconSourceFor(model.icon)
                                 recolorColor: root.iconToneFor(model.icon, placeDelegate.isActive || placeDelegate.hasKeyboardCurrent, false)
-                                recolorEnabled: model.icon !== "gdrive"
+                                recolorEnabled: model.icon !== "gdrive" && model.icon !== "mega"
                                 cacheKey: "sidebar"
                                 sourceSize: Qt.size(root.placeIconSize * 2, root.placeIconSize * 2)
                                 asynchronous: true

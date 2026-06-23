@@ -43,6 +43,12 @@ QString virtualFolderIconNameForPathHint(const QString &path)
     if (value == QLatin1String("gdrive://trash")) {
         return QStringLiteral("gdrive-trash");
     }
+    if (value == QLatin1String("mega://")) {
+        return QStringLiteral("mega");
+    }
+    if (value == QLatin1String("mega:///cloud drive") || value == QLatin1String("mega://cloud drive")) {
+        return QStringLiteral("mega-clouddrive");
+    }
     return {};
 }
 

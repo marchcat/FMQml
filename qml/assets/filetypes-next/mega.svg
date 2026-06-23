@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <!-- Background blur for contact shadow -->
+    <filter id="blur-bg" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" />
+    </filter>
+
+    <!-- Radial gradient for soft bottom contact shadow -->
+    <radialGradient id="dropShadowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.28" />
+      <stop offset="80%" stop-color="#000000" stop-opacity="0.04" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Gradient for the MEGA red circle -->
+    <linearGradient id="megaRedGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ff3b30" />
+      <stop offset="100%" stop-color="#d32f2f" />
+    </linearGradient>
+
+    <!-- Drop shadow for the red circle -->
+    <filter id="shadow-circle" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.20" />
+    </filter>
+
+    <!-- Drop shadow for the white M to give it subtle 3D lift -->
+    <filter id="shadow-m" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000000" flood-opacity="0.15" />
+    </filter>
+  </defs>
+
+  <!-- 1. Ambient Contact Shadow at the bottom -->
+  <ellipse cx="128" cy="226" rx="92" ry="12" fill="url(#dropShadowGrad)" filter="url(#blur-bg)" />
+
+  <!-- 2. Main Red Circle -->
+  <circle cx="128" cy="120" r="76" fill="url(#megaRedGrad)" filter="url(#shadow-circle)" />
+
+  <!-- 3. Stylized White M -->
+  <path d="M 86,156 L 86,84 L 108,84 L 128,114 L 148,84 L 170,84 L 170,156 L 152,156 L 152,112 L 128,146 L 104,112 L 104,156 Z" 
+        fill="#ffffff" 
+        filter="url(#shadow-m)" />
+</svg>

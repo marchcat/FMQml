@@ -181,6 +181,21 @@ QList<FileEntry> childEntries(const QString &parentPath)
     return entries;
 }
 
+qint64 accountStorageUsedBytes()
+{
+    QMutexLocker locker(&cacheMutex());
+    qint64 used = 0;
+    const auto &entries = sharedCache().entries;
+    for (auto it = entries.constBegin(); it != entries.constEnd(); ++it) {
+        const FileEntry &entry = it.value();
+        if (!entry.path.startsWith(QStringLiteral("mega:///")) || entry.isDirectory) {
+            continue;
+        }
+        used += entry.size;
+    }
+    return used;
+}
+
 void removePath(const QString &path)
 {
     QMutexLocker locker(&cacheMutex());

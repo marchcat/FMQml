@@ -1204,6 +1204,9 @@ QString FilePanelController::pathKindFor(const QString &path) const
     if (lowerPath.startsWith(QStringLiteral("gdrive://"))) {
         return QStringLiteral("gdrive");
     }
+    if (lowerPath.startsWith(QStringLiteral("mega://"))) {
+        return QStringLiteral("mega");
+    }
     if (lowerPath.indexOf(QStringLiteral("://")) > 0) {
         return QStringLiteral("remote");
     }

@@ -516,6 +516,8 @@ qt_add_qml_module(fm
         qml/assets/filetypes-next/gdrive-file-shortcut.svg
         qml/assets/filetypes-next/gdrive-trash.svg
         qml/assets/filetypes-next/gdrive.svg
+        qml/assets/filetypes-next/mega.svg
+        qml/assets/filetypes-next/mega-clouddrive.svg
         qml/assets/filetypes-next/image.svg
         qml/assets/filetypes-next/music.svg
         qml/assets/filetypes-next/pdf.svg
@@ -792,6 +794,8 @@ endif()
 if(HAS_MEGA_PLUGIN)
     qt_add_plugin(fm_mega_provider
         CLASS_NAME MegaFileProviderPlugin
+        src/plugins/mega/MegaAuth.cpp
+        src/plugins/mega/MegaAuth.h
         src/plugins/mega/MegaFileProviderPlugin.cpp
         src/plugins/mega/MegaFileProviderPlugin.h
         src/plugins/mega/MegaPath.cpp
@@ -806,6 +810,13 @@ if(HAS_MEGA_PLUGIN)
     target_include_directories(fm_mega_provider PRIVATE src src/core)
     target_link_libraries(fm_mega_provider PRIVATE Qt6::Core Qt6::Gui Qt6::Network Qt6::Concurrent fm MEGA::SDKlib)
     target_compile_definitions(fm_mega_provider PRIVATE HAS_MEGA_PLUGIN)
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(fm_mega_provider PRIVATE PkgConfig::LIBSECRET)
+        target_compile_definitions(fm_mega_provider PRIVATE HAS_LIBSECRET)
+    endif()
+    if(WIN32)
+        target_link_libraries(fm_mega_provider PRIVATE Advapi32)
+    endif()
 
     set_target_properties(fm_mega_provider PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${FM_PROVIDER_PLUGIN_OUTPUT_DIR}"
@@ -923,6 +934,8 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
         add_executable(mega_provider_public_link_test
             tests/core/MegaProviderPublicLinkTest.cpp
+            src/plugins/mega/MegaAuth.cpp
+            src/plugins/mega/MegaAuth.h
             src/plugins/mega/MegaFileProviderPlugin.cpp
             src/plugins/mega/MegaFileProviderPlugin.h
             src/plugins/mega/MegaClientInterface.h
@@ -937,7 +950,9 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_include_directories(mega_provider_public_link_test PRIVATE src src/core src/plugins/mega)
         target_compile_definitions(mega_provider_public_link_test PRIVATE FM_MEGA_PROVIDER_TESTING)
         target_link_libraries(mega_provider_public_link_test PRIVATE Qt6::Core Qt6::Gui Qt6::Concurrent MEGA::SDKlib)
+        if(WIN32)
+            target_link_libraries(mega_provider_public_link_test PRIVATE Advapi32)
+        endif()
         add_test(NAME mega_provider_public_link_test COMMAND mega_provider_public_link_test)
     endif()
 endif()
-

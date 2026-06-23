@@ -230,9 +230,9 @@ bool waitForFileProviderFinish(FileProvider &provider,
     QString error;
     QList<FileEntry> entries;
 
-    QObject::connect(&provider, &FileProvider::batchReady, &provider,
+    const QMetaObject::Connection conn1 = QObject::connect(&provider, &FileProvider::batchReady, &provider,
                      [&](const QList<FileEntry> &batch, int) { entries.append(batch); });
-    QObject::connect(&provider, &FileProvider::finished, &provider,
+    const QMetaObject::Connection conn2 = QObject::connect(&provider, &FileProvider::finished, &provider,
                      [&](const QString &, bool ok, int, const QString &errorString) {
                          finished = true;
                          success = ok;
@@ -240,6 +240,9 @@ bool waitForFileProviderFinish(FileProvider &provider,
                      });
 
     action();
+
+    QObject::disconnect(conn1);
+    QObject::disconnect(conn2);
 
     if (successOut) {
         *successOut = success;
@@ -445,6 +448,12 @@ int main(int argc, char **argv)
             return fail(QStringLiteral("account Cloud Drive scan should expose cached children"));
         }
 
+        const QVariantMap storageInfo = provider->storageInfo(MegaPath::Root);
+        if (storageInfo.value(QStringLiteral("used")).toLongLong() != client.downloadPayload.size()
+            || storageInfo.value(QStringLiteral("fs")).toString() != QStringLiteral("MEGA")) {
+            return fail(QStringLiteral("account storageInfo should expose cached MEGA usage"));
+        }
+
         MegaFileProviderPlugin plugin;
         const QVariantMap status = plugin.triggerAction(QStringLiteral("authStatus"), {});
         if (!status.value(QStringLiteral("signedIn")).toBool()
@@ -454,6 +463,42 @@ int main(int argc, char **argv)
         const QVariantMap signOut = plugin.triggerAction(QStringLiteral("signOut"), {});
         if (!signOut.value(QStringLiteral("ok")).toBool() || client.isAccountAuthenticated()) {
             return fail(QStringLiteral("signOut action should clear fake account auth"));
+        }
+
+        FileActionContext signInContext;
+        signInContext.targetPath = MegaPath::Root;
+        signInContext.parameters.insert(QStringLiteral("email"), QStringLiteral("tester@example.com"));
+        signInContext.parameters.insert(QStringLiteral("password"), QStringLiteral("password"));
+        const QVariantMap signIn = plugin.triggerAction(QStringLiteral("signIn"), signInContext);
+        if (!signIn.value(QStringLiteral("ok")).toBool() || !client.isAccountAuthenticated()) {
+            return fail(QStringLiteral("signIn action should start fake account login"));
+        }
+
+        const QList<FileActionDescriptor> signedInActions = plugin.actionsForContext(signInContext);
+        bool hasStatus = false;
+        bool hasSignOut = false;
+        bool hasSignIn = false;
+        for (const FileActionDescriptor &action : signedInActions) {
+            hasStatus = hasStatus || action.id == QStringLiteral("authStatus");
+            hasSignOut = hasSignOut || action.id == QStringLiteral("signOut");
+            hasSignIn = hasSignIn || action.id == QStringLiteral("signIn");
+        }
+        if (!hasStatus || !hasSignOut || hasSignIn) {
+            return fail(QStringLiteral("signed-in MEGA action list should expose status and sign out only"));
+        }
+
+        client.logoutAccount();
+        const QList<FileActionDescriptor> signedOutActions = plugin.actionsForContext(signInContext);
+        hasStatus = false;
+        hasSignOut = false;
+        hasSignIn = false;
+        for (const FileActionDescriptor &action : signedOutActions) {
+            hasStatus = hasStatus || action.id == QStringLiteral("authStatus");
+            hasSignOut = hasSignOut || action.id == QStringLiteral("signOut");
+            hasSignIn = hasSignIn || action.id == QStringLiteral("signIn");
+        }
+        if (!hasStatus || hasSignOut || !hasSignIn) {
+            return fail(QStringLiteral("signed-out MEGA action list should expose status and sign in only"));
         }
     }
 

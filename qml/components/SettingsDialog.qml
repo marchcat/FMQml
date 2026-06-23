@@ -38,6 +38,7 @@ Dialog {
                                  ? appSettings.fontScale
                                  : 100
     property bool googleDriveAuthorized: false
+    property bool megaAuthorized: false
     signal themeEditorRequested()
     signal pluginManagerRequested()
     readonly property string appDataLocation: typeof appSettings !== "undefined" && appSettings
@@ -62,6 +63,7 @@ Dialog {
         workspaceResetPending = false
         refreshState()
         refreshGoogleDriveAuthorization()
+        refreshMegaAuthorization()
         Qt.callLater(() => contentItem.forceActiveFocus())
     }
 
@@ -342,6 +344,60 @@ Dialog {
         }
     }
 
+    function refreshMegaAuthorization() {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            megaAuthorized = false
+            return
+        }
+        const result = pluginActionController.triggerAction("mega::authStatus", {})
+        megaAuthorized = !!(result && result.ok === true && result.signedIn === true)
+    }
+
+    function signOutMega() {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            if (root.appRoot) root.appRoot.showTransientInfo("Plugin controller is unavailable.")
+            return
+        }
+        const result = pluginActionController.triggerAction("mega::signOut", {})
+        root.refreshMegaAuthorization()
+        if (root.appRoot) {
+            root.appRoot.showTransientInfo(String(result.message || "MEGA sign out requested."))
+        }
+    }
+
+    function openMegaLoginDialog() {
+        megaEmailField.text = ""
+        megaPasswordField.text = ""
+        megaLoginDialog.open()
+        megaEmailField.forceActiveFocus()
+    }
+
+    function submitMegaLogin() {
+        if (typeof pluginActionController === "undefined" || !pluginActionController) {
+            if (root.appRoot) root.appRoot.showTransientInfo("Plugin controller is unavailable.")
+            return
+        }
+        const result = pluginActionController.triggerAction("mega::signIn", {
+            targetPath: "mega:///",
+            parameters: {
+                email: megaEmailField.text,
+                password: megaPasswordField.text
+            }
+        })
+        if (result && result.ok === true) {
+            megaLoginDialog.close()
+            root.refreshMegaAuthorization()
+            const panel = root.appRoot && root.appRoot.activePanelController ? root.appRoot.activePanelController() : null
+            if (panel && panel.openPath) {
+                panel.openPath("mega:///")
+                root.close()
+            }
+        }
+        if (root.appRoot) {
+            root.appRoot.showTransientInfo(String(result.message || "MEGA sign in requested."))
+        }
+    }
+
     function logInGoogleDrive() {
         const panel = root.appRoot && root.appRoot.activePanelController ? root.appRoot.activePanelController() : null
         if (panel && panel.openPath) {
@@ -380,6 +436,63 @@ Dialog {
             highlighted: true
             primaryColor: root.dialogAccent
             onClicked: root.accept()
+        }
+    }
+
+    Dialog {
+        id: megaLoginDialog
+        title: "MEGA Login"
+        modal: true
+        focus: true
+        parent: Overlay.overlay
+        width: Math.min(420, Math.max(320, root.width - 80))
+        x: parent ? Math.round((parent.width - width) / 2) : 0
+        y: parent ? Math.round((parent.height - height) / 2) : 0
+        standardButtons: Dialog.NoButton
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: "Enter your MEGA credentials. The session token is saved after successful authorization."
+                wrapMode: Text.WordWrap
+                color: root.detailText
+                font.pixelSize: Theme.fontSizeCaption
+            }
+
+            TextField {
+                id: megaEmailField
+                Layout.fillWidth: true
+                placeholderText: "Email"
+                inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
+                onAccepted: megaPasswordField.forceActiveFocus()
+            }
+
+            TextField {
+                id: megaPasswordField
+                Layout.fillWidth: true
+                placeholderText: "Password"
+                echoMode: TextInput.Password
+                onAccepted: root.submitMegaLogin()
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                DialogActionButton {
+                    text: "Cancel"
+                    highlighted: false
+                    onClicked: megaLoginDialog.close()
+                }
+                DialogActionButton {
+                    text: "Log in"
+                    highlighted: true
+                    primaryColor: root.dialogAccent
+                    enabled: megaEmailField.text.trim().length > 0 && megaPasswordField.text.length > 0
+                    onClicked: root.submitMegaLogin()
+                }
+            }
         }
     }
 
@@ -552,6 +665,42 @@ Dialog {
                                     highlighted: false
                                     secondaryTextColor: root.googleDriveAuthorized ? Theme.danger : root.dialogAccent
                                     onClicked: root.googleDriveAuthorized ? root.signOutGoogleDrive() : root.logInGoogleDrive()
+                                }
+                            }
+                        }
+
+                        SettingsContentBlock {
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Label {
+                                        text: "MEGA"
+                                        font.pixelSize: Theme.fontSizeLabel
+                                        font.weight: Font.DemiBold
+                                        color: Theme.textPrimary
+                                    }
+
+                                    Label {
+                                        text: root.megaAuthorized
+                                              ? "Read-only MEGA account browsing is enabled."
+                                              : "Sign in to browse and download your MEGA Cloud Drive in read-only mode."
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        font.pixelSize: Theme.fontSizeCaption
+                                        color: root.detailText
+                                    }
+                                }
+
+                                DialogActionButton {
+                                    text: root.megaAuthorized ? "Sign out" : "Log in"
+                                    highlighted: false
+                                    secondaryTextColor: root.megaAuthorized ? Theme.danger : root.dialogAccent
+                                    onClicked: root.megaAuthorized ? root.signOutMega() : root.openMegaLoginDialog()
                                 }
                             }
                         }

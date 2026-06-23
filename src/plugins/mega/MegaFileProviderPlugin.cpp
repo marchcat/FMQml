@@ -3,6 +3,7 @@
 #include "MegaCache.h"
 #include "MegaClient.h"
 #include "MegaClientInterface.h"
+#include "MegaAuth.h"
 #include "CleanupSubsystem.h"
 
 #include <megaapi.h>
@@ -15,15 +16,21 @@ using namespace mega;
 #include <QTemporaryFile>
 #include <QDir>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
+#include <QTimer>
+#include <QVariantList>
 #include <QWaitCondition>
+
+#include <functional>
 
 namespace {
 
 constexpr QLatin1StringView MegaSignOutAction{"signOut"};
+constexpr QLatin1StringView MegaSignInAction{"signIn"};
 constexpr QLatin1StringView MegaAuthStatusAction{"authStatus"};
-
 #ifdef FM_MEGA_PROVIDER_TESTING
 MegaClientInterface *s_clientForTesting = nullptr;
 #endif
@@ -36,6 +43,129 @@ MegaClientInterface &megaClient()
     }
 #endif
     return defaultMegaClient();
+}
+
+QString megaByteSizeText(qint64 size)
+{
+    return size >= 0 ? QLocale().formattedDataSize(size) : QStringLiteral("unknown");
+}
+
+QVariantList megaAccountStatusProperties()
+{
+    return QVariantList{
+        QVariantMap{
+            {QStringLiteral("label"), QStringLiteral("Signed in")},
+            {QStringLiteral("value"), megaClient().isAccountAuthenticated() ? QStringLiteral("Yes") : QStringLiteral("No")},
+        },
+        QVariantMap{
+            {QStringLiteral("label"), QStringLiteral("Account")},
+            {QStringLiteral("value"), megaClient().accountEmail().isEmpty() ? MegaAuth::savedEmail() : megaClient().accountEmail()},
+        },
+        QVariantMap{
+            {QStringLiteral("label"), QStringLiteral("Saved session")},
+            {QStringLiteral("value"), MegaAuth::savedSession().isEmpty() ? QStringLiteral("No") : QStringLiteral("Yes")},
+        },
+        QVariantMap{
+            {QStringLiteral("label"), QStringLiteral("Access mode")},
+            {QStringLiteral("value"), QStringLiteral("Read-only account browsing and downloads")},
+        },
+        QVariantMap{
+            {QStringLiteral("label"), QStringLiteral("Known used storage")},
+            {QStringLiteral("value"), megaByteSizeText(MegaCache::accountStorageUsedBytes())},
+        },
+    };
+}
+
+QVariantMap megaStorageInfoMap()
+{
+    const qint64 used = MegaCache::accountStorageUsedBytes();
+    return {
+        {QStringLiteral("total"), -1},
+        {QStringLiteral("free"), -1},
+        {QStringLiteral("used"), used},
+        {QStringLiteral("percent"), 0.0},
+        {QStringLiteral("totalStr"), QStringLiteral("unknown")},
+        {QStringLiteral("freeStr"), QStringLiteral("unknown")},
+        {QStringLiteral("usedStr"), megaByteSizeText(used)},
+        {QStringLiteral("fs"), QStringLiteral("MEGA")},
+        {QStringLiteral("isCritical"), false},
+    };
+}
+
+QVariantMap runBlockingMegaAuthorization(const std::function<int()> &startAuthorization,
+                                         const QString &successMessage,
+                                         const QString &startFailureMessage)
+{
+    MegaClientInterface &client = megaClient();
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+
+    bool finished = false;
+    bool signedIn = false;
+    bool timedOut = false;
+    QString accountEmail;
+
+    const QMetaObject::Connection authConnection = QObject::connect(
+        &client, &MegaClientInterface::accountAuthorizationChanged,
+        &loop, [&](bool changedSignedIn, const QString &changedEmail, const QString &) {
+            finished = true;
+            signedIn = changedSignedIn;
+            accountEmail = changedEmail;
+            loop.quit();
+        });
+    const QMetaObject::Connection timeoutConnection = QObject::connect(
+        &timeout, &QTimer::timeout,
+        &loop, [&]() {
+            finished = true;
+            timedOut = true;
+            signedIn = client.isAccountAuthenticated();
+            accountEmail = client.accountEmail();
+            loop.quit();
+        });
+
+    const int startResult = startAuthorization();
+    if (startResult != 0) {
+        QObject::disconnect(authConnection);
+        QObject::disconnect(timeoutConnection);
+        return {
+            {QStringLiteral("ok"), false},
+            {QStringLiteral("title"), QStringLiteral("MEGA")},
+            {QStringLiteral("message"), startFailureMessage},
+        };
+    }
+
+    if (!finished) {
+        timeout.start(60000);
+        loop.exec();
+    }
+
+    QObject::disconnect(authConnection);
+    QObject::disconnect(timeoutConnection);
+
+    const bool ok = signedIn || client.isAccountAuthenticated();
+    const QString email = accountEmail.isEmpty() ? client.accountEmail() : accountEmail;
+    if (ok) {
+        const QString session = client.accountSessionToken();
+        if (session.trimmed().isEmpty()) {
+            qWarning() << "[MegaFileProvider] MEGA authorization succeeded but SDK session token is empty";
+        } else if (!MegaAuth::rememberAuthorization(session, email)) {
+            qWarning() << "[MegaFileProvider] Could not persist MEGA authorization in the platform credential store";
+        }
+    }
+    return {
+        {QStringLiteral("ok"), ok},
+        {QStringLiteral("title"), QStringLiteral("MEGA")},
+        {QStringLiteral("message"), ok
+            ? successMessage
+            : (timedOut
+                ? QStringLiteral("MEGA sign in did not complete before the timeout.")
+                : QStringLiteral("MEGA sign in failed."))},
+        {QStringLiteral("signedIn"), ok},
+        {QStringLiteral("accountEmail"), email},
+        {QStringLiteral("accountLabel"), email.isEmpty() ? QStringLiteral("Signed in") : email},
+        {QStringLiteral("refreshCurrentPath"), ok},
+    };
 }
 
 class CleanupManagedTemporaryFile final : public QTemporaryFile
@@ -486,6 +616,15 @@ public:
         return false;
     }
 
+    QVariantMap storageInfo(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (MegaPath::isLinkPath(normalized) || !megaClient().isAccountAuthenticated()) {
+            return {};
+        }
+        return megaStorageInfoMap();
+    }
+
 private slots:
     void onAccountNodesLoaded(bool success, const QString &errorString)
     {
@@ -556,7 +695,24 @@ private:
 MegaFileProviderPlugin::MegaFileProviderPlugin()
 {
     // Force initialization of the active MEGA client in the main thread.
-    megaClient();
+    MegaClientInterface &client = megaClient();
+    connect(&client, &MegaClientInterface::accountAuthorizationChanged,
+            this, [](bool signedIn, const QString &accountEmail, const QString &session) {
+                if (signedIn) {
+                    if (!MegaAuth::rememberAuthorization(session, accountEmail)) {
+                        qWarning() << "[MegaFileProvider] Could not persist MEGA authorization change";
+                    }
+                } else {
+                    MegaAuth::clearSavedAuthorization();
+                }
+            });
+
+#ifndef FM_MEGA_PROVIDER_TESTING
+    const QString session = MegaAuth::savedSession();
+    if (!session.isEmpty() && !client.isAccountAuthenticated()) {
+        client.resumeAccountSession(session);
+    }
+#endif
 }
 
 #ifdef FM_MEGA_PROVIDER_TESTING
@@ -649,30 +805,82 @@ QList<FileActionDescriptor> MegaFileProviderPlugin::actionsForContext(const File
         signOut.iconSource = QStringLiteral("../assets/icons/close.svg");
         signOut.order = 910;
         actions.append(signOut);
+    } else {
+        FileActionDescriptor signIn;
+        signIn.id = QString(MegaSignInAction);
+        signIn.text = QStringLiteral("Sign in to MEGA");
+        signIn.iconSource = QStringLiteral("../assets/icons/plugin.svg");
+        signIn.order = 905;
+        actions.append(signIn);
     }
     return actions;
 }
 
 QVariantMap MegaFileProviderPlugin::triggerAction(const QString &actionId, const FileActionContext &context)
 {
-    Q_UNUSED(context)
     if (actionId == MegaAuthStatusAction) {
+        const bool signedIn = megaClient().isAccountAuthenticated();
+        const QString accountEmail = megaClient().accountEmail().isEmpty()
+            ? MegaAuth::savedEmail()
+            : megaClient().accountEmail();
+        const QString label = signedIn
+            ? (accountEmail.isEmpty() ? QStringLiteral("Signed in") : accountEmail)
+            : (MegaAuth::savedSession().isEmpty()
+                ? QStringLiteral("Not signed in")
+                : (accountEmail.isEmpty() ? QStringLiteral("Saved session available") : accountEmail));
         return {
             {QStringLiteral("ok"), true},
             {QStringLiteral("title"), QStringLiteral("MEGA")},
-            {QStringLiteral("signedIn"), megaClient().isAccountAuthenticated()},
-            {QStringLiteral("accountEmail"), megaClient().accountEmail()},
-            {QStringLiteral("accountLabel"), megaClient().accountEmail()},
+            {QStringLiteral("subtitle"), QStringLiteral("Account authorization")},
+            {QStringLiteral("message"), signedIn
+                ? QStringLiteral("MEGA account access is active in read-only mode.")
+                : QStringLiteral("MEGA account access is not active.")},
+            {QStringLiteral("signedIn"), signedIn},
+            {QStringLiteral("accountEmail"), accountEmail},
+            {QStringLiteral("accountLabel"), label},
+            {QStringLiteral("properties"), megaAccountStatusProperties()},
         };
+    }
+
+    if (actionId == MegaSignInAction) {
+        const QString session = context.parameters.value(QStringLiteral("session")).toString().trimmed();
+        const QString email = context.parameters.value(QStringLiteral("email")).toString().trimmed();
+        const QString password = context.parameters.value(QStringLiteral("password")).toString();
+
+        if (!session.isEmpty()) {
+            return runBlockingMegaAuthorization(
+                [session]() { return megaClient().resumeAccountSession(session); },
+                QStringLiteral("MEGA session was resumed."),
+                QStringLiteral("Could not start MEGA session resume."));
+        }
+
+        if (email.isEmpty() || password.isEmpty()) {
+            return {
+                {QStringLiteral("ok"), false},
+                {QStringLiteral("title"), QStringLiteral("MEGA")},
+                {QStringLiteral("message"), QStringLiteral("MEGA sign in requires email and password parameters.")},
+                {QStringLiteral("requiresInput"), true},
+                {QStringLiteral("inputKind"), QStringLiteral("megaCredentials")},
+            };
+        }
+
+        return runBlockingMegaAuthorization(
+            [email, password]() { return megaClient().loginToAccount(email, password); },
+            QStringLiteral("MEGA sign in completed."),
+            QStringLiteral("Could not start MEGA sign in."));
     }
 
     if (actionId == MegaSignOutAction) {
         QString error;
         const bool ok = megaClient().logoutAccount(&error);
+        if (ok) {
+            MegaAuth::clearSavedAuthorization();
+        }
         return {
             {QStringLiteral("ok"), ok},
             {QStringLiteral("title"), QStringLiteral("MEGA")},
             {QStringLiteral("message"), ok ? QStringLiteral("MEGA authorization was removed.") : error},
+            {QStringLiteral("refreshCurrentPath"), ok},
         };
     }
 

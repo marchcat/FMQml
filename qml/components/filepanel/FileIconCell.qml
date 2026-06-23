@@ -101,6 +101,8 @@ Item {
                || value === "gdrive://shared-with-me"
                || value === "gdrive://shortcuts"
                || value === "gdrive://trash"
+               || value === "mega:///"
+               || value === "mega:///cloud drive"
     }
 
     function iconQuery(isDirectory, suffix, mimeType, name, providerPath) {

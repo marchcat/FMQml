@@ -210,6 +210,11 @@ static bool googleDriveProviderAvailable()
     return FileProviderFactory::hasPluginProviderForPath(QStringLiteral("gdrive://"));
 }
 
+static bool megaProviderAvailable()
+{
+    return FileProviderFactory::hasPluginProviderForPath(QStringLiteral("mega:///"));
+}
+
 static QString standardPlacePath(QStandardPaths::StandardLocation location)
 {
     if (location == QStandardPaths::HomeLocation) {
@@ -227,6 +232,18 @@ static QString googleDriveAccountLabel()
         return {};
     }
     return status.value(QStringLiteral("accountLabel")).toString().trimmed();
+}
+
+static QString megaAccountLabel()
+{
+    const QVariantMap status = FileProviderPluginRegistry::instance().triggerAction(
+        QStringLiteral("mega::authStatus"),
+        {});
+    const QString label = status.value(QStringLiteral("accountLabel")).toString().trimmed();
+    if (label.isEmpty() || label == QLatin1String("Not signed in")) {
+        return {};
+    }
+    return label;
 }
 
 static PlaceItem placeFromProviderPlace(const ProviderPlaceItem &providerPlace)
@@ -288,9 +305,18 @@ void PlacesModel::refresh()
         gdriveItem.name = QStringLiteral("Google Drive");
         gdriveItem.path = QStringLiteral("gdrive://");
         gdriveItem.icon = QStringLiteral("gdrive");
-        gdriveItem.section = QStringLiteral("place");
+        gdriveItem.section = QStringLiteral("cloud");
         gdriveItem.subtitle = googleDriveAccountLabel();
         standardItems.append(gdriveItem);
+    }
+    if (megaProviderAvailable()) {
+        PlaceItem megaItem;
+        megaItem.name = QStringLiteral("MEGA");
+        megaItem.path = QStringLiteral("mega:///");
+        megaItem.icon = QStringLiteral("mega");
+        megaItem.section = QStringLiteral("cloud");
+        megaItem.subtitle = megaAccountLabel();
+        standardItems.append(megaItem);
     }
 
     // Standard Places
@@ -467,16 +493,19 @@ void PlacesModel::refreshDriveInfo()
 
 void PlacesModel::refreshGoogleDriveAccountInfo()
 {
-    const QString accountLabel = googleDriveAccountLabel();
+    const QHash<QString, QString> accountLabels{
+        {QStringLiteral("gdrive://"), googleDriveAccountLabel()},
+        {QStringLiteral("mega:///"), megaAccountLabel()},
+    };
     for (int i = 0; i < m_items.size(); ++i) {
         PlaceItem &item = m_items[i];
-        if (item.path != QLatin1String("gdrive://") || item.subtitle == accountLabel) {
+        const auto labelIt = accountLabels.constFind(item.path);
+        if (labelIt == accountLabels.constEnd() || item.subtitle == *labelIt) {
             continue;
         }
-        item.subtitle = accountLabel;
+        item.subtitle = *labelIt;
         const QModelIndex idx = index(i);
         emit dataChanged(idx, idx, {SubtitleRole});
-        return;
     }
 }
 

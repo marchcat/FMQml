@@ -89,6 +89,7 @@ Pane {
     readonly property bool isCurrentPathRemote: root.currentPathKind === "remote"
                                                 || root.currentPathKind === "ftp"
                                                 || root.currentPathKind === "gdrive"
+                                                || root.currentPathKind === "mega"
     readonly property bool effectiveUseNativeIcons: root.useNativeIcons
     readonly property bool effectiveShowThumbnails: root.showThumbnails && !root.ultraLightMode && !root.isCurrentPathRemote
     readonly property bool loadingDirectory: Boolean(root.controller

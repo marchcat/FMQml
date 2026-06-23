@@ -16,6 +16,7 @@ MenuItem {
     property bool active: false
     property string shortcut: ""
     property color iconColor: destructive ? Theme.danger : Theme.textSecondary
+    property bool recolorEnabled: true
 
     readonly property string displayText: {
         const t = root.text
@@ -34,7 +35,7 @@ MenuItem {
         return root.icon.source.toString()
     }
     readonly property bool hasIconSource: iconSourceText.length > 0
-    readonly property bool useSvgRecolor: hasIconSource && iconSourceText.toLowerCase().endsWith(".svg")
+    readonly property bool useSvgRecolor: hasIconSource && iconSourceText.toLowerCase().endsWith(".svg") && root.recolorEnabled
 
     background: Item {
         anchors.fill: parent
@@ -102,7 +103,7 @@ MenuItem {
                 smooth: true
                 mipmap: false
                 visible: !root.useSvgRecolor
-                layer.enabled: root.hasIconSource && !root.useSvgRecolor
+                layer.enabled: root.hasIconSource && !root.useSvgRecolor && root.recolorEnabled
                 layer.effect: MultiEffect {
                     colorization: 1.0
                     colorizationColor: root.iconColor

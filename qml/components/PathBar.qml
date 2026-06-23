@@ -41,7 +41,36 @@ Control {
         }
     }
 
-    function getFolderIcon(name, isDrive, isThisPc, isArchive, pathKind) {
+    function getFolderIcon(name, isDrive, isThisPc, isArchive, pathKind, path) {
+        const val = String(path || "").replace(/%20/g, " ")
+        if (val === "mega:///") {
+            return "../assets/filetypes-next/mega.svg"
+        }
+        if (val.toLowerCase() === "mega:///cloud drive") {
+            return "../assets/filetypes-next/mega-clouddrive.svg"
+        }
+        if (val.startsWith("mega://")) {
+            return "../assets/icons/folder.svg"
+        }
+        if (val === "gdrive://") {
+            return "../assets/filetypes-next/gdrive.svg"
+        }
+        if (val.toLowerCase() === "gdrive://my-drive") {
+            return "../assets/filetypes-next/gdrive-mydrive.svg"
+        }
+        if (val.toLowerCase() === "gdrive://shared-with-me") {
+            return "../assets/filetypes-next/gdrive-shared.svg"
+        }
+        if (val.toLowerCase() === "gdrive://shortcuts") {
+            return "../assets/filetypes-next/gdrive-shortcut.svg"
+        }
+        if (val.toLowerCase() === "gdrive://trash") {
+            return "../assets/filetypes-next/gdrive-trash.svg"
+        }
+        if (val.startsWith("gdrive://")) {
+            return "../assets/icons/folder.svg"
+        }
+
         if (isThisPc) return "../assets/icons/computer.svg";
         if (isDrive) return "../assets/icons/hard-drive.svg";
         if (isArchive) return "../assets/icons/archive.svg";
@@ -318,8 +347,19 @@ Control {
                                 clip: true
 
                                 RecolorSvgIcon {
-                                    sourcePath: root.getFolderIcon(name, isDrive, false, isArchive, pathKind)
-                                    recolorColor: root.getIconColor(pathKind === "ftp" ? "ftp" : (pathKind === "gdrive" ? "gdrive" : (pathKind === "remote" ? "remote" : (isArchive ? "archive" : (isDrive ? "hard-drive" : "folder")))), isLast, crumbBtn.hovered)
+                                    sourcePath: root.getFolderIcon(name, isDrive, false, isArchive, pathKind, path)
+                                    recolorColor: root.getIconColor(pathKind === "ftp" ? "ftp" : (pathKind === "gdrive" ? "gdrive" : (pathKind === "mega" ? "gdrive" : (pathKind === "remote" ? "remote" : (isArchive ? "archive" : (isDrive ? "hard-drive" : "folder"))))), isLast, crumbBtn.hovered)
+                                    readonly property bool isBrandedPath: {
+                                        const val = path.toLowerCase().replace(/%20/g, " ");
+                                        return val === "gdrive://"
+                                            || val === "gdrive://my-drive"
+                                            || val === "gdrive://shared-with-me"
+                                            || val === "gdrive://shortcuts"
+                                            || val === "gdrive://trash"
+                                            || val === "mega:///"
+                                            || val === "mega:///cloud drive";
+                                    }
+                                    recolorEnabled: !isBrandedPath
                                     Layout.preferredWidth: 14
                                     Layout.preferredHeight: 14
                                     Layout.alignment: Qt.AlignVCenter
@@ -665,7 +705,7 @@ Control {
 
             let isDrive = Boolean(entry.isDrive)
             let isArchive = root.isArchiveCrumbPath(path)
-            let iconSource = root.getFolderIcon(displayName, isDrive, false, isArchive)
+            let iconSource = root.getFolderIcon(displayName, isDrive, false, isArchive, "", path)
             
             if (isDrive) {
                 displayName = displayName.replace(/[/\\]$/, "")
@@ -673,10 +713,20 @@ Control {
 
             let isCurrent = suggestionIsCurrentChild(path, displayName, isDrive)
 
+            let pathLower = path.toLowerCase().replace(/%20/g, " ")
+            let isBranded = pathLower === "gdrive://"
+                || pathLower === "gdrive://my-drive"
+                || pathLower === "gdrive://shared-with-me"
+                || pathLower === "gdrive://shortcuts"
+                || pathLower === "gdrive://trash"
+                || pathLower === "mega:///"
+                || pathLower === "mega:///cloud drive"
+
             let item = menuItemComponent.createObject(null, {
                 "text": displayName,
                 "icon.source": iconSource,
                 "iconColor": root.getIconColor(isArchive ? "archive" : (isDrive ? "hard-drive" : "folder"), isCurrent, false),
+                "recolorEnabled": !isBranded,
                 "fullPath": path,
                 "isCurrent": isCurrent
             })

@@ -30,6 +30,7 @@ void cacheChildren(const QString &parentPath, const QStringList &childPaths);
 std::optional<QStringList> getChildren(const QString &parentPath);
 std::optional<QStringList> getChildrenIfCached(const QString &parentPath);
 QList<FileEntry> childEntries(const QString &parentPath);
+qint64 accountStorageUsedBytes();
 
 void removePath(const QString &path);
 void removeSubtree(const QString &path);

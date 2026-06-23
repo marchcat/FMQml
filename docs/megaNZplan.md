@@ -5,18 +5,19 @@ Goal: add a `mega://` provider that is comparable to the current Google Drive pl
 
 ## Current Implementation Status (June 2026)
 
-The repository is no longer at a pure planning stage. The current codebase has reached a partial Phase 1 / early Phase 2 state:
+The repository is no longer at a pure planning stage. The current codebase has reached Phase 3 for read-only account access, with Phase 4 write/mutation work still pending:
 
 - **Build gating is present.** `FM_ENABLE_MEGA_PLUGIN` is enabled by default, but the plugin target is built only when `SDKlib` from the MEGA SDK is found. Builds without the SDK continue without the provider.
 - **Plugin skeleton exists.** `MegaFileProviderPlugin` registers the `mega` scheme, exposes `pluginId = "mega"`, and constructs a read-only `FileProvider` implementation.
 - **Path parsing exists.** `MegaPath` normalizes `mega:///` and `mega://link/<id>` paths and parses modern and legacy public MEGA file/folder links into internal `mega://link/<linkId>` paths without keeping the key in `FileEntry::path`.
 - **Basic cache exists.** `MegaCache` stores public-link keys in memory, link load state, cached `FileEntry` metadata, MEGA handles, and parent-to-children relationships.
 - **MEGA SDK bridge exists for public reads.** `MegaClient` creates one SDK session per public link, opens public file links through `getPublicNode()`, opens public folder links through `loginToFolder()` + `fetchNodes()`, traverses nodes into the cache, and maps SDK download callbacks back to provider requests.
-- **Read-only public scan/download path is partially implemented.** The provider currently supports scanning cached/loaded public-link trees, exposes read-only transfer capabilities, downloads via `.part` files, atomically renames on success, removes partial files on failure, and returns `false` for create/rename/move/remove/write operations.
+- **Read-only public and account scan/download paths are implemented.** The provider supports scanning cached/loaded public-link trees and signed-in `mega:///` account trees, exposes read-only transfer capabilities, downloads via `.part` files, atomically renames on success, removes partial files on failure, and returns `false` for create/rename/move/remove/write operations.
 - **`openRead` staging is implemented through the cleanup subsystem.** Public-link previews/materialization create a temporary staging file, register it as a `RemotePreview` cleanup lease, and schedule deletion when the returned device is destroyed or when materialization fails.
-- **Unit coverage is still narrow.** `MegaPathTest` covers path normalization and public-link parsing. There are not yet fake-client integration tests for scan/download, cache isolation, errors, cancellation, or cleanup behavior.
+- **Account authorization and read-only access exist.** The action layer exposes MEGA sign-in/sign-out/status, Settings provides a credential dialog, saved sessions are stored through the platform credential store and resumed, `mega:///` appears in Places, and account storage usage is reported from the cached account tree.
+- **Unit coverage covers the current read-only path.** `MegaPathTest` covers path normalization and public-link parsing; `MegaProviderPublicLinkTest` covers public scan/download errors/cancellation, account scan, sign-in/sign-out actions, and cached account storage usage.
 
-This means the next documentation and implementation work should treat Phase 1 as mostly complete, Phase 2 as in progress, and Phases 3-6 as not started.
+This means Phase 3 should be treated as complete for the current read-only account-access target, except that exact account quota limits remain unavailable until the SDK account-details bridge is added. Phase 4 account writes/mutations and Phases 5-6 remain future work.
 
 ### Mandatory temporary-file policy for MEGA
 
