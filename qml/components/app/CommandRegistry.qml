@@ -22,6 +22,7 @@ QtObject {
     property var setThemeScheme
     property var openThemeSelector
     property var createFolderInActivePanel
+    property var createFolderInActivePanelAsAdministrator
     property var renameActiveSelection
     property var copyActiveSelection
     property var copyActiveSelectionToOpposite
@@ -30,6 +31,7 @@ QtObject {
     property var compressActiveSelection
     property var cutActiveSelection
     property var pasteClipboardToActivePanel
+    property var pasteClipboardToActivePanelAsAdministrator
     property var addSelectionToFavorites
     property var requestDeleteActiveSelection
     property var showActiveProperties
@@ -47,6 +49,9 @@ QtObject {
     property var resetSavedWorkspaceState
     property var resetCommandUsageStats
     property var relaunchAsAdmin
+    property var unlockAdminMode
+    property var lockAdminMode
+    property var showAdminModeStatus
     property var quitApplication
     property var openTextColorOverridesOverlay
     property var resetTextColorOverrides
@@ -622,6 +627,28 @@ QtObject {
             }
         },
         {
+            id: "file.newFolderAsAdmin",
+            title: "Create Folder as Administrator",
+            subtitle: "Create a folder in the active directory through the administrator route",
+            category: "File",
+            keywords: ["folder", "new", "create", "administrator", "root"],
+            aliases: ["new folder as admin", "mkdir as administrator"],
+            enabled: function() {
+                if (!root.workspaceCommandsEnabled || Qt.platform.os !== "linux") return false
+                const ctrl = root.activePanelController ? root.activePanelController() : null
+                return ctrl && !ctrl.isVirtualRoot && !root.isProviderPath(ctrl.currentPath)
+            },
+            disabledReason: function() {
+                if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                if (Qt.platform.os !== "linux") return "Administrator file operations are available on Linux only"
+                const ctrl = root.activePanelController ? root.activePanelController() : null
+                if (!ctrl) return "No active panel"
+                if (ctrl.isVirtualRoot || root.isProviderPath(ctrl.currentPath)) return "Administrator creation is available for local folders only"
+                return ""
+            },
+            run: function() { if (root.createFolderInActivePanelAsAdministrator) root.createFolderInActivePanelAsAdministrator() }
+        },
+        {
             id: "file.copy",
             title: "Copy selection",
             subtitle: "Copy selected files to clipboard",
@@ -830,6 +857,33 @@ QtObject {
                 return ""
             },
             run: function() { if (root.pasteClipboardToActivePanel) root.pasteClipboardToActivePanel() }
+        },
+        {
+            id: "file.pasteAsAdmin",
+            title: "Paste as Administrator",
+            subtitle: "Paste copied local files through the administrator route",
+            category: "File",
+            keywords: ["paste", "clipboard", "administrator", "root"],
+            aliases: ["paste as admin", "admin paste", "root paste"],
+            enabled: function() {
+                if (!root.workspaceCommandsEnabled || Qt.platform.os !== "linux") return false
+                const ctrl = root.activePanelController ? root.activePanelController() : null
+                return ctrl && root.workspaceController && root.workspaceController.hasClipboard
+                    && !root.workspaceController.clipboardCut
+                    && !ctrl.isVirtualRoot
+                    && !root.isProviderPath(ctrl.currentPath)
+            },
+            disabledReason: function() {
+                if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                if (Qt.platform.os !== "linux") return "Administrator file operations are available on Linux only"
+                const ctrl = root.activePanelController ? root.activePanelController() : null
+                if (!ctrl) return "No active panel"
+                if (!root.workspaceController || !root.workspaceController.hasClipboard) return "Clipboard is empty"
+                if (root.workspaceController.clipboardCut) return "Paste as Administrator currently supports copied items only"
+                if (ctrl.isVirtualRoot || root.isProviderPath(ctrl.currentPath)) return "Administrator paste is available for local folders only"
+                return ""
+            },
+            run: function() { if (root.pasteClipboardToActivePanelAsAdministrator) root.pasteClipboardToActivePanelAsAdministrator() }
         },
         {
             id: "file.delete",
@@ -1243,6 +1297,68 @@ QtObject {
                 return ""
             },
             run: function() { if (root.relaunchAsAdmin) root.relaunchAsAdmin() }
+        },
+        {
+            id: "admin.unlockMode",
+            title: "Unlock administrator mode",
+            subtitle: "Authorize protected Linux file operations",
+            category: "Admin",
+            shortcut: "",
+            keywords: ["admin", "administrator", "root", "polkit", "unlock", "privileges", "linux"],
+            enabled: function() {
+                return root.workspaceCommandsEnabled
+                    && typeof adminController !== "undefined"
+                    && adminController
+                    && adminController.linuxAdminModeSupported
+                    && adminController.adminModeStateName !== "Active"
+                    && adminController.adminModeStateName !== "ExpiringSoon"
+            },
+            disabledReason: function() {
+                if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                if (typeof adminController === "undefined" || !adminController || !adminController.linuxAdminModeSupported) return "Linux administrator mode is not supported"
+                if (adminController.adminModeStateName === "Active" || adminController.adminModeStateName === "ExpiringSoon") return "Administrator mode is already active"
+                return ""
+            },
+            run: function() { if (root.unlockAdminMode) root.unlockAdminMode() }
+        },
+        {
+            id: "admin.lockMode",
+            title: "Lock administrator mode",
+            subtitle: "Stop using administrator authorization",
+            category: "Admin",
+            shortcut: "",
+            keywords: ["admin", "administrator", "root", "lock", "revoke", "privileges", "linux"],
+            enabled: function() {
+                return root.workspaceCommandsEnabled
+                    && typeof adminController !== "undefined"
+                    && adminController
+                    && adminController.linuxAdminModeSupported
+                    && (adminController.adminModeStateName === "Active" || adminController.adminModeStateName === "ExpiringSoon")
+            },
+            disabledReason: function() {
+                if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                return "Administrator mode is not active"
+            },
+            run: function() { if (root.lockAdminMode) root.lockAdminMode() }
+        },
+        {
+            id: "admin.showStatus",
+            title: "Show administrator mode status",
+            subtitle: "Display Linux administrator mode state",
+            category: "Admin",
+            shortcut: "",
+            keywords: ["admin", "administrator", "root", "status", "privileges", "linux"],
+            enabled: function() {
+                return root.workspaceCommandsEnabled
+                    && typeof adminController !== "undefined"
+                    && adminController
+                    && adminController.linuxAdminModeSupported
+            },
+            disabledReason: function() {
+                if (!root.workspaceCommandsEnabled) return "Overlays are open"
+                return "Linux administrator mode is not supported"
+            },
+            run: function() { if (root.showAdminModeStatus) root.showAdminModeStatus() }
         },
         {
             id: "app.quit",

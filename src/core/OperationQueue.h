@@ -15,6 +15,7 @@
 #include <functional>
 
 #include "LocalFileProvider.h"
+#include "LinuxAdminBroker.h"
 
 class OperationQueue : public QObject {
     Q_OBJECT
@@ -38,7 +39,8 @@ public:
         Move,
         Delete,
         Extract,
-        Compress
+        Compress,
+        CreateFolder
     };
 
     // Not a best place but let it will be here for now :)
@@ -54,6 +56,7 @@ public:
         Type type = Type::Copy;
         QStringList sources;
         QString destination;
+        bool administrator = false;
     };
 
     struct OperationResult {
@@ -88,6 +91,8 @@ public:
     QString remainingTimeText() const;
 
     Q_INVOKABLE void copyTo(const QStringList &sources, const QString &destination);
+    Q_INVOKABLE void copyToAsAdministrator(const QStringList &sources, const QString &destination);
+    Q_INVOKABLE void createFolderAsAdministrator(const QString &destination, const QString &name);
     Q_INVOKABLE void duplicateInPlace(const QStringList &sources, const QString &destinationHint = {});
     Q_INVOKABLE void moveTo(const QStringList &sources, const QString &destination);
     Q_INVOKABLE void extractTo(const QStringList &sources, const QString &destination);
@@ -123,6 +128,7 @@ signals:
     void lastErrorChanged();
     void statusMessageChanged();
     void speedChanged();
+    void operationStarted(OperationQueue::Type type, const QStringList &sources, const QString &destination);
     void operationFinished(OperationQueue::Type type, const QStringList &sources, const QString &destination);
     void conflictDetected(const QString &source, const QString &destination,
                           qint64 sourceSize, const QDateTime &sourceModified,
@@ -152,6 +158,8 @@ private:
     qint64 totalBytesForPath(const QString &path) const;
     qint64 totalEntryCountForPath(const QString &path) const;
     void copyPath(const QString &sourcePath, const QString &destinationPath, qint64 totalBytes, qint64 &copiedBytes);
+    void copyPathAsAdministrator(const QString &sourcePath, const QString &destinationPath);
+    void createFolderAsAdministratorPath(const QString &path);
     bool copyLocalDirectoryToProviderBatch(const QString &sourcePath,
                                            const QString &destinationPath,
                                            qint64 totalBytes,

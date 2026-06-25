@@ -1671,6 +1671,33 @@ void DirectoryModel::onDirectoryEventsReady(const QList<DirectoryChangeEvent> &e
     }
     m_watchEventsReceived += events.size();
 
+    if (m_bulkWatchSuppressed
+        && sameFilesystemPath(QDir::fromNativeSeparators(m_currentPath),
+                              QDir::fromNativeSeparators(m_bulkWatchSuppressedPath))) {
+        for (const DirectoryChangeEvent &event : events) {
+            if (!event.path.isEmpty()) {
+                FileAccessResolver::invalidate(event.path);
+            }
+            if (!event.oldPath.isEmpty()) {
+                FileAccessResolver::invalidate(event.oldPath);
+            }
+            if (!event.newPath.isEmpty()) {
+                FileAccessResolver::invalidate(event.newPath);
+            }
+        }
+        m_bulkWatchDirty = true;
+        ++m_bulkWatchSuppressedBatches;
+        m_bulkWatchSuppressedEvents += events.size();
+        if (watchDebugEnabled()) {
+            qDebug() << "[DirectoryWatch] bulk-suppressed"
+                     << "path" << m_currentPath
+                     << "incoming" << events.size()
+                     << "batches" << m_bulkWatchSuppressedBatches
+                     << "events" << m_bulkWatchSuppressedEvents;
+        }
+        return;
+    }
+
     int transientPartEventsDropped = 0;
     int acceptedEvents = 0;
     for (const DirectoryChangeEvent &event : events) {
@@ -1958,10 +1985,60 @@ void DirectoryModel::applyFilterInternal(bool keepSelection)
 
 void DirectoryModel::refresh()
 {
+    if (m_bulkWatchSuppressed) {
+        m_pendingDirectoryEvents.clear();
+    }
     if (!m_currentPath.isEmpty()) {
         m_provider->setShowHidden(m_showHidden);
         m_provider->refresh(m_currentPath);
     }
+}
+
+void DirectoryModel::beginBulkWatchSuppression(const QString &path)
+{
+    if (path.isEmpty()
+        || m_currentPath.isEmpty()
+        || !sameFilesystemPath(QDir::fromNativeSeparators(m_currentPath),
+                               QDir::fromNativeSeparators(path))) {
+        return;
+    }
+
+    m_bulkWatchSuppressed = true;
+    m_bulkWatchDirty = false;
+    m_bulkWatchSuppressedPath = QDir::cleanPath(QDir::fromNativeSeparators(path));
+    m_bulkWatchSuppressedBatches = 0;
+    m_bulkWatchSuppressedEvents = 0;
+    m_pendingDirectoryEvents.clear();
+    if (watchDebugEnabled()) {
+        qDebug() << "[DirectoryWatch] bulk-suppress-begin"
+                 << "path" << m_currentPath;
+    }
+}
+
+void DirectoryModel::endBulkWatchSuppression(const QString &path)
+{
+    if (!m_bulkWatchSuppressed) {
+        return;
+    }
+    if (!path.isEmpty()
+        && !sameFilesystemPath(QDir::fromNativeSeparators(path),
+                               QDir::fromNativeSeparators(m_bulkWatchSuppressedPath))) {
+        return;
+    }
+
+    if (watchDebugEnabled()) {
+        qDebug() << "[DirectoryWatch] bulk-suppress-end"
+                 << "path" << m_currentPath
+                 << "dirty" << m_bulkWatchDirty
+                 << "batches" << m_bulkWatchSuppressedBatches
+                 << "events" << m_bulkWatchSuppressedEvents;
+    }
+    m_bulkWatchSuppressed = false;
+    m_bulkWatchDirty = false;
+    m_bulkWatchSuppressedPath.clear();
+    m_bulkWatchSuppressedBatches = 0;
+    m_bulkWatchSuppressedEvents = 0;
+    m_pendingDirectoryEvents.clear();
 }
 
 void DirectoryModel::notifyCurrentPathUnavailable(const QString &error)

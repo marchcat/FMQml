@@ -118,6 +118,8 @@ public:
     Q_INVOKABLE void clearError();
     void noteLocalMutation();
     void suppressNextWatchRestart();
+    void beginBulkWatchSuppression(const QString &path);
+    void endBulkWatchSuppression(const QString &path);
     bool upsertPath(const QString &path);
     bool insertPath(const QString &path);
     bool removePath(const QString &path);
@@ -213,7 +215,12 @@ private:
     bool m_recoveringUnavailablePath = false;
     bool m_suppressNextWatchRestart = false;
     bool m_deferredWatchRestartPending = false;
+    bool m_bulkWatchSuppressed = false;
+    bool m_bulkWatchDirty = false;
     QString m_deferredWatchRestartPath;
+    QString m_bulkWatchSuppressedPath;
+    qint64 m_bulkWatchSuppressedBatches = 0;
+    qint64 m_bulkWatchSuppressedEvents = 0;
     int m_currentScanGeneration = 0; 
     QTimer m_debounceTimer;
     QTimer m_directoryEventTimer;

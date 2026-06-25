@@ -157,6 +157,12 @@ qt_add_executable(fm
     src/core/FileError.h
     src/core/FileAccessResolver.cpp
     src/core/FileAccessResolver.h
+    src/core/LinuxAdminBroker.cpp
+    src/core/LinuxAdminBroker.h
+    src/core/LinuxAdminPolicy.cpp
+    src/core/LinuxAdminPolicy.h
+    src/core/LinuxAdminSession.cpp
+    src/core/LinuxAdminSession.h
     src/core/FavoritesStore.cpp
     src/core/FavoritesStore.h
     src/core/DirectoryChangeWatcher.cpp
@@ -944,6 +950,35 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(linux_launch_service_test PRIVATE src/core)
     target_link_libraries(linux_launch_service_test PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME linux_launch_service_test COMMAND linux_launch_service_test)
+
+    add_executable(linux_admin_broker_test
+        tests/core/LinuxAdminBrokerTest.cpp
+        src/core/LinuxAdminBroker.cpp
+        src/core/LinuxAdminBroker.h
+        src/core/LinuxAdminPolicy.cpp
+        src/core/LinuxAdminPolicy.h
+    )
+    target_include_directories(linux_admin_broker_test PRIVATE src/core)
+    target_link_libraries(linux_admin_broker_test PRIVATE Qt6::Core)
+    add_test(NAME linux_admin_broker_test COMMAND linux_admin_broker_test)
+
+    add_executable(linux_admin_policy_test
+        tests/core/LinuxAdminPolicyTest.cpp
+        src/core/LinuxAdminPolicy.cpp
+        src/core/LinuxAdminPolicy.h
+    )
+    target_include_directories(linux_admin_policy_test PRIVATE src/core)
+    target_link_libraries(linux_admin_policy_test PRIVATE Qt6::Core)
+    add_test(NAME linux_admin_policy_test COMMAND linux_admin_policy_test)
+
+    add_executable(linux_admin_session_test
+        tests/core/LinuxAdminSessionTest.cpp
+        src/core/LinuxAdminSession.cpp
+        src/core/LinuxAdminSession.h
+    )
+    target_include_directories(linux_admin_session_test PRIVATE src/core)
+    target_link_libraries(linux_admin_session_test PRIVATE Qt6::Core)
+    add_test(NAME linux_admin_session_test COMMAND linux_admin_session_test)
 
     add_executable(app_settings_controller_test
         tests/core/AppSettingsControllerTest.cpp

@@ -91,6 +91,17 @@ Item {
             onTriggered: root.controller.createFolder("New Folder")
         }
         ThemedMenuItem {
+            text: "New Folder as Administrator"
+            icon.source: "../assets/icons/folder-plus.svg"
+            iconColor: Theme.actionIconColor("create")
+            visible: Qt.platform.os === "linux"
+                     && root.controller
+                     && !root.controller.isVirtualRoot
+                     && !menuPolicy.currentPathIsProvider()
+            enabled: visible
+            onTriggered: if (root.workspaceController) root.workspaceController.createFolderInActivePanelAsAdministrator()
+        }
+        ThemedMenuItem {
             text: "New Text File"
             icon.source: "../assets/icons/text-file.svg"
             iconColor: Theme.actionIconColor("text-file")
@@ -115,6 +126,20 @@ Item {
             iconColor: Theme.actionIconColor("paste")
             enabled: menuPolicy.canPasteFromClipboard()
             onTriggered: if (root.workspaceController) root.workspaceController.pasteFromClipboard()
+        }
+        ThemedMenuItem {
+            text: "Paste as Administrator"
+            icon.source: "../assets/icons/paste.svg"
+            iconColor: Theme.actionIconColor("paste")
+            visible: Qt.platform.os === "linux"
+                     && root.workspaceController
+                     && root.workspaceController.hasClipboard
+                     && !root.workspaceController.clipboardCut
+                     && root.controller
+                     && !root.controller.isVirtualRoot
+                     && !menuPolicy.currentPathIsProvider()
+            enabled: visible
+            onTriggered: if (root.workspaceController) root.workspaceController.pasteFromClipboardAsAdministrator()
         }
         ThemedMenuSeparator {}
         ThemedMenuItem {

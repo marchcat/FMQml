@@ -4,6 +4,7 @@
 #include "ArchiveSupport.h"
 #include "FileError.h"
 #include "CleanupSubsystem.h"
+#include "LinuxAdminPolicy.h"
 
 #include <QtConcurrent>
 #include <QDir>
@@ -247,6 +248,8 @@ QString operationName(OperationQueue::Type type)
         return QStringLiteral("extract");
     case OperationQueue::Type::Compress:
         return QStringLiteral("compress");
+    case OperationQueue::Type::CreateFolder:
+        return QStringLiteral("createFolder");
     }
     return QStringLiteral("operation");
 }
@@ -262,6 +265,8 @@ QString primaryErrorPath(const OperationQueue::Request &request)
         return request.destination.isEmpty() ? request.sources.value(0) : request.destination;
     case OperationQueue::Type::Delete:
         return request.sources.value(0);
+    case OperationQueue::Type::CreateFolder:
+        return request.destination;
     }
     return request.sources.value(0);
 }
@@ -762,6 +767,36 @@ void OperationQueue::copyTo(const QStringList &sources, const QString &destinati
     enqueue({Type::Copy, sources, destination});
 }
 
+void OperationQueue::copyToAsAdministrator(const QStringList &sources, const QString &destination)
+{
+    if (sources.isEmpty() || destination.isEmpty()) {
+        return;
+    }
+    if (ArchiveSupport::isArchivePath(destination)) {
+        setStatusMessage(QStringLiteral("Archive contents are read-only"));
+        return;
+    }
+    for (const QString &source : sources) {
+        if (ArchiveSupport::isArchivePath(source)) {
+            setStatusMessage(QStringLiteral("Administrator copy is unavailable for archive contents"));
+            return;
+        }
+    }
+    enqueue({Type::Copy, sources, destination, true});
+}
+
+void OperationQueue::createFolderAsAdministrator(const QString &destination, const QString &name)
+{
+    if (destination.isEmpty() || name.trimmed().isEmpty()) {
+        return;
+    }
+    if (ArchiveSupport::isArchivePath(destination)) {
+        setStatusMessage(QStringLiteral("Archive contents are read-only"));
+        return;
+    }
+    enqueue({Type::CreateFolder, {name.trimmed()}, destination, true});
+}
+
 void OperationQueue::duplicateInPlace(const QStringList &sources, const QString &destinationHint)
 {
     if (sources.size() != 1) {
@@ -987,9 +1022,13 @@ void OperationQueue::runNext()
     case Type::Delete: label = QStringLiteral("Deleting..."); break;
     case Type::Extract: label = QStringLiteral("Extracting..."); break;
     case Type::Compress: label = QStringLiteral("Compressing..."); break;
+    case Type::CreateFolder: label = request.administrator
+        ? QStringLiteral("Creating as Administrator...")
+        : QStringLiteral("Creating..."); break;
     }
     setCurrentLabel(label);
     setBusy(true);
+    emit operationStarted(request.type, request.sources, request.destination);
 
     m_operationTimer.start();
     m_watcher.setFuture(QtConcurrent::run([this, request]() {
@@ -1180,7 +1219,7 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
     }
 
     qint64 currentProgressBytes = 0;
-    const int totalFileCount = request.sources.size();
+    const int totalFileCount = request.type == Type::CreateFolder ? 1 : request.sources.size();
     const bool isCountingItems = (request.type == Type::Delete);
     const qint64 archiveSelectionBytes =
         (request.type == Type::Copy || request.type == Type::Move)
@@ -1211,6 +1250,32 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         }
     };
 
+    if (request.type == Type::CreateFolder) {
+        const QString folderName = request.sources.value(0).trimmed();
+        FileProvider *destProvider = getProviderForPath(request.destination);
+        const QString folderPath = destProvider
+            ? destProvider->childPath(request.destination, folderName)
+            : QString();
+        try {
+            if (folderPath.isEmpty()) {
+                throw std::runtime_error("Cannot create folder: destination is invalid");
+            }
+            if (request.administrator) {
+                createFolderAsAdministratorPath(folderPath);
+            } else if (!makePath(folderPath)) {
+                throw std::runtime_error(QStringLiteral("Cannot create folder %1").arg(folderPath).toStdString());
+            }
+            result.succeededCount = 1;
+            QMetaObject::invokeMethod(this, [this]() {
+                setCompletedItems(1);
+                setProgress(1.0);
+            }, Qt::QueuedConnection);
+        } catch (const std::exception &exception) {
+            recordFailure(folderPath.isEmpty() ? request.destination : folderPath, QString::fromUtf8(exception.what()));
+        }
+        return result;
+    }
+
     if (request.type == Type::Compress) {
         try {
             compressPathsToSevenZip(request.sources, request.destination, totalBytes);
@@ -1225,6 +1290,92 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
             }, Qt::QueuedConnection);
         } catch (const std::exception &exception) {
             recordFailure(request.destination, QString::fromUtf8(exception.what()));
+        }
+        return result;
+    }
+
+    if (request.type == Type::Copy && request.administrator) {
+        if (request.destination.isEmpty()) {
+            recordFailure({}, QStringLiteral("Administrator copy destination is empty"));
+            return result;
+        }
+        FileProvider *destProvider = getProviderForPath(request.destination);
+        if (!destProvider || destProvider->scheme() != QLatin1String("file")) {
+            recordFailure(request.destination, QStringLiteral("Administrator copy is available for local folders only"));
+            return result;
+        }
+
+        for (int i = 0; i < totalFileCount; ++i) {
+            if (m_abort) {
+                result.aborted = true;
+                return result;
+            }
+
+            const QString &source = request.sources.at(i);
+            FileProvider *srcProvider = getProviderForPath(source);
+            if (!srcProvider || srcProvider->scheme() != QLatin1String("file")) {
+                recordFailure(source, QStringLiteral("Administrator copy is available for local files only"));
+                continue;
+            }
+            const QString destinationPath = destProvider->childPath(
+                request.destination,
+                destinationNameForCopy(srcProvider, source));
+
+            try {
+                QString finalPath = destinationPath;
+                bool overwrite = false;
+                if (pathExists(finalPath)) {
+                    const ConflictResolution res = waitForResolution(source, finalPath);
+                    if (res == ConflictResolution::Skip) {
+                        QMetaObject::invokeMethod(this, [this, i]() {
+                            setCompletedItems(i + 1);
+                        }, Qt::QueuedConnection);
+                        continue;
+                    }
+                    if (res == ConflictResolution::KeepBoth) {
+                        finalPath = uniqueDestinationPath(finalPath);
+                    } else if (res == ConflictResolution::Replace) {
+                        overwrite = true;
+                    } else if (res == ConflictResolution::Cancel) {
+                        result.aborted = true;
+                        return result;
+                    }
+                }
+
+                if (overwrite) {
+                    LinuxAdminBroker broker;
+                    broker.setBackendModeForTesting(LinuxAdminBroker::BackendMode::Fake);
+                    LinuxAdminBroker::Request adminRequest;
+                    adminRequest.operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+                    adminRequest.sessionNonce = QStringLiteral("fake-session");
+                    adminRequest.operation = LinuxAdminBroker::Operation::AtomicReplace;
+                    adminRequest.sourcePath = source;
+                    adminRequest.destinationPath = finalPath;
+                    adminRequest.overwrite = true;
+                    const LinuxAdminBroker::Result adminResult = broker.submitBlocking(adminRequest);
+                    if (!adminResult.success) {
+                        throw std::runtime_error(adminResult.errorMessage.toStdString());
+                    }
+                } else {
+                    copyPathAsAdministrator(source, finalPath);
+                }
+
+                ++result.succeededCount;
+                currentProgressBytes += std::max<qint64>(1, totalBytesForPath(source));
+                const double progress = static_cast<double>(i + 1) / static_cast<double>(totalFileCount);
+                QMetaObject::invokeMethod(this, [this, i, progress]() {
+                    setCompletedItems(i + 1);
+                    setProgress(progress);
+                }, Qt::QueuedConnection);
+            } catch (const std::exception &exception) {
+                recordFailure(source, QString::fromUtf8(exception.what()));
+            }
+        }
+
+        if (m_abort) {
+            result.aborted = true;
+        } else if (result.failedCount > 0) {
+            result.error = partialFailureSummary(result.failedCount, totalFileCount, result.error);
         }
         return result;
     }
@@ -2959,6 +3110,41 @@ void OperationQueue::copyPath(const QString &sourcePath, const QString &destinat
             throw std::runtime_error(QStringLiteral("Cannot finalize %1").arg(targetPath).toStdString());
         }
         partCleanup.finalized = true;
+    }
+}
+
+void OperationQueue::copyPathAsAdministrator(const QString &sourcePath, const QString &destinationPath)
+{
+    LinuxAdminBroker broker;
+    broker.setBackendModeForTesting(LinuxAdminBroker::BackendMode::Fake);
+
+    LinuxAdminBroker::Request request;
+    request.operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    request.sessionNonce = QStringLiteral("fake-session");
+    request.operation = LinuxAdminBroker::Operation::CopyFile;
+    request.sourcePath = sourcePath;
+    request.destinationPath = destinationPath;
+
+    const LinuxAdminBroker::Result result = broker.submitBlocking(request);
+    if (!result.success) {
+        throw std::runtime_error((result.errorMessage.isEmpty() ? result.errorCode : result.errorMessage).toStdString());
+    }
+}
+
+void OperationQueue::createFolderAsAdministratorPath(const QString &path)
+{
+    LinuxAdminBroker broker;
+    broker.setBackendModeForTesting(LinuxAdminBroker::BackendMode::Fake);
+
+    LinuxAdminBroker::Request request;
+    request.operationId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    request.sessionNonce = QStringLiteral("fake-session");
+    request.operation = LinuxAdminBroker::Operation::MakeDirectory;
+    request.destinationPath = path;
+
+    const LinuxAdminBroker::Result result = broker.submitBlocking(request);
+    if (!result.success) {
+        throw std::runtime_error((result.errorMessage.isEmpty() ? result.errorCode : result.errorMessage).toStdString());
     }
 }
 

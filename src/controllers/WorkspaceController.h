@@ -98,6 +98,8 @@ public:
     Q_INVOKABLE qint64 processMemoryUsage() const;
     Q_INVOKABLE QString qtVersion() const;
     Q_INVOKABLE void pasteFromClipboard();
+    Q_INVOKABLE void pasteFromClipboardAsAdministrator();
+    Q_INVOKABLE void createFolderInActivePanelAsAdministrator();
     Q_INVOKABLE void extractArchiveTo(const QString &archivePath, const QString &destination);
     Q_INVOKABLE bool canExtractArchivePath(const QString &archivePath) const;
     Q_INVOKABLE void extractArchiveHerePath(const QString &archivePath, const QString &currentFolder);

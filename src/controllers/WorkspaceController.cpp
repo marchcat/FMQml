@@ -194,6 +194,30 @@ QString archiveExtensionForFormat(const QString &format)
     return format == QLatin1String("7z") ? QStringLiteral(".7z") : QStringLiteral(".%1").arg(format);
 }
 
+QString archiveExtractionBaseName(const QString &fileName)
+{
+    const QString lower = fileName.toLower();
+    const QStringList compoundSuffixes = {
+        QStringLiteral(".tar.gz"),
+        QStringLiteral(".tgz"),
+        QStringLiteral(".tar.xz"),
+        QStringLiteral(".txz"),
+        QStringLiteral(".tar.bz2"),
+        QStringLiteral(".tbz"),
+        QStringLiteral(".tbz2"),
+        QStringLiteral(".tar.zst"),
+        QStringLiteral(".tzst"),
+    };
+    for (const QString &suffix : compoundSuffixes) {
+        if (lower.endsWith(suffix) && fileName.size() > suffix.size()) {
+            return fileName.left(fileName.size() - suffix.size());
+        }
+    }
+
+    const QString baseName = QFileInfo(fileName).completeBaseName();
+    return baseName.isEmpty() ? fileName : baseName;
+}
+
 bool archiveFormatRequiresSingleFile(const QString &format)
 {
     return format == QLatin1String("gz")
@@ -316,8 +340,43 @@ WorkspaceController::WorkspaceController(QObject *parent)
     connect(&m_volumeMonitor, &VolumeMonitor::ejectFinished,
             this, &WorkspaceController::handleVolumeEjectFinished);
 
+#ifdef Q_OS_LINUX
+    connect(&m_operationQueue, &OperationQueue::operationStarted, this,
+        [this](auto type, const auto &, const auto &destination) {
+            if (type != OperationQueue::Type::Extract
+                || destination.isEmpty()
+                || isProviderUriPath(destination)
+                || ArchiveSupport::isArchivePath(destination)) {
+                return;
+            }
+
+            const QString destinationParent = m_leftPanel.parentPathForPath(destination);
+            const auto panels = {&m_leftPanel, &m_rightPanel};
+            for (FilePanelController *panel : panels) {
+                const QString panelPath = panel->directoryModel()->currentPath();
+                if (panelPath == destination || panelPath == destinationParent) {
+                    panel->directoryModel()->beginBulkWatchSuppression(panelPath);
+                }
+            }
+        });
+#endif
+
     connect(&m_operationQueue, &OperationQueue::operationFinished, this,
         [this](auto type, const auto &sources, const auto &destination) {
+#ifdef Q_OS_LINUX
+            if (type == OperationQueue::Type::Extract
+                && !destination.isEmpty()
+                && !isProviderUriPath(destination)
+                && !ArchiveSupport::isArchivePath(destination)) {
+                const QString destinationParent = m_leftPanel.parentPathForPath(destination);
+                const auto panels = {&m_leftPanel, &m_rightPanel};
+                for (FilePanelController *panel : panels) {
+                    panel->directoryModel()->endBulkWatchSuppression(destination);
+                    panel->directoryModel()->endBulkWatchSuppression(destinationParent);
+                }
+            }
+#endif
+
             for (const QString &source : sources) {
                 FileAccessResolver::invalidate(source);
                 if (!ArchiveSupport::isArchivePath(source)) {
@@ -443,6 +502,25 @@ WorkspaceController::WorkspaceController(QObject *parent)
                     if (panel->directoryModel()->currentPath() == destination) {
                         if (panel == &m_leftPanel) needsLeftRefresh = true;
                         if (panel == &m_rightPanel) needsRightRefresh = true;
+                    }
+                }
+            } else if (type == OperationQueue::Type::CreateFolder) {
+                const QString createdPath = destination.isEmpty() || sources.isEmpty()
+                    ? QString()
+                    : m_leftPanel.childPathForPath(destination, sources.constFirst());
+                addTreeRefreshPath(destination);
+                if (!createdPath.isEmpty()) {
+                    addTreeRefreshPath(createdPath);
+                }
+                for (FilePanelController *panel : panels) {
+                    if (panel->directoryModel()->currentPath() == destination) {
+                        const bool inserted = !createdPath.isEmpty() && panel->directoryModel()->insertPath(createdPath);
+                        if (!inserted) {
+                            if (panel == &m_leftPanel) needsLeftRefresh = true;
+                            if (panel == &m_rightPanel) needsRightRefresh = true;
+                        } else {
+                            panel->directoryModel()->noteLocalMutation();
+                        }
                     }
                 }
             } else {
@@ -715,6 +793,8 @@ void WorkspaceController::recordOperationHistory(OperationQueue::Type type, cons
     case OperationQueue::Type::Compress:
         return;
     case OperationQueue::Type::Delete:
+        return;
+    case OperationQueue::Type::CreateFolder:
         return;
     default:
         return;
@@ -1442,6 +1522,45 @@ void WorkspaceController::pasteFromClipboard()
     }
 }
 
+void WorkspaceController::pasteFromClipboardAsAdministrator()
+{
+#ifdef Q_OS_LINUX
+    if (m_clipboard.isEmpty()) {
+        return;
+    }
+    if (m_isCut) {
+        m_operationQueue.setStatusMessage(QStringLiteral("Paste as Administrator currently supports copied items only."));
+        return;
+    }
+    FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isVirtualRoot()
+        || isProviderUriPath(active->currentPath())
+        || ArchiveSupport::isArchivePath(active->currentPath())) {
+        m_operationQueue.setStatusMessage(QStringLiteral("Paste as Administrator is available for local folders only."));
+        return;
+    }
+    m_operationQueue.copyToAsAdministrator(m_clipboard, active->currentPath());
+#else
+    m_operationQueue.setStatusMessage(QStringLiteral("Paste as Administrator is available on Linux only."));
+#endif
+}
+
+void WorkspaceController::createFolderInActivePanelAsAdministrator()
+{
+#ifdef Q_OS_LINUX
+    FilePanelController *active = m_activePanel == 0 ? &m_leftPanel : &m_rightPanel;
+    if (active->isVirtualRoot()
+        || isProviderUriPath(active->currentPath())
+        || ArchiveSupport::isArchivePath(active->currentPath())) {
+        m_operationQueue.setStatusMessage(QStringLiteral("Create Folder as Administrator is available for local folders only."));
+        return;
+    }
+    m_operationQueue.createFolderAsAdministrator(active->currentPath(), QStringLiteral("New Folder"));
+#else
+    m_operationQueue.setStatusMessage(QStringLiteral("Create Folder as Administrator is available on Linux only."));
+#endif
+}
+
 bool WorkspaceController::copyPathsToPanel(const QStringList &sources, FilePanelController *destination)
 {
     if (sources.isEmpty() || !destination) {
@@ -1524,7 +1643,7 @@ void WorkspaceController::extractArchiveToNamedFolderPath(const QString &archive
     }
 
     const QFileInfo info(archivePath);
-    const QString folderName = info.completeBaseName().isEmpty() ? info.fileName() : info.completeBaseName();
+    const QString folderName = archiveExtractionBaseName(info.fileName());
     if (folderName.isEmpty()) {
         return;
     }

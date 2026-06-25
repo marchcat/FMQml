@@ -63,6 +63,30 @@ void traceFilePanelNav(const char *stage, const QString &path = {}, const QStrin
                       << detail;
 }
 
+QString archiveExtractionBaseName(const QString &fileName)
+{
+    const QString lower = fileName.toLower();
+    const QStringList compoundSuffixes = {
+        QStringLiteral(".tar.gz"),
+        QStringLiteral(".tgz"),
+        QStringLiteral(".tar.xz"),
+        QStringLiteral(".txz"),
+        QStringLiteral(".tar.bz2"),
+        QStringLiteral(".tbz"),
+        QStringLiteral(".tbz2"),
+        QStringLiteral(".tar.zst"),
+        QStringLiteral(".tzst"),
+    };
+    for (const QString &suffix : compoundSuffixes) {
+        if (lower.endsWith(suffix) && fileName.size() > suffix.size()) {
+            return fileName.left(fileName.size() - suffix.size());
+        }
+    }
+
+    const QString baseName = QFileInfo(fileName).completeBaseName();
+    return baseName.isEmpty() ? fileName : baseName;
+}
+
 QString launchErrorCodeName(LaunchService::LaunchErrorCode code)
 {
     switch (code) {
@@ -1300,8 +1324,7 @@ QString FilePanelController::archiveExtractionFolderNameForPath(const QString &p
         return {};
     }
 
-    const QString baseName = QFileInfo(fileName).completeBaseName();
-    return baseName.isEmpty() ? fileName : baseName;
+    return archiveExtractionBaseName(fileName);
 }
 
 bool FilePanelController::canGoBack() const

@@ -6,6 +6,7 @@ import QtQml
 import FM
 import "components"
 import "components/common"
+import "components/dialogs"
 import "style"
 
 ApplicationWindow {
@@ -626,6 +627,12 @@ ApplicationWindow {
         }
     }
 
+    function createFolderInActivePanelAsAdministrator() {
+        if (workspaceController) {
+            workspaceController.createFolderInActivePanelAsAdministrator()
+        }
+    }
+
     function renameActiveSelection() {
         const ctrl = activePanelController()
         if (ctrl && !root.isProviderPath(ctrl.currentPath)) {
@@ -674,6 +681,12 @@ ApplicationWindow {
 
     function pasteClipboardToActivePanel() {
         workspaceController.pasteFromClipboard()
+    }
+
+    function pasteClipboardToActivePanelAsAdministrator() {
+        if (workspaceController) {
+            workspaceController.pasteFromClipboardAsAdministrator()
+        }
     }
 
     function addSelectionToFavorites() {
@@ -1010,6 +1023,51 @@ ApplicationWindow {
         }
         saveWorkspaceStateNow(true)
         return adminController.relaunchAsAdmin()
+    }
+
+    function unlockAdminMode() {
+        if (typeof adminController === "undefined" || !adminController) {
+            return false
+        }
+        if (adminController.shouldShowAdminSafetyWarning) {
+            adminSafetyDialog.open()
+            return false
+        }
+        const unlocked = adminController.unlockAdminMode()
+        if (!unlocked && adminController.adminModeUnavailableReason) {
+            root.showTransientInfo(adminController.adminModeUnavailableReason)
+        }
+        return unlocked
+    }
+
+    function confirmAdminSafetyAndUnlock() {
+        if (typeof adminController === "undefined" || !adminController) {
+            return false
+        }
+        adminController.acknowledgeAdminSafetyWarning()
+        adminSafetyDialog.close()
+        return root.unlockAdminMode()
+    }
+
+    function lockAdminMode() {
+        if (typeof adminController === "undefined" || !adminController) {
+            return
+        }
+        adminController.lockAdminMode()
+        root.showTransientInfo("Administrator mode locked")
+    }
+
+    function showAdminModeStatus() {
+        if (typeof adminController === "undefined" || !adminController) {
+            return
+        }
+        let message = "Administrator mode: " + adminController.adminModeStateName
+        if (adminController.adminModeRemainingSeconds > 0) {
+            message += " (" + adminController.adminModeRemainingSeconds + "s remaining)"
+        } else if (adminController.adminModeUnavailableReason) {
+            message += " - " + adminController.adminModeUnavailableReason
+        }
+        root.showTransientInfo(message)
     }
 
     InputCoordinator {
@@ -1387,6 +1445,94 @@ ApplicationWindow {
         }
     }
 
+    Popup {
+        id: adminSafetyDialog
+        parent: Overlay.overlay
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        width: Math.min(480, root.width - 48)
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        padding: 0
+
+        background: DialogShell {
+            accentColor: Theme.warning
+            shellBorderColor: Theme.withAlpha(Theme.warning, themeController.isDark ? 0.36 : 0.26)
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+            width: adminSafetyDialog.width
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                Layout.topMargin: 18
+                text: "Administrator mode"
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontSizeTitle
+                font.weight: Font.DemiBold
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                implicitHeight: warningText.implicitHeight + 20
+                radius: Theme.radiusSm
+                color: Theme.withAlpha(Theme.warning, themeController.isDark ? 0.13 : 0.08)
+                border.color: Theme.withAlpha(Theme.warning, 0.34)
+
+                Label {
+                    id: warningText
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    text: "Administrator actions can modify protected system files. FM will keep running as your normal user, but confirmed file operations can change root-owned paths. Review each target carefully."
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontSizeBody
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                text: "You can lock administrator mode at any time. FM does not store the root password."
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontSizeLabel
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                Layout.bottomMargin: 18
+                spacing: 10
+
+                Item { Layout.fillWidth: true }
+
+                DialogActionButton {
+                    text: "Cancel"
+                    onClicked: adminSafetyDialog.close()
+                }
+
+                DialogActionButton {
+                    text: "Continue"
+                    highlighted: true
+                    primaryColor: Theme.warning
+                    primaryHoverColor: Theme.withAlpha(Theme.warning, 0.86)
+                    primaryPressedColor: Theme.withAlpha(Theme.warning, 0.72)
+                    textColor: Theme.panelSurface
+                    onClicked: root.confirmAdminSafetyAndUnlock()
+                }
+            }
+        }
+    }
+
     QtObject {
         id: quickLookPopup
         property string previewPath: ""
@@ -1429,6 +1575,7 @@ ApplicationWindow {
         setThemeScheme: root.setThemeScheme
         openThemeSelector: root.openThemeSelector
         createFolderInActivePanel: root.createFolderInActivePanel
+        createFolderInActivePanelAsAdministrator: root.createFolderInActivePanelAsAdministrator
         renameActiveSelection: root.renameActiveSelection
         copyActiveSelection: root.copyActiveSelection
         copyActiveSelectionToOpposite: root.copyActiveSelectionToOpposite
@@ -1437,6 +1584,7 @@ ApplicationWindow {
         compressActiveSelection: root.compressActiveSelection
         cutActiveSelection: root.cutActiveSelection
         pasteClipboardToActivePanel: root.pasteClipboardToActivePanel
+        pasteClipboardToActivePanelAsAdministrator: root.pasteClipboardToActivePanelAsAdministrator
         addSelectionToFavorites: root.addSelectionToFavorites
         requestDeleteActiveSelection: root.requestDeleteActiveSelection
         showActiveProperties: root.showActiveProperties
@@ -1456,6 +1604,9 @@ ApplicationWindow {
         resetSavedWorkspaceState: root.resetSavedWorkspaceState
         resetCommandUsageStats: root.resetCommandUsageStats
         relaunchAsAdmin: root.relaunchAsAdmin
+        unlockAdminMode: root.unlockAdminMode
+        lockAdminMode: root.lockAdminMode
+        showAdminModeStatus: root.showAdminModeStatus
         quitApplication: root.quitApplication
         copyPropertiesToClipboard: workspaceOverlays.copyPropertiesToClipboard
         exportPropertiesToFile: workspaceOverlays.exportPropertiesToFile

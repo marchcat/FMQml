@@ -1,6 +1,7 @@
 #include "AdminController.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QMetaObject>
 #include <QStringList>
 
@@ -38,6 +39,9 @@ AdminController::AdminController(QObject *parent)
     : QObject(parent)
     , m_isElevated(detectElevated())
 {
+    m_adminModeTimer.setInterval(1000);
+    connect(&m_adminModeTimer, &QTimer::timeout, this, &AdminController::updateAdminModeTimer);
+    refreshAdminBackendAvailability();
 }
 
 bool AdminController::isElevated() const
@@ -49,6 +53,69 @@ bool AdminController::canRelaunchAsAdmin() const
 {
 #ifdef Q_OS_WIN
     return true;
+#else
+    return false;
+#endif
+}
+
+bool AdminController::linuxAdminModeSupported() const
+{
+#ifdef Q_OS_LINUX
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool AdminController::adminModeAvailable() const
+{
+    return m_adminModeAvailable;
+}
+
+AdminController::AdminModeState AdminController::adminModeState() const
+{
+    return m_adminModeState;
+}
+
+QString AdminController::adminModeStateName() const
+{
+    return adminModeStateToString(m_adminModeState);
+}
+
+QString AdminController::adminModeBackendName() const
+{
+    return m_adminModeBackendName;
+}
+
+QString AdminController::adminModeUnavailableReason() const
+{
+    return m_adminModeUnavailableReason;
+}
+
+int AdminController::adminModeRemainingSeconds() const
+{
+    return m_adminSession.remainingSeconds(QDateTime::currentMSecsSinceEpoch());
+}
+
+int AdminController::adminModeTimeoutMinutes() const
+{
+    return m_adminSession.timeoutMinutes();
+}
+
+void AdminController::setAdminModeTimeoutMinutes(int minutes)
+{
+    const int previous = m_adminSession.timeoutMinutes();
+    m_adminSession.setTimeoutMinutes(minutes);
+    if (m_adminSession.timeoutMinutes() == previous) {
+        return;
+    }
+    emit adminModeTimeoutMinutesChanged();
+}
+
+bool AdminController::shouldShowAdminSafetyWarning() const
+{
+#ifdef Q_OS_LINUX
+    return linuxAdminModeSupported() && !m_adminSafetyWarningAcknowledged;
 #else
     return false;
 #endif
@@ -97,6 +164,46 @@ bool AdminController::relaunchAsAdmin()
 #endif
 }
 
+bool AdminController::unlockAdminMode()
+{
+#ifdef Q_OS_LINUX
+    refreshAdminBackendAvailability();
+    if (!m_adminModeAvailable) {
+        setAdminModeState(AdminModeState::Unavailable);
+        return false;
+    }
+
+    m_adminSession.beginUnlock();
+    syncAdminModeStateFromSession();
+    m_adminSession.activate(QDateTime::currentMSecsSinceEpoch());
+    m_adminModeTimer.start();
+    syncAdminModeStateFromSession();
+    emit adminModeRemainingSecondsChanged();
+    return true;
+#else
+    return false;
+#endif
+}
+
+void AdminController::lockAdminMode()
+{
+#ifdef Q_OS_LINUX
+    m_adminSession.lock();
+    m_adminModeTimer.stop();
+    syncAdminModeStateFromSession();
+    emit adminModeRemainingSecondsChanged();
+#endif
+}
+
+void AdminController::acknowledgeAdminSafetyWarning()
+{
+    if (m_adminSafetyWarningAcknowledged) {
+        return;
+    }
+    m_adminSafetyWarningAcknowledged = true;
+    emit shouldShowAdminSafetyWarningChanged();
+}
+
 void AdminController::refresh()
 {
     const bool elevated = detectElevated();
@@ -105,6 +212,7 @@ void AdminController::refresh()
     }
     m_isElevated = elevated;
     emit isElevatedChanged();
+    refreshAdminBackendAvailability();
 }
 
 bool AdminController::detectElevated() const
@@ -127,4 +235,95 @@ bool AdminController::detectElevated() const
 #else
     return false;
 #endif
+}
+
+void AdminController::refreshAdminBackendAvailability()
+{
+#ifdef Q_OS_LINUX
+    if (m_adminBroker.available()) {
+        setAdminModeAvailability(true, m_adminBroker.backendName(), {});
+    } else {
+        setAdminModeAvailability(false, {}, QStringLiteral("Linux admin helper is not installed"));
+    }
+#else
+    setAdminModeAvailability(false, {}, QStringLiteral("Linux admin mode is not supported on this platform"));
+#endif
+}
+
+void AdminController::setAdminModeState(AdminModeState state)
+{
+    if (m_adminModeState == state) {
+        return;
+    }
+    m_adminModeState = state;
+    emit adminModeStateChanged();
+}
+
+void AdminController::setAdminModeAvailability(bool available,
+                                               const QString &backendName,
+                                               const QString &unavailableReason)
+{
+    const bool changed = m_adminModeAvailable != available
+        || m_adminModeBackendName != backendName
+        || m_adminModeUnavailableReason != unavailableReason;
+    m_adminModeAvailable = available;
+    m_adminModeBackendName = backendName;
+    m_adminModeUnavailableReason = unavailableReason;
+    m_adminSession.setBackendAvailable(available);
+
+    if (!m_adminModeAvailable) {
+        m_adminModeTimer.stop();
+        emit adminModeRemainingSecondsChanged();
+    }
+    syncAdminModeStateFromSession();
+
+    if (changed) {
+        emit adminModeAvailabilityChanged();
+    }
+}
+
+void AdminController::updateAdminModeTimer()
+{
+    m_adminSession.updateForNow(QDateTime::currentMSecsSinceEpoch());
+    const int remaining = adminModeRemainingSeconds();
+    emit adminModeRemainingSecondsChanged();
+    syncAdminModeStateFromSession();
+    if (remaining <= 0) {
+        m_adminModeTimer.stop();
+    }
+}
+
+void AdminController::syncAdminModeStateFromSession()
+{
+    setAdminModeState(adminModeStateFromSession(m_adminSession.state()));
+}
+
+QString AdminController::adminModeStateToString(AdminModeState state)
+{
+    switch (state) {
+    case AdminModeState::Unavailable: return QStringLiteral("Unavailable");
+    case AdminModeState::Locked: return QStringLiteral("Locked");
+    case AdminModeState::Unlocking: return QStringLiteral("Unlocking");
+    case AdminModeState::Active: return QStringLiteral("Active");
+    case AdminModeState::ExpiringSoon: return QStringLiteral("ExpiringSoon");
+    case AdminModeState::Expired: return QStringLiteral("Expired");
+    case AdminModeState::Revoking: return QStringLiteral("Revoking");
+    case AdminModeState::Error: return QStringLiteral("Error");
+    }
+    return QStringLiteral("Unavailable");
+}
+
+AdminController::AdminModeState AdminController::adminModeStateFromSession(LinuxAdminSession::State state)
+{
+    switch (state) {
+    case LinuxAdminSession::State::Unavailable: return AdminModeState::Unavailable;
+    case LinuxAdminSession::State::Locked: return AdminModeState::Locked;
+    case LinuxAdminSession::State::Unlocking: return AdminModeState::Unlocking;
+    case LinuxAdminSession::State::Active: return AdminModeState::Active;
+    case LinuxAdminSession::State::ExpiringSoon: return AdminModeState::ExpiringSoon;
+    case LinuxAdminSession::State::Expired: return AdminModeState::Expired;
+    case LinuxAdminSession::State::Revoking: return AdminModeState::Revoking;
+    case LinuxAdminSession::State::Error: return AdminModeState::Error;
+    }
+    return AdminModeState::Unavailable;
 }

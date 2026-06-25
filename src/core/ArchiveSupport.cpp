@@ -54,7 +54,9 @@ bool isArchiveExtension(const QString &suffix)
         QStringLiteral("cab"),
         QStringLiteral("tgz"),
         QStringLiteral("txz"),
+        QStringLiteral("tbz"),
         QStringLiteral("tbz2"),
+        QStringLiteral("tzst"),
         QStringLiteral("zst"),
         QStringLiteral("apk"),
     };

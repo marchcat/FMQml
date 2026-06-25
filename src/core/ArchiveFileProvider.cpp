@@ -30,10 +30,21 @@
 #include <QTemporaryFile>
 #include <QtConcurrent>
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <limits>
 #include <mutex>
 #include <vector>
+
+#ifdef Q_OS_LINUX
+#include <sched.h>
+#include <signal.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
+#include <sys/vfs.h>
+#include <unistd.h>
+#endif
 
 #ifdef HAS_UNOFFICIAL_BIT7Z
 #include <bit7z/bit7z.hpp>
@@ -54,6 +65,118 @@ bool archiveNestedTraceEnabled()
     static const bool enabled = qEnvironmentVariableIsSet("FM_ARCHIVE_NESTED_TRACE");
     return enabled;
 }
+
+bool archiveExtractTraceEnabled()
+{
+    static const bool enabled = qEnvironmentVariableIsSet("FM_ARCHIVE_EXTRACT_TRACE")
+        || archiveNestedTraceEnabled();
+    return enabled;
+}
+
+#ifdef Q_OS_LINUX
+QString filesystemTypeForPath(const QString &path)
+{
+    struct statfs fs {};
+    const QByteArray nativePath = QFile::encodeName(QFileInfo(path).absoluteFilePath());
+    if (statfs(nativePath.constData(), &fs) != 0) {
+        return QStringLiteral("unknown:%1").arg(QString::fromLocal8Bit(std::strerror(errno)));
+    }
+    return QStringLiteral("0x%1").arg(QString::number(static_cast<qulonglong>(fs.f_type), 16));
+}
+
+bool shouldThrottleArchiveExtract(const QString &archiveFilesystem, const QString &destinationFilesystem)
+{
+    return archiveFilesystem.startsWith(QStringLiteral("0x"))
+        && destinationFilesystem.startsWith(QStringLiteral("0x"))
+        && archiveFilesystem != destinationFilesystem;
+}
+
+QString applyBackgroundPriorityToProcess(qint64 processId)
+{
+    if (processId <= 0) {
+        return QStringLiteral("invalid pid");
+    }
+
+    QStringList errors;
+    const auto pid = static_cast<pid_t>(processId);
+    if (setpriority(PRIO_PROCESS, static_cast<id_t>(pid), 19) != 0) {
+        errors.append(QStringLiteral("nice:%1").arg(QString::fromLocal8Bit(std::strerror(errno))));
+    }
+
+    sched_param idleParam {};
+    if (sched_setscheduler(pid, SCHED_IDLE, &idleParam) != 0) {
+        errors.append(QStringLiteral("sched_idle:%1").arg(QString::fromLocal8Bit(std::strerror(errno))));
+    }
+
+    constexpr int ioprioWhoProcess = 1;
+    constexpr int ioprioClassIdle = 3;
+    constexpr int ioprioValue = ioprioClassIdle << 13;
+    if (syscall(SYS_ioprio_set, ioprioWhoProcess, pid, ioprioValue) != 0) {
+        errors.append(QStringLiteral("ioprio:%1").arg(QString::fromLocal8Bit(std::strerror(errno))));
+    }
+
+    return errors.join(QStringLiteral("; "));
+}
+
+class LinuxProcessDutyCycleThrottle {
+public:
+    LinuxProcessDutyCycleThrottle(qint64 processId, bool enabled)
+        : m_processId(static_cast<pid_t>(processId))
+        , m_enabled(enabled && processId > 0)
+    {
+        m_timer.start();
+    }
+
+    ~LinuxProcessDutyCycleThrottle()
+    {
+        resume();
+    }
+
+    void tick()
+    {
+        if (!m_enabled) {
+            return;
+        }
+
+        constexpr qint64 activeMs = 60;
+        constexpr qint64 pausedMs = 40;
+        constexpr qint64 cycleMs = activeMs + pausedMs;
+        setPaused((m_timer.elapsed() % cycleMs) >= activeMs);
+    }
+
+    void resume()
+    {
+        setPaused(false);
+    }
+
+private:
+    void setPaused(bool paused)
+    {
+        if (!m_enabled || m_paused == paused) {
+            return;
+        }
+
+        const int signal = paused ? SIGSTOP : SIGCONT;
+        if (kill(m_processId, signal) != 0) {
+            if (errno != ESRCH && archiveExtractTraceEnabled()) {
+                qInfo().noquote() << "[ArchiveExtract] 7z throttle failed"
+                                  << "pid=" << m_processId
+                                  << "signal=" << signal
+                                  << "error=" << QString::fromLocal8Bit(std::strerror(errno));
+            }
+            m_enabled = false;
+            m_paused = false;
+            return;
+        }
+        m_paused = paused;
+    }
+
+    pid_t m_processId = -1;
+    bool m_enabled = false;
+    bool m_paused = false;
+    QElapsedTimer m_timer;
+};
+#endif
 
 void scheduleRecursiveRemove(QString path);
 
@@ -255,6 +378,275 @@ QString sevenZipExecutablePath()
     return ArchiveSupport::sevenZipExecutablePath();
 }
 
+bool isCompressedTarArchivePath(const QString &archivePath)
+{
+    const QString lower = archivePath.toLower();
+    return lower.endsWith(QStringLiteral(".tar.gz"))
+        || lower.endsWith(QStringLiteral(".tgz"))
+        || lower.endsWith(QStringLiteral(".tar.xz"))
+        || lower.endsWith(QStringLiteral(".txz"))
+        || lower.endsWith(QStringLiteral(".tar.bz2"))
+        || lower.endsWith(QStringLiteral(".tbz"))
+        || lower.endsWith(QStringLiteral(".tbz2"))
+        || lower.endsWith(QStringLiteral(".tar.zst"))
+        || lower.endsWith(QStringLiteral(".tzst"));
+}
+
+bool extractCompressedTarWithSevenZipPipe(const QString &archivePath,
+                                          const QString &destinationPath,
+                                          const std::function<bool(uint64_t)> &progressCallback,
+                                          QString *error,
+                                          const std::function<void(uint64_t, uint64_t)> &progressReporter,
+                                          const QString &passwordOverride)
+{
+    const QString executable = sevenZipExecutablePath();
+    if (executable.isEmpty()) {
+        return false;
+    }
+
+    QElapsedTimer extractTimer;
+    extractTimer.start();
+    QProcess unpackProcess;
+    QProcess tarProcess;
+    unpackProcess.setProgram(executable);
+    tarProcess.setProgram(executable);
+
+    QStringList unpackArguments = {
+        QStringLiteral("x"),
+        QStringLiteral("-y"),
+        QStringLiteral("-bso0"),
+        QStringLiteral("-bsp0"),
+        QStringLiteral("-bse1"),
+        QStringLiteral("-so"),
+    };
+    const QString password = passwordOverride.isNull()
+        ? ArchiveFileProvider::archivePasswordForPath(archivePath)
+        : passwordOverride;
+    if (!password.isEmpty()) {
+        unpackArguments.append(QStringLiteral("-p%1").arg(password));
+    }
+    unpackArguments.append(QDir::toNativeSeparators(archivePath));
+
+    QStringList tarArguments = {
+        QStringLiteral("x"),
+        QStringLiteral("-ttar"),
+        QStringLiteral("-si"),
+        QStringLiteral("-y"),
+        QStringLiteral("-aos"),
+        QStringLiteral("-bso0"),
+        QStringLiteral("-bsp1"),
+        QStringLiteral("-bse1"),
+#ifdef Q_OS_LINUX
+        QStringLiteral("-mmt=1"),
+#endif
+        QStringLiteral("-o%1").arg(QDir::toNativeSeparators(destinationPath)),
+    };
+
+    unpackProcess.setArguments(unpackArguments);
+    tarProcess.setArguments(tarArguments);
+    unpackProcess.setProcessChannelMode(QProcess::SeparateChannels);
+    tarProcess.setProcessChannelMode(QProcess::MergedChannels);
+    unpackProcess.setStandardOutputProcess(&tarProcess);
+
+#ifdef Q_OS_LINUX
+    const QString archiveFilesystem = filesystemTypeForPath(archivePath);
+    const QString destinationFilesystem = filesystemTypeForPath(destinationPath);
+    const bool throttleExtractProcess = shouldThrottleArchiveExtract(archiveFilesystem, destinationFilesystem);
+#endif
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z tar-pipe start"
+                          << "exe=" << executable
+                          << "archive=" << QDir::toNativeSeparators(archivePath)
+                          << "archiveSize=" << QFileInfo(archivePath).size()
+                          << "destination=" << QDir::toNativeSeparators(destinationPath)
+#ifdef Q_OS_LINUX
+                          << "archiveFs=" << archiveFilesystem
+                          << "destinationFs=" << destinationFilesystem
+                          << "throttle=" << throttleExtractProcess
+#endif
+                          << "unpackArgs=" << redactedSevenZipArguments(unpackArguments).join(QLatin1Char(' '))
+                          << "tarArgs=" << redactedSevenZipArguments(tarArguments).join(QLatin1Char(' '));
+    }
+
+    tarProcess.start();
+    if (!tarProcess.waitForStarted(5000)) {
+        if (error) {
+            *error = QStringLiteral("Could not start 7-Zip tar extractor: %1").arg(tarProcess.errorString());
+        }
+        return false;
+    }
+    unpackProcess.start();
+    if (!unpackProcess.waitForStarted(5000)) {
+        tarProcess.kill();
+        tarProcess.waitForFinished(3000);
+        if (error) {
+            *error = QStringLiteral("Could not start 7-Zip decompressor: %1").arg(unpackProcess.errorString());
+        }
+        return false;
+    }
+
+#ifdef Q_OS_LINUX
+    const QString unpackPriorityError = applyBackgroundPriorityToProcess(unpackProcess.processId());
+    const QString tarPriorityError = applyBackgroundPriorityToProcess(tarProcess.processId());
+    LinuxProcessDutyCycleThrottle unpackThrottle(unpackProcess.processId(), throttleExtractProcess);
+    LinuxProcessDutyCycleThrottle tarThrottle(tarProcess.processId(), throttleExtractProcess);
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z tar-pipe priority"
+                          << "unpackPid=" << unpackProcess.processId()
+                          << "tarPid=" << tarProcess.processId()
+                          << "nice=19"
+                          << "scheduler=idle"
+                          << "ioprio=idle"
+                          << "throttle=60/40ms"
+                          << "unpackError=" << unpackPriorityError
+                          << "tarError=" << tarPriorityError;
+    }
+#endif
+
+    QByteArray tarOutputBuffer;
+    QByteArray unpackErrorBuffer;
+    bool tarHadDangerousLinkWarning = false;
+    bool tarHadOtherError = false;
+    int lastPercent = -1;
+    QElapsedTimer progressTimer;
+    progressTimer.start();
+    const uint64_t archiveSize = static_cast<uint64_t>((std::max<qint64>)(1, QFileInfo(archivePath).size()));
+    const QRegularExpression percentPattern(QStringLiteral("(\\d{1,3})%"));
+    if (progressReporter) {
+        progressReporter(0, archiveSize);
+    }
+
+    auto killProcesses = [&]() {
+#ifdef Q_OS_LINUX
+        unpackThrottle.resume();
+        tarThrottle.resume();
+#endif
+        unpackProcess.kill();
+        tarProcess.kill();
+        unpackProcess.waitForFinished(3000);
+        tarProcess.waitForFinished(3000);
+    };
+
+    auto consumeOutput = [&]() -> bool {
+        tarOutputBuffer.append(tarProcess.readAll());
+        unpackErrorBuffer.append(unpackProcess.readAllStandardError());
+        if (tarOutputBuffer.size() > 4096) {
+            tarOutputBuffer = tarOutputBuffer.right(4096);
+        }
+        if (unpackErrorBuffer.size() > 4096) {
+            unpackErrorBuffer = unpackErrorBuffer.right(4096);
+        }
+
+        const QString text = QString::fromLocal8Bit(tarOutputBuffer);
+        const QStringList lines = text.split(QLatin1Char('\n'));
+        for (const QString &line : lines) {
+            if (!line.contains(QStringLiteral("ERROR:"))) {
+                continue;
+            }
+            if (line.contains(QStringLiteral("Dangerous link"))) {
+                tarHadDangerousLinkWarning = true;
+            } else {
+                tarHadOtherError = true;
+            }
+        }
+        QRegularExpressionMatchIterator matches = percentPattern.globalMatch(text);
+        int percent = -1;
+        while (matches.hasNext()) {
+            const QRegularExpressionMatch match = matches.next();
+            bool ok = false;
+            const int value = match.captured(1).toInt(&ok);
+            if (ok) {
+                percent = std::clamp(value, 0, 100);
+            }
+        }
+
+        if (percent >= 0 && percent != lastPercent && progressTimer.elapsed() >= 120) {
+            lastPercent = percent;
+            progressTimer.restart();
+            const uint64_t processed = (archiveSize * static_cast<uint64_t>(percent)) / 100U;
+            if (progressReporter) {
+                progressReporter(processed, archiveSize);
+            }
+            if (progressCallback && !progressCallback(processed)) {
+                killProcesses();
+                if (error) {
+                    *error = QStringLiteral("Archive extraction was cancelled");
+                }
+                return false;
+            }
+        }
+        return true;
+    };
+
+    while (unpackProcess.state() != QProcess::NotRunning || tarProcess.state() != QProcess::NotRunning) {
+#ifdef Q_OS_LINUX
+        unpackThrottle.tick();
+        tarThrottle.tick();
+#endif
+        unpackProcess.waitForFinished(40);
+        tarProcess.waitForFinished(1);
+        if (!consumeOutput()) {
+            return false;
+        }
+        if (OperationQueue::isCurrentThreadAborted()) {
+            killProcesses();
+            if (error) {
+                *error = QStringLiteral("Archive extraction was cancelled");
+            }
+            return false;
+        }
+    }
+#ifdef Q_OS_LINUX
+    unpackThrottle.resume();
+    tarThrottle.resume();
+#endif
+    if (!consumeOutput()) {
+        return false;
+    }
+    if (progressCallback) {
+        progressCallback(archiveSize);
+    }
+    if (progressReporter) {
+        progressReporter(archiveSize, archiveSize);
+    }
+
+    const int unpackExitCode = unpackProcess.exitCode();
+    const int tarExitCode = tarProcess.exitCode();
+    const bool unpackOk = unpackProcess.exitStatus() == QProcess::NormalExit
+        && (unpackExitCode == 0 || unpackExitCode == 1);
+    const bool tarOk = tarProcess.exitStatus() == QProcess::NormalExit
+        && (tarExitCode == 0
+            || tarExitCode == 1
+            || (tarExitCode == 2 && tarHadDangerousLinkWarning && !tarHadOtherError));
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z tar-pipe finished"
+                          << "archive=" << QDir::toNativeSeparators(archivePath)
+                          << "unpackExitStatus=" << static_cast<int>(unpackProcess.exitStatus())
+                          << "unpackExitCode=" << unpackExitCode
+                          << "tarExitStatus=" << static_cast<int>(tarProcess.exitStatus())
+                          << "tarExitCode=" << tarExitCode
+                          << "dangerousLinkWarnings=" << tarHadDangerousLinkWarning
+                          << "otherErrors=" << tarHadOtherError
+                          << "elapsedMs=" << extractTimer.elapsed()
+                          << "unpackTail=" << QString::fromLocal8Bit(unpackErrorBuffer).trimmed().left(1000)
+                          << "tarTail=" << QString::fromLocal8Bit(tarOutputBuffer).trimmed().left(1000);
+    }
+    if (unpackOk && tarOk) {
+        return true;
+    }
+
+    if (error) {
+        const QString unpackOutput = QString::fromLocal8Bit(unpackErrorBuffer).trimmed();
+        const QString tarOutput = QString::fromLocal8Bit(tarOutputBuffer).trimmed();
+        *error = !tarOutput.isEmpty()
+            ? tarOutput.left(1000)
+            : (!unpackOutput.isEmpty()
+                ? unpackOutput.left(1000)
+                : QStringLiteral("7-Zip tar pipe failed with exit codes %1/%2").arg(unpackExitCode).arg(tarExitCode));
+    }
+    return false;
+}
+
 bool extractArchiveWithSevenZip(const QString &archivePath,
                                 const QString &destinationPath,
                                 const std::function<bool(uint64_t)> &progressCallback,
@@ -267,7 +659,17 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
     if (executable.isEmpty()) {
         return false;
     }
+    if (itemPaths.isEmpty() && isCompressedTarArchivePath(archivePath)) {
+        return extractCompressedTarWithSevenZipPipe(archivePath,
+                                                    destinationPath,
+                                                    progressCallback,
+                                                    error,
+                                                    progressReporter,
+                                                    passwordOverride);
+    }
 
+    QElapsedTimer extractTimer;
+    extractTimer.start();
     QProcess process;
     process.setProgram(executable);
     QStringList arguments = {
@@ -277,6 +679,9 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
         QStringLiteral("-bso0"),
         QStringLiteral("-bsp1"),
         QStringLiteral("-bse1"),
+#ifdef Q_OS_LINUX
+        QStringLiteral("-mmt=1"),
+#endif
         QStringLiteral("-o%1").arg(QDir::toNativeSeparators(destinationPath)),
     };
     const QString password = passwordOverride.isNull()
@@ -291,12 +696,22 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
     }
     process.setArguments(arguments);
     process.setProcessChannelMode(QProcess::MergedChannels);
-    if (archiveNestedTraceEnabled()) {
-        qInfo().noquote() << "[ArchiveNested] 7z start"
+#ifdef Q_OS_LINUX
+    const QString archiveFilesystem = filesystemTypeForPath(archivePath);
+    const QString destinationFilesystem = filesystemTypeForPath(destinationPath);
+    const bool throttleExtractProcess = shouldThrottleArchiveExtract(archiveFilesystem, destinationFilesystem);
+#endif
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z start"
                           << "exe=" << executable
                           << "archive=" << QDir::toNativeSeparators(archivePath)
                           << "archiveSize=" << QFileInfo(archivePath).size()
                           << "destination=" << QDir::toNativeSeparators(destinationPath)
+#ifdef Q_OS_LINUX
+                          << "archiveFs=" << archiveFilesystem
+                          << "destinationFs=" << destinationFilesystem
+                          << "throttle=" << throttleExtractProcess
+#endif
                           << "items=" << itemPaths.join(QLatin1Char('|'))
                           << "args=" << redactedSevenZipArguments(arguments).join(QLatin1Char(' '));
     }
@@ -305,13 +720,27 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
         if (error) {
             *error = QStringLiteral("Could not start 7-Zip: %1").arg(process.errorString());
         }
-        if (archiveNestedTraceEnabled()) {
-            qInfo().noquote() << "[ArchiveNested] 7z start failed"
+        if (archiveExtractTraceEnabled()) {
+            qInfo().noquote() << "[ArchiveExtract] 7z start failed"
                               << "archive=" << QDir::toNativeSeparators(archivePath)
                               << "error=" << process.errorString();
         }
         return false;
     }
+
+#ifdef Q_OS_LINUX
+    const QString priorityError = applyBackgroundPriorityToProcess(process.processId());
+    LinuxProcessDutyCycleThrottle processThrottle(process.processId(), throttleExtractProcess);
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z priority"
+                          << "pid=" << process.processId()
+                          << "nice=19"
+                          << "scheduler=idle"
+                          << "ioprio=idle"
+                          << "throttle=60/40ms"
+                          << "error=" << priorityError;
+    }
+#endif
 
     QByteArray outputBuffer;
     int lastPercent = -1;
@@ -323,6 +752,14 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
     if (progressReporter) {
         progressReporter(0, archiveSize);
     }
+
+    auto killProcess = [&]() {
+#ifdef Q_OS_LINUX
+        processThrottle.resume();
+#endif
+        process.kill();
+        process.waitForFinished(3000);
+    };
 
     auto consumeProcessOutput = [&]() -> bool {
         outputBuffer.append(process.readAll());
@@ -370,8 +807,7 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
                                           << "processed=" << processed
                                           << "total=" << archiveSize;
                     }
-                    process.kill();
-                    process.waitForFinished(3000);
+                    killProcess();
                     if (error) {
                         *error = QStringLiteral("Archive extraction was cancelled");
                     }
@@ -382,7 +818,10 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
         return true;
     };
 
-    while (!process.waitForFinished(100)) {
+    while (!process.waitForFinished(40)) {
+#ifdef Q_OS_LINUX
+        processThrottle.tick();
+#endif
         if (!consumeProcessOutput()) {
             return false;
         }
@@ -391,14 +830,16 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
                 qInfo().noquote() << "[ArchiveNested] 7z aborted by operation queue"
                                   << "archive=" << QDir::toNativeSeparators(archivePath);
             }
-            process.kill();
-            process.waitForFinished(3000);
+            killProcess();
             if (error) {
                 *error = QStringLiteral("Archive extraction was cancelled");
             }
             return false;
         }
     }
+#ifdef Q_OS_LINUX
+    processThrottle.resume();
+#endif
     if (!consumeProcessOutput()) {
         return false;
     }
@@ -410,11 +851,12 @@ bool extractArchiveWithSevenZip(const QString &archivePath,
     }
 
     const int exitCode = process.exitCode();
-    if (archiveNestedTraceEnabled()) {
-        qInfo().noquote() << "[ArchiveNested] 7z finished"
+    if (archiveExtractTraceEnabled()) {
+        qInfo().noquote() << "[ArchiveExtract] 7z finished"
                           << "archive=" << QDir::toNativeSeparators(archivePath)
                           << "exitStatus=" << static_cast<int>(process.exitStatus())
                           << "exitCode=" << exitCode
+                          << "elapsedMs=" << extractTimer.elapsed()
                           << "tail=" << QString::fromLocal8Bit(outputBuffer).trimmed().left(1000);
     }
     if (process.exitStatus() == QProcess::NormalExit && (exitCode == 0 || exitCode == 1)) {
@@ -533,7 +975,13 @@ void cleanupStaleArchiveTemporaryDirs(const QString &parentPath)
     QDir parentDir(normalizedParent);
     const QDateTime cutoff = QDateTime::currentDateTimeUtc().addDays(-1);
     const QFileInfoList entries = parentDir.entryInfoList(
-        {QStringLiteral(".fm-nested-*"), QStringLiteral(".fm-read-*")},
+        {
+            QStringLiteral(".fm-nested-*"),
+            QStringLiteral(".fm-read-*"),
+            QStringLiteral(".fm-full-extract-*"),
+            QStringLiteral(".fm-extract-*"),
+            QStringLiteral(".fm-7z-extract-*"),
+        },
         QDir::Dirs | QDir::NoDotAndDotDot);
     for (const QFileInfo &entry : entries) {
         if (entry.lastModified().toUTC() < cutoff) {
@@ -1417,6 +1865,7 @@ bool ArchiveFileProvider::extractArchiveFileTo(const QString &archivePath,
             }
             return false;
         }
+        cleanupStaleArchiveTemporaryDirs(extractionParent);
         stagedDir = std::make_unique<QTemporaryDir>(
             QDir(extractionParent).filePath(QStringLiteral(".fm-full-extract-XXXXXX")));
         if (!stagedDir->isValid()) {
@@ -1471,6 +1920,14 @@ bool ArchiveFileProvider::extractArchiveFileTo(const QString &archivePath,
             return false;
         }
         return true;
+    }
+    if (isCompressedTarArchivePath(normalizedArchivePath)) {
+        if (error) {
+            *error = fastPathError.isEmpty()
+                ? QStringLiteral("7-Zip could not extract compressed tar archive")
+                : fastPathError;
+        }
+        return false;
     }
 
 #ifdef HAS_UNOFFICIAL_BIT7Z
@@ -1600,6 +2057,7 @@ bool ArchiveFileProvider::extractArchiveEntryTo(const QString &archiveEntryPath,
         return false;
     }
 
+    cleanupStaleArchiveTemporaryDirs(destinationParent);
     QTemporaryDir tempDir(QDir(destinationParent).filePath(QStringLiteral(".fm-extract-XXXXXX")));
     if (!tempDir.isValid()) {
         if (error) {
@@ -1759,6 +2217,7 @@ bool ArchiveFileProvider::extractArchiveEntriesTo(const QStringList &archiveEntr
         }
     }
 
+    cleanupStaleArchiveTemporaryDirs(destinationParent);
     QTemporaryDir tempDir(QDir(destinationParent).filePath(QStringLiteral(".fm-extract-XXXXXX")));
     if (!tempDir.isValid()) {
         if (error) {
@@ -2000,6 +2459,7 @@ bool ArchiveFileProvider::extractArchiveItemsTo(const QStringList &archiveEntryP
         }
     }
 
+    cleanupStaleArchiveTemporaryDirs(destinationParent);
     QTemporaryDir tempDir(QDir(destinationParent).filePath(QStringLiteral(".fm-7z-extract-XXXXXX")));
     if (!tempDir.isValid()) {
         if (error) {
