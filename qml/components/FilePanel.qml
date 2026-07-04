@@ -82,6 +82,8 @@ Pane {
     property bool selectionActionsVisible: false
     readonly property int selectionActionsReservedHeight: root.selectionActionsVisible ? root.selectionActionsHeight : 0
     readonly property int bottomChromeHeight: root.footerHeight + root.selectionActionsReservedHeight
+    readonly property bool errorBannerVisible: errorBanner.visible
+    readonly property int errorBannerHeight: errorBanner.visible ? errorBanner.height : 0
     readonly property bool useNativeIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useNativeIcons : true
     readonly property bool useHighQualitySystemIcons: typeof appSettings !== "undefined" && appSettings ? appSettings.useHighQualitySystemIcons : true
     readonly property bool showThumbnails: typeof appSettings !== "undefined" && appSettings ? appSettings.showThumbnails : true

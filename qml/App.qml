@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import QtQuick.Layouts
 import QtQuick.Window
 import QtQml
@@ -1500,42 +1501,124 @@ ApplicationWindow {
                     }
                 }
             }
-        }
-    }
 
-    Rectangle {
-        id: transientInfoBanner
-        visible: root.transientInfoMessage.length > 0
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: root.transientInfoBottomInset
-        width: Math.min(parent.width - 32, infoBannerLabel.implicitWidth + 32)
-        height: infoBannerLabel.implicitHeight + 18
-        radius: Theme.radiusSm
-        color: Theme.withAlpha(Theme.categoryInfo, themeController.isDark ? 0.18 : 0.12)
-        border.width: 1
-        border.color: Theme.withAlpha(Theme.categoryInfo, 0.40)
-        opacity: visible ? 1 : 0
-        z: 1000
+            Rectangle {
+                id: transientInfoBanner
+                visible: root.transientInfoMessage.length > 0
+                readonly property var targetPanel: fileWorkspace ? fileWorkspace.leftPanelView : null
+                readonly property real panelLeft: fileWorkspace ? fileWorkspace.x : 0
+                readonly property real panelTop: fileWorkspace ? fileWorkspace.y : 0
+                readonly property real drawerLeft: fileWorkspace && fileWorkspace.operationsDrawerVisible
+                                                   ? fileWorkspace.x + fileWorkspace.operationsDrawerX
+                                                   : -1
+                readonly property real drawerAvoidWidth: drawerLeft > 0
+                                                         ? drawerLeft - panelLeft - 24
+                                                         : 100000
+                readonly property bool drawerWouldOverlap: fileWorkspace
+                                                           && fileWorkspace.operationsDrawerVisible
+                                                           && drawerAvoidWidth < Math.min(targetPanel ? targetPanel.width - 24 : parent.width - 40, 520)
+                readonly property real bottomInset: (targetPanel ? targetPanel.bottomChromeHeight : 0)
+                                                    + (targetPanel && targetPanel.errorBannerVisible
+                                                       ? targetPanel.errorBannerHeight + 20
+                                                       : 12)
+                                                    + (drawerWouldOverlap
+                                                       ? fileWorkspace.operationsDrawerHeight + 12
+                                                       : 0)
 
-        Behavior on opacity {
-            NumberAnimation {
-                duration: 140
-                easing.type: Easing.OutQuad
+                x: Math.round(panelLeft + 12)
+                y: Math.round(panelTop + (targetPanel ? targetPanel.height : parent.height) - bottomInset - height)
+                width: Math.max(280,
+                                Math.min(targetPanel ? targetPanel.width - 24 : parent.width - 40,
+                                         drawerAvoidWidth,
+                                         520))
+                height: Math.max(44, infoBannerLabel.implicitHeight + 18)
+                radius: Theme.radiusSm
+                readonly property color bannerSurface: Theme.opaque(Theme.panelSurfaceStrong)
+                readonly property color bannerAccent: Theme.activeAccent
+
+                color: bannerSurface
+                border.width: 2
+                border.color: Theme.withAlpha(bannerAccent, themeController.isDark ? 0.90 : 0.76)
+                opacity: visible ? 1 : 0
+                z: 1000
+
+                layer.enabled: visible
+                layer.effect: MultiEffect {
+                    shadowEnabled: true
+                    shadowBlur: 0.30
+                    shadowVerticalOffset: 5
+                    shadowOpacity: themeController.isDark ? 0.18 : 0.12
+                    shadowColor: Theme.shadow
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: Math.max(0, parent.radius - 1)
+                    visible: Theme.useGradientColors
+                    opacity: themeController.isDark ? 0.62 : 0.72
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: Theme.chromeGradientStart }
+                        GradientStop { position: 0.48; color: Theme.chromeGradientMid }
+                        GradientStop { position: 1.0; color: Theme.chromeGradientEnd }
+                    }
+                    border.color: "transparent"
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    radius: Math.max(0, parent.radius - 1)
+                    visible: !Theme.useGradientColors
+                    color: Theme.withAlpha(parent.bannerAccent, themeController.isDark ? 0.20 : 0.16)
+                    border.color: "transparent"
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 3
+                    radius: Math.max(0, parent.radius - 3)
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Theme.withAlpha(parent.bannerAccent, themeController.isDark ? 0.32 : 0.24)
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.topMargin: 9
+                    anchors.bottomMargin: 9
+                    anchors.leftMargin: 9
+                    width: 3
+                    radius: 1.5
+                    color: parent.bannerAccent
+                }
+
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 140
+                        easing.type: Easing.OutQuad
+                    }
+                }
+
+                Label {
+                    id: infoBannerLabel
+                    anchors.fill: parent
+                    anchors.leftMargin: 22
+                    anchors.rightMargin: 14
+                    anchors.topMargin: 9
+                    anchors.bottomMargin: 9
+                    horizontalAlignment: Text.AlignLeft
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                    text: root.transientInfoMessage
+                    color: Theme.readableOn(transientInfoBanner.bannerSurface, Theme.textPrimary)
+                    font.pixelSize: Theme.fontSizeLabel
+                    font.weight: Font.Medium
+                }
             }
-        }
-
-        Label {
-            id: infoBannerLabel
-            anchors.fill: parent
-            anchors.margins: 9
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.WordWrap
-            text: root.transientInfoMessage
-            color: Theme.textPrimary
-            font.pixelSize: Theme.fontSizeLabel
-            font.weight: Font.DemiBold
         }
     }
 

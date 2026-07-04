@@ -16,6 +16,10 @@ QtObject {
         return Qt.rgba(color.r, color.g, color.b, alpha)
     }
 
+    function opaque(color) {
+        return Qt.rgba(color.r, color.g, color.b, 1)
+    }
+
     function scaledSize(baseSize) {
         return Math.max(1, Math.round(baseSize * fontScaleFactor))
     }

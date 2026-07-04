@@ -28,6 +28,10 @@ Item {
     readonly property int drawerBottomChromeHeight: root.workspaceController.splitEnabled
                                                     ? rightPanel.bottomChromeHeight
                                                     : leftPanel.bottomChromeHeight
+    readonly property bool operationsDrawerVisible: operationsDrawer.visible
+    readonly property real operationsDrawerX: operationsDrawer.x
+    readonly property real operationsDrawerWidth: operationsDrawer.width
+    readonly property real operationsDrawerHeight: operationsDrawer.height
     readonly property bool limitedDragNDropEnabled: typeof appSettings !== "undefined"
                                                     && appSettings
                                                     && appSettings.useLimitedDragNDrop
