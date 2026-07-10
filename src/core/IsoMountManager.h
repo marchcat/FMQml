@@ -18,6 +18,8 @@ public:
         QChar requestedLetter;
         QDateTime mountedAt;
         quintptr nativeHandle = 0;
+        QString nativeDevice;
+        QString mountedDevice;
     };
 
     explicit IsoMountManager(QObject *parent = nullptr);
@@ -26,6 +28,7 @@ public:
     Q_INVOKABLE QStringList availableDriveLetters() const;
     Q_INVOKABLE bool isMountedImage(const QString &imagePath) const;
     Q_INVOKABLE bool isManagedMountRoot(const QString &rootPath) const;
+    QString managedMountRootForPath(const QString &path) const;
     Q_INVOKABLE bool isInsideManagedMount(const QString &path) const;
     Q_INVOKABLE QString mountedRootForImage(const QString &imagePath) const;
     Q_INVOKABLE void mountIsoToLetter(const QString &imagePath, const QString &letter);
@@ -49,9 +52,12 @@ private:
     static QChar normalizeLetter(const QString &letter);
     static QString rootPathForLetter(QChar letter);
 
-    void rememberMount(const QString &imagePath, const QString &rootPath, QChar requestedLetter, quintptr nativeHandle);
+    void adoptLinuxIsoMounts();
+    void rememberMount(const QString &imagePath, const QString &rootPath, QChar requestedLetter,
+                       quintptr nativeHandle, const QString &nativeDevice,
+                       const QString &mountedDevice);
     void forgetMountRoot(const QString &rootPath);
 
-    QHash<QString, Mount> m_mountsByImage;
-    QHash<QString, QString> m_imagesByRoot;
+    QHash<QString, Mount> m_mountsByRoot;
+    QMultiHash<QString, QString> m_rootsByImage;
 };

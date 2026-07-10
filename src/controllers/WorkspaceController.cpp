@@ -7,6 +7,7 @@
 #include <QCoreApplication>
 #include <QCursor>
 #include <QDir>
+#include <QDebug>
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QStandardPaths>
@@ -1816,8 +1817,15 @@ void WorkspaceController::requestEjectVolume(const QString &rootPath)
         return;
     }
 
-    if (m_isoMountManager.isManagedMountRoot(root)) {
-        unmountIsoRoot(root);
+    const QString managedIsoRoot = m_isoMountManager.managedMountRootForPath(root);
+    if (qEnvironmentVariableIntValue("FM_ISO_TRACE") > 0) {
+        qInfo().noquote() << "[IsoTrace] eject-route"
+                          << "inputRoot=" << rootPath
+                          << "normalizedRoot=" << root
+                          << "managedRoot=" << managedIsoRoot;
+    }
+    if (!managedIsoRoot.isEmpty()) {
+        unmountIsoRoot(managedIsoRoot);
         return;
     }
 

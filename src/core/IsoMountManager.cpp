@@ -3,9 +3,15 @@
 #include "IsoSupport.h"
 
 #include <QDir>
+#include <QDebug>
+#include <QFile>
 #include <QFileInfo>
 #include <QPointer>
+#include <QProcess>
+#include <QRegularExpression>
 #include <QStorageInfo>
+#include <QStandardPaths>
+#include <QThread>
 #include <QThreadPool>
 
 #ifdef Q_OS_WIN
@@ -17,11 +23,19 @@
 
 namespace {
 
+bool isoTraceEnabled()
+{
+    static const bool enabled = qEnvironmentVariableIntValue("FM_ISO_TRACE") > 0;
+    return enabled;
+}
+
 struct NativeMountResult {
     bool success = false;
     QString rootPath;
     QString error;
     quintptr nativeHandle = 0;
+    QString nativeDevice;
+    QString mountedDevice;
 };
 
 #ifdef Q_OS_WIN
@@ -328,16 +342,253 @@ QString unmountIsoNative(quintptr nativeHandle)
 
 #endif
 
+#ifdef Q_OS_LINUX
+
+bool runUdisksctl(const QStringList &arguments, QString *output, QString *error)
+{
+    QProcess process;
+    process.setProcessChannelMode(QProcess::MergedChannels);
+    process.start(QStringLiteral("udisksctl"), arguments);
+    if (!process.waitForStarted(5000)) {
+        if (error) {
+            *error = QStringLiteral("Could not start udisksctl");
+        }
+        return false;
+    }
+    if (!process.waitForFinished(30000)) {
+        process.kill();
+        process.waitForFinished();
+        if (error) {
+            *error = QStringLiteral("udisksctl timed out");
+        }
+        return false;
+    }
+    const QString commandOutput = QString::fromUtf8(process.readAll()).trimmed();
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] udisksctl"
+                          << "args=" << arguments
+                          << "exitCode=" << process.exitCode()
+                          << "output=" << commandOutput;
+    }
+    if (output) {
+        *output = commandOutput;
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        if (error) {
+            *error = commandOutput.isEmpty()
+                ? QStringLiteral("udisksctl failed")
+                : QStringLiteral("udisksctl failed: %1").arg(commandOutput);
+        }
+        return false;
+    }
+    return true;
+}
+
+QString lastDevicePath(const QString &output)
+{
+    static const QRegularExpression devicePattern(QStringLiteral(R"((/dev/[^\s.]+))"));
+    QRegularExpressionMatchIterator matches = devicePattern.globalMatch(output);
+    QString result;
+    while (matches.hasNext()) {
+        result = matches.next().captured(1);
+    }
+    return result;
+}
+
+QString mountedRootPath(const QString &output)
+{
+    static const QRegularExpression mountPattern(QStringLiteral(R"(\bat\s+(.+?)\.?\s*$)"));
+    const QRegularExpressionMatch match = mountPattern.match(output);
+    return match.hasMatch() ? QDir::cleanPath(match.captured(1).trimmed()) : QString();
+}
+
+QString loopDeviceFor(const QString &devicePath)
+{
+    static const QRegularExpression loopPattern(QStringLiteral(R"(^(/dev/loop\d+))"));
+    const QRegularExpressionMatch match = loopPattern.match(devicePath);
+    return match.hasMatch() ? match.captured(1) : QString();
+}
+
+QString unescapeKernelPath(QString value)
+{
+    static const QRegularExpression escapePattern(QStringLiteral(R"(\\([0-7]{3}))"));
+    QRegularExpressionMatch match;
+    while ((match = escapePattern.match(value)).hasMatch()) {
+        const QChar character(ushort(match.captured(1).toInt(nullptr, 8)));
+        value.replace(match.capturedStart(), match.capturedLength(), character);
+    }
+    return value;
+}
+
+QString loopBackingFile(const QString &loopDevice)
+{
+    const QString loopName = QFileInfo(loopDevice).fileName();
+    QFile file(QStringLiteral("/sys/class/block/%1/loop/backing_file").arg(loopName));
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return {};
+    }
+    return unescapeKernelPath(QString::fromUtf8(file.readAll()).trimmed());
+}
+
+struct LinuxMountedDevice {
+    QString rootPath;
+    QString devicePath;
+};
+
+LinuxMountedDevice waitForLinuxMount(const QString &loopDevice)
+{
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        for (QStorageInfo storage : QStorageInfo::mountedVolumes()) {
+            storage.refresh();
+            if (!storage.isValid() || storage.rootPath().isEmpty()) {
+                continue;
+            }
+            const QString mountedDevice = QString::fromUtf8(storage.device());
+            if (loopDeviceFor(mountedDevice) == loopDevice) {
+                return {QDir::cleanPath(storage.rootPath()), mountedDevice};
+            }
+        }
+        QThread::msleep(100);
+    }
+    return {};
+}
+
+NativeMountResult mountIsoNative(const QString &imagePath)
+{
+    NativeMountResult result;
+    QString output;
+    QString error;
+    if (!runUdisksctl({QStringLiteral("loop-setup"), QStringLiteral("--file"), imagePath,
+                       QStringLiteral("--no-user-interaction")},
+                      &output, &error)) {
+        result.error = error;
+        return result;
+    }
+
+    const QString devicePath = lastDevicePath(output);
+    if (devicePath.isEmpty()) {
+        result.error = QStringLiteral("UDisks2 did not report a loop device");
+        return result;
+    }
+
+    const bool mountCommandSucceeded = runUdisksctl(
+        {QStringLiteral("mount"), QStringLiteral("--block-device"), devicePath,
+         QStringLiteral("--no-user-interaction")},
+        &output, &error);
+    const bool alreadyMounted = !mountCommandSucceeded
+        && output.contains(QStringLiteral("org.freedesktop.UDisks2.Error.AlreadyMounted"),
+                           Qt::CaseInsensitive);
+    if (!mountCommandSucceeded && !alreadyMounted) {
+        QString ignoredOutput;
+        QString ignoredError;
+        runUdisksctl({QStringLiteral("loop-delete"), QStringLiteral("--block-device"), devicePath,
+                      QStringLiteral("--no-user-interaction")},
+                     &ignoredOutput, &ignoredError);
+        result.error = error;
+        return result;
+    }
+
+    const LinuxMountedDevice mounted = waitForLinuxMount(devicePath);
+    const QString rootPath = !mounted.rootPath.isEmpty() ? mounted.rootPath : mountedRootPath(output);
+    if (rootPath.isEmpty()) {
+        QString ignoredOutput;
+        QString ignoredError;
+        runUdisksctl({QStringLiteral("unmount"), QStringLiteral("--block-device"), devicePath,
+                      QStringLiteral("--no-user-interaction")},
+                     &ignoredOutput, &ignoredError);
+        runUdisksctl({QStringLiteral("loop-delete"), QStringLiteral("--block-device"), devicePath,
+                      QStringLiteral("--no-user-interaction")},
+                     &ignoredOutput, &ignoredError);
+        result.error = QStringLiteral("UDisks2 did not report a mount location");
+        return result;
+    }
+
+    result.success = true;
+    result.rootPath = rootPath;
+    result.nativeDevice = devicePath;
+    result.mountedDevice = !mounted.devicePath.isEmpty() ? mounted.devicePath : lastDevicePath(output);
+    if (result.mountedDevice.isEmpty()) {
+        result.mountedDevice = devicePath;
+    }
+    return result;
+}
+
+QString unmountIsoNative(const QString &mountedDevice, const QString &loopDevice)
+{
+    QString output;
+    QString error;
+    if (!runUdisksctl({QStringLiteral("unmount"), QStringLiteral("--block-device"), mountedDevice,
+                       QStringLiteral("--no-user-interaction")},
+                      &output, &error)) {
+        return error;
+    }
+    for (int attempt = 0; attempt < 20 && QFileInfo::exists(loopDevice); ++attempt) {
+        QThread::msleep(50);
+    }
+    if (QFileInfo::exists(loopDevice)
+        && !runUdisksctl({QStringLiteral("loop-delete"), QStringLiteral("--block-device"), loopDevice,
+                          QStringLiteral("--no-user-interaction")},
+                         &output, &error)
+        && isoTraceEnabled()) {
+        qWarning().noquote() << "[IsoTrace] loop-cleanup-warning"
+                             << "loopDevice=" << loopDevice
+                             << "error=" << error;
+    }
+    return {};
+}
+
+#endif
+
 } // namespace
 
 IsoMountManager::IsoMountManager(QObject *parent)
     : QObject(parent)
 {
+    adoptLinuxIsoMounts();
+}
+
+void IsoMountManager::adoptLinuxIsoMounts()
+{
+#ifdef Q_OS_LINUX
+    for (QStorageInfo storage : QStorageInfo::mountedVolumes()) {
+        storage.refresh();
+        if (!storage.isValid() || storage.rootPath().isEmpty()) {
+            continue;
+        }
+
+        const QString mountedDevice = QString::fromUtf8(storage.device());
+        const QString loopDevice = loopDeviceFor(mountedDevice);
+        if (loopDevice.isEmpty()) {
+            continue;
+        }
+
+        const QString imagePath = loopBackingFile(loopDevice);
+        if (!IsoSupport::isIsoImagePath(imagePath)) {
+            continue;
+        }
+
+        if (isoTraceEnabled()) {
+            qInfo().noquote() << "[IsoTrace] adopt-existing-mount"
+                              << "image=" << imagePath
+                              << "root=" << storage.rootPath()
+                              << "mountedDevice=" << mountedDevice
+                              << "loopDevice=" << loopDevice;
+        }
+        rememberMount(imagePath, storage.rootPath(), {}, 0, loopDevice, mountedDevice);
+    }
+#endif
 }
 
 bool IsoMountManager::canMountIsoPath(const QString &path) const
 {
-    return IsoSupport::isIsoImagePath(path);
+    if (!IsoSupport::isIsoImagePath(path)) {
+        return false;
+    }
+#ifdef Q_OS_LINUX
+    return !QStandardPaths::findExecutable(QStringLiteral("udisksctl")).isEmpty();
+#else
+    return true;
+#endif
 }
 
 QStringList IsoMountManager::availableDriveLetters() const
@@ -362,26 +613,69 @@ QStringList IsoMountManager::availableDriveLetters() const
 
 bool IsoMountManager::isMountedImage(const QString &imagePath) const
 {
-    return m_mountsByImage.contains(normalizedLocalPath(imagePath));
+    return m_rootsByImage.contains(normalizedLocalPath(imagePath));
 }
 
 bool IsoMountManager::isManagedMountRoot(const QString &rootPath) const
 {
-    return m_imagesByRoot.contains(normalizeRootPath(rootPath));
+    return !managedMountRootForPath(rootPath).isEmpty();
+}
+
+QString IsoMountManager::managedMountRootForPath(const QString &path) const
+{
+    const QString normalizedPath = normalizeRootPath(path);
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] managed-root-lookup"
+                          << "input=" << path
+                          << "normalized=" << normalizedPath
+                          << "roots=" << m_mountsByRoot.keys();
+    }
+    if (normalizedPath.isEmpty()) {
+        return {};
+    }
+    if (m_mountsByRoot.contains(normalizedPath)) {
+        if (isoTraceEnabled()) {
+            qInfo().noquote() << "[IsoTrace] managed-root-match" << "root=" << normalizedPath << "mode=exact";
+        }
+        return normalizedPath;
+    }
+
+    const QString canonicalPath = normalizeRootPath(QFileInfo(normalizedPath).canonicalFilePath());
+    if (canonicalPath.isEmpty()) {
+        if (isoTraceEnabled()) {
+            qInfo().noquote() << "[IsoTrace] managed-root-miss" << "reason=no-canonical-path";
+        }
+        return {};
+    }
+    for (auto it = m_mountsByRoot.cbegin(); it != m_mountsByRoot.cend(); ++it) {
+        const QString canonicalRoot = normalizeRootPath(QFileInfo(it.key()).canonicalFilePath());
+        if (!canonicalRoot.isEmpty() && canonicalRoot == canonicalPath) {
+            if (isoTraceEnabled()) {
+                qInfo().noquote() << "[IsoTrace] managed-root-match"
+                                  << "root=" << it.key() << "mode=canonical";
+            }
+            return it.key();
+        }
+    }
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] managed-root-miss"
+                          << "canonical=" << canonicalPath;
+    }
+    return {};
 }
 
 bool IsoMountManager::isInsideManagedMount(const QString &path) const
 {
-    const QString normalizedPath = QDir::fromNativeSeparators(path).trimmed();
+    const QString normalizedPath = normalizeRootPath(path);
     if (normalizedPath.isEmpty()) {
         return false;
     }
 
-    for (const QString &root : m_imagesByRoot.keys()) {
+    for (const QString &root : m_mountsByRoot.keys()) {
         if (normalizedPath.compare(root, Qt::CaseInsensitive) == 0) {
             return true;
         }
-        if (normalizedPath.startsWith(root, Qt::CaseInsensitive)) {
+        if (normalizedPath.startsWith(root + QLatin1Char('/'), Qt::CaseInsensitive)) {
             return true;
         }
     }
@@ -390,19 +684,18 @@ bool IsoMountManager::isInsideManagedMount(const QString &path) const
 
 QString IsoMountManager::mountedRootForImage(const QString &imagePath) const
 {
-    const auto it = m_mountsByImage.constFind(normalizedLocalPath(imagePath));
-    return it == m_mountsByImage.cend() ? QString() : it->rootPath;
+    const QList<QString> roots = m_rootsByImage.values(normalizedLocalPath(imagePath));
+    return roots.isEmpty() ? QString() : roots.constFirst();
 }
 
 QList<IsoMountManager::Mount> IsoMountManager::mounts() const
 {
-    return m_mountsByImage.values();
+    return m_mountsByRoot.values();
 }
 
 IsoMountManager::Mount IsoMountManager::mountForRoot(const QString &rootPath) const
 {
-    const QString imagePath = m_imagesByRoot.value(normalizeRootPath(rootPath));
-    return imagePath.isEmpty() ? Mount() : m_mountsByImage.value(imagePath);
+    return m_mountsByRoot.value(managedMountRootForPath(rootPath));
 }
 
 void IsoMountManager::mountIsoToLetter(const QString &imagePath, const QString &letter)
@@ -435,16 +728,27 @@ void IsoMountManager::mountIsoToLetter(const QString &imagePath, const QString &
     QThreadPool::globalInstance()->start([self, normalizedImage, driveLetter]() {
 #ifdef Q_OS_WIN
         const NativeMountResult result = mountIsoNative(normalizedImage, driveLetter);
+#elif defined(Q_OS_LINUX)
+        const NativeMountResult result = mountIsoNative(normalizedImage);
 #else
         NativeMountResult result;
-        result.error = QStringLiteral("ISO mounting is only supported on Windows");
+        result.error = QStringLiteral("ISO mounting is not supported on this platform");
 #endif
 
         if (!self) return;
         QMetaObject::invokeMethod(self.data(), [self, normalizedImage, driveLetter, result]() {
             if (!self) return;
+            if (isoTraceEnabled()) {
+                qInfo().noquote() << "[IsoTrace] mount-result"
+                                  << "success=" << result.success
+                                  << "root=" << result.rootPath
+                                  << "mountedDevice=" << result.mountedDevice
+                                  << "loopDevice=" << result.nativeDevice
+                                  << "error=" << result.error;
+            }
             if (result.success) {
-                self->rememberMount(normalizedImage, result.rootPath, driveLetter, result.nativeHandle);
+                self->rememberMount(normalizedImage, result.rootPath, driveLetter,
+                                    result.nativeHandle, result.nativeDevice, result.mountedDevice);
                 emit self->statusMessage(QStringLiteral("ISO image mounted"));
             } else {
                 emit self->statusMessage(result.error.isEmpty() ? QStringLiteral("ISO mount failed") : result.error);
@@ -456,30 +760,48 @@ void IsoMountManager::mountIsoToLetter(const QString &imagePath, const QString &
 
 void IsoMountManager::unmountIsoRoot(const QString &rootPath)
 {
-    const QString normalizedRoot = normalizeRootPath(rootPath);
-    const QString imagePath = m_imagesByRoot.value(normalizedRoot);
-    if (imagePath.isEmpty()) {
+    const QString normalizedRoot = managedMountRootForPath(rootPath);
+    const Mount mount = m_mountsByRoot.value(normalizedRoot);
+    if (mount.imagePath.isEmpty()) {
         emit statusMessage(QStringLiteral("This drive is not an app-managed ISO mount"));
         emit unmountFinished(normalizedRoot, false, QStringLiteral("This drive is not an app-managed ISO mount"));
         return;
     }
 
-    const quintptr nativeHandle = m_mountsByImage.value(imagePath).nativeHandle;
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] unmount-request"
+                          << "inputRoot=" << rootPath
+                          << "managedRoot=" << normalizedRoot
+                          << "image=" << mount.imagePath
+                          << "mountedDevice=" << mount.mountedDevice
+                          << "loopDevice=" << mount.nativeDevice;
+    }
     emit unmountStarted(normalizedRoot);
     emit statusMessage(QStringLiteral("Unmounting ISO image"));
 
     QPointer<IsoMountManager> self(this);
-    QThreadPool::globalInstance()->start([self, normalizedRoot, nativeHandle]() {
+    QThreadPool::globalInstance()->start([self, normalizedRoot, mount]() {
 #ifdef Q_OS_WIN
-        const QString error = unmountIsoNative(nativeHandle);
+        const QString error = unmountIsoNative(mount.nativeHandle);
+#elif defined(Q_OS_LINUX)
+        const QString error = mount.nativeDevice.isEmpty()
+            ? QStringLiteral("Missing UDisks2 loop device for ISO mount")
+            : unmountIsoNative(mount.mountedDevice.isEmpty() ? mount.nativeDevice : mount.mountedDevice,
+                               mount.nativeDevice);
 #else
-        const QString error = QStringLiteral("ISO unmounting is only supported on Windows");
+        const QString error = QStringLiteral("ISO unmounting is not supported on this platform");
 #endif
         const bool success = error.isEmpty();
 
         if (!self) return;
         QMetaObject::invokeMethod(self.data(), [self, normalizedRoot, success, error]() {
             if (!self) return;
+            if (isoTraceEnabled()) {
+                qInfo().noquote() << "[IsoTrace] unmount-result"
+                                  << "root=" << normalizedRoot
+                                  << "success=" << success
+                                  << "error=" << error;
+            }
             if (success) {
                 self->forgetMountRoot(normalizedRoot);
                 emit self->statusMessage(QStringLiteral("ISO image unmounted"));
@@ -493,16 +815,28 @@ void IsoMountManager::unmountIsoRoot(const QString &rootPath)
 
 void IsoMountManager::unmountAll()
 {
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] unmount-all" << "count=" << m_mountsByRoot.size();
+    }
 #ifdef Q_OS_WIN
-    const auto mounts = m_mountsByImage.values();
+    const auto mounts = m_mountsByRoot.values();
     for (const Mount &mount : mounts) {
         if (mount.nativeHandle != 0) {
             (void)unmountIsoNative(mount.nativeHandle);
         }
     }
 #endif
-    m_mountsByImage.clear();
-    m_imagesByRoot.clear();
+#ifdef Q_OS_LINUX
+    const auto mounts = m_mountsByRoot.values();
+    for (const Mount &mount : mounts) {
+        if (!mount.nativeDevice.isEmpty()) {
+            (void)unmountIsoNative(mount.mountedDevice.isEmpty() ? mount.nativeDevice : mount.mountedDevice,
+                                   mount.nativeDevice);
+        }
+    }
+#endif
+    m_mountsByRoot.clear();
+    m_rootsByImage.clear();
 }
 
 QString IsoMountManager::normalizedLocalPath(const QString &path)
@@ -515,6 +849,8 @@ QString IsoMountManager::normalizeRootPath(const QString &rootPath)
     QString path = QDir::fromNativeSeparators(rootPath).trimmed();
     if (path.size() >= 2 && path.at(1) == QLatin1Char(':')) {
         path = path.left(2).toUpper() + QLatin1Char('/');
+    } else if (path.size() > 1) {
+        path = QDir::cleanPath(path);
     }
     return path;
 }
@@ -533,10 +869,15 @@ QChar IsoMountManager::normalizeLetter(const QString &letter)
 
 QString IsoMountManager::rootPathForLetter(QChar letter)
 {
+    if (letter.isNull()) {
+        return {};
+    }
     return QString(letter.toUpper()) + QStringLiteral(":/");
 }
 
-void IsoMountManager::rememberMount(const QString &imagePath, const QString &rootPath, QChar requestedLetter, quintptr nativeHandle)
+void IsoMountManager::rememberMount(const QString &imagePath, const QString &rootPath, QChar requestedLetter,
+                                    quintptr nativeHandle, const QString &nativeDevice,
+                                    const QString &mountedDevice)
 {
     const QString normalizedImage = normalizedLocalPath(imagePath);
     const QString normalizedRoot = normalizeRootPath(rootPath);
@@ -547,17 +888,32 @@ void IsoMountManager::rememberMount(const QString &imagePath, const QString &roo
     mount.requestedLetter = requestedLetter.toUpper();
     mount.mountedAt = QDateTime::currentDateTime();
     mount.nativeHandle = nativeHandle;
-    m_mountsByImage.insert(normalizedImage, mount);
-    m_imagesByRoot.insert(normalizedRoot, normalizedImage);
+    mount.nativeDevice = nativeDevice;
+    mount.mountedDevice = mountedDevice;
+    if (isoTraceEnabled()) {
+        qInfo().noquote() << "[IsoTrace] mount-remembered"
+                          << "image=" << mount.imagePath
+                          << "root=" << mount.rootPath
+                          << "mountedDevice=" << mount.mountedDevice
+                          << "loopDevice=" << mount.nativeDevice;
+    }
+    const Mount previous = m_mountsByRoot.value(normalizedRoot);
+    if (!previous.imagePath.isEmpty()) {
+        m_rootsByImage.remove(previous.imagePath, normalizedRoot);
+    }
+    m_mountsByRoot.insert(normalizedRoot, mount);
+    if (!m_rootsByImage.contains(normalizedImage, normalizedRoot)) {
+        m_rootsByImage.insert(normalizedImage, normalizedRoot);
+    }
     emit mountsChanged();
 }
 
 void IsoMountManager::forgetMountRoot(const QString &rootPath)
 {
     const QString normalizedRoot = normalizeRootPath(rootPath);
-    const QString imagePath = m_imagesByRoot.take(normalizedRoot);
-    if (!imagePath.isEmpty()) {
-        m_mountsByImage.remove(imagePath);
+    const Mount mount = m_mountsByRoot.take(normalizedRoot);
+    if (!mount.imagePath.isEmpty()) {
+        m_rootsByImage.remove(mount.imagePath, normalizedRoot);
         emit mountsChanged();
     }
 }

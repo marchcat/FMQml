@@ -20,6 +20,7 @@ AmbientPanelBackground {
     property bool showLoadingRail: false
     property string statusMessage: ""
     property bool isCurrentPathArchive: false
+    property bool isCurrentPathManagedIsoMount: false
     property real loadingProgress: -1
     property string loadingProgressText: ""
     property bool loadingCancelable: false
@@ -248,6 +249,9 @@ AmbientPanelBackground {
         if (favoritesRootMode) {
             return ""
         }
+        if (isCurrentPathManagedIsoMount) {
+            return ""
+        }
         if (deviceRootMode) {
             return deviceRootStorageText
         }
@@ -268,6 +272,9 @@ AmbientPanelBackground {
     function storageTooltipText() {
         if (favoritesRootMode) {
             return "Storage usage is not shown for virtual Favorites"
+        }
+        if (isCurrentPathManagedIsoMount) {
+            return "Storage usage is not shown for a read-only ISO image"
         }
         if (deviceRootMode) {
             return deviceRootStorageTooltip
@@ -354,13 +361,14 @@ AmbientPanelBackground {
             Layout.bottomMargin: 6
             color: Theme.withAlpha(Theme.panelBorder, themeController.isDark ? 0.34 : 0.85)
             opacity: themeController.isDark ? 0.78 : 0.9
+            visible: !root.favoritesRootMode && !root.isCurrentPathManagedIsoMount
         }
 
         RowLayout {
             Layout.preferredWidth: 188
             Layout.maximumWidth: 188
             Layout.minimumWidth: 136
-            visible: !root.favoritesRootMode
+            visible: !root.favoritesRootMode && !root.isCurrentPathManagedIsoMount
             spacing: 8
 
             Label {

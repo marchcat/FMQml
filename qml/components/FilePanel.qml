@@ -4508,6 +4508,7 @@ Pane {
                 showLoadingRail: root.showLoadingRail
                 statusMessage: errorBanner.visible ? "" : root.statusMessage
                 isCurrentPathArchive: root.isCurrentPathArchive
+                isCurrentPathManagedIsoMount: root.isCurrentPathManagedIsoMount
                 loadingProgress: root.controller.directoryModel ? root.controller.directoryModel.scanProgress : -1
                 loadingProgressText: root.controller.directoryModel ? root.controller.directoryModel.scanProgressText : ""
                 loadingCancelable: root.isCurrentPathArchive

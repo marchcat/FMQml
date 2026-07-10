@@ -34,7 +34,7 @@ Popup {
     }
 
     function mountDescription() {
-        return "Windows will handle assignment automatically."
+        return "The system will choose the mount location automatically."
     }
 
     onOpened: Qt.callLater(() => contentItem.forceActiveFocus())
