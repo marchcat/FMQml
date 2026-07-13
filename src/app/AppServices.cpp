@@ -135,6 +135,11 @@ AppServices::AppServices(QObject *parent)
     m_settings.setThemeController(&m_theme);
     m_systemTray.setThemeController(&m_theme);
     m_systemTray.setOperationQueue(m_workspace.operationQueue());
+    m_folderCompare.setOperationQueue(m_workspace.operationQueue());
+    connect(&m_folderCompare, &FolderCompareController::synchronizationFinished, this, [this] {
+        m_workspace.leftPanel()->refresh();
+        m_workspace.rightPanel()->refresh();
+    });
     m_systemTray.setSettings(&m_settings);
     connect(m_workspace.operationQueue(), &OperationQueue::administratorOperationSucceeded,
             &m_admin, &AdminController::refreshAdminModeAfterOperation);
@@ -355,6 +360,11 @@ DiskUsageController *AppServices::diskUsage()
 FileSearchController *AppServices::fileSearch()
 {
     return &m_fileSearch;
+}
+
+FolderCompareController *AppServices::folderCompare()
+{
+    return &m_folderCompare;
 }
 
 AppSettingsController *AppServices::settings()

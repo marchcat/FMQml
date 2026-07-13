@@ -26,6 +26,7 @@
 namespace {
 constexpr auto WorkspaceGroup = "workspace";
 constexpr auto AppearanceGroup = "appearance";
+constexpr auto FolderCompareGroup = "folderCompare";
 constexpr auto DeviceRoot = "devices://";
 constexpr auto FavoritesRoot = "favorites://";
 constexpr auto ExportFormatVersion = 2;
@@ -660,6 +661,35 @@ void AppSettingsController::resetWorkspaceState()
     settings.remove(QStringLiteral("appearance/themeFilePath"));
     emit workspaceStateChanged();
     setSettingsMaintenanceStatus(QStringLiteral("Saved workspace and theme were cleared for the next launch."));
+}
+
+QVariantMap AppSettingsController::folderComparePreferences() const
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(FolderCompareGroup));
+    QVariantMap result;
+    result.insert(QStringLiteral("recursive"), settings.value(QStringLiteral("recursive"), false));
+    result.insert(QStringLiteral("includeHidden"), settings.value(QStringLiteral("includeHidden"), false));
+    result.insert(QStringLiteral("strictContent"), settings.value(QStringLiteral("strictContent"), false));
+    result.insert(QStringLiteral("showEqual"), settings.value(QStringLiteral("showEqual"), true));
+    result.insert(QStringLiteral("filterMode"), settings.value(QStringLiteral("filterMode"), 0));
+    result.insert(QStringLiteral("sortMode"), settings.value(QStringLiteral("sortMode"), 0));
+    result.insert(QStringLiteral("planMode"), settings.value(QStringLiteral("planMode"), 3));
+    return result;
+}
+
+void AppSettingsController::saveFolderComparePreferences(const QVariantMap &preferences)
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(FolderCompareGroup));
+    settings.setValue(QStringLiteral("recursive"), preferences.value(QStringLiteral("recursive"), false).toBool());
+    settings.setValue(QStringLiteral("includeHidden"), preferences.value(QStringLiteral("includeHidden"), false).toBool());
+    settings.setValue(QStringLiteral("strictContent"), preferences.value(QStringLiteral("strictContent"), false).toBool());
+    settings.setValue(QStringLiteral("showEqual"), preferences.value(QStringLiteral("showEqual"), true).toBool());
+    settings.setValue(QStringLiteral("filterMode"), qBound(0, preferences.value(QStringLiteral("filterMode"), 0).toInt(), 4));
+    settings.setValue(QStringLiteral("sortMode"), qBound(0, preferences.value(QStringLiteral("sortMode"), 0).toInt(), 3));
+    settings.setValue(QStringLiteral("planMode"), qBound(1, preferences.value(QStringLiteral("planMode"), 3).toInt(), 5));
+    settings.sync();
 }
 
 bool AppSettingsController::exportSettings(const QString &filePath)

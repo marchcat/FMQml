@@ -29,7 +29,7 @@ RowLayout {
     spacing: 6
 
     ToolbarSegment {
-        segmentWidth: 32 * 2 + 1
+        segmentWidth: 32 * 3 + 2
         segmentHeight: 32
         visible: root.workspaceController ? root.workspaceController.splitEnabled : false
 
@@ -76,6 +76,35 @@ RowLayout {
             background: Rectangle {
                 radius: Theme.radiusForSide(Math.min(width, height))
                 color: moveBtn.pressed ? Theme.surfaceActive : (moveBtn.hovered ? Theme.withAlpha(moveBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
+                anchors.fill: parent
+                anchors.margins: 1
+            }
+        }
+
+        Rectangle {
+            width: 1
+            Layout.fillHeight: true
+            Layout.topMargin: 6
+            Layout.bottomMargin: 6
+            color: Theme.withAlpha(Theme.border, themeController.isDark ? 0.28 : 0.20)
+        }
+
+        IconButton {
+            id: compareFoldersBtn
+            iconSource: "../assets/toolbar-next/folder-compare.svg"
+            iconTone: "split"
+            enabled: root.appRoot
+                     && !actionPolicy.currentPathIsProvider()
+                     && !actionPolicy.oppositePathIsProvider()
+            onClicked: root.appRoot.openFolderCompare()
+            isHighlighted: enabled && hovered
+            ToolTip.visible: hovered
+            ToolTip.text: enabled ? "Compare panel folders" : "Folder comparison requires two local folders"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            background: Rectangle {
+                radius: Theme.radiusForSide(Math.min(width, height))
+                color: compareFoldersBtn.pressed ? Theme.surfaceActive : (compareFoldersBtn.hovered ? Theme.withAlpha(compareFoldersBtn.baseTone, themeController.isDark ? 0.14 : 0.10) : "transparent")
                 anchors.fill: parent
                 anchors.margins: 1
             }

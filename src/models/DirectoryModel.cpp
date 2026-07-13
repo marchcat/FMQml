@@ -282,6 +282,11 @@ bool fileEntryMetadataChanged(const FileEntry &a, const FileEntry &b)
         || a.isShortcut != b.isShortcut;
 }
 
+bool thumbnailIdentityChanged(const FileEntry &a, const FileEntry &b)
+{
+    return a.path != b.path || a.size != b.size || a.modified != b.modified;
+}
+
 bool watchDebugEnabled()
 {
     static const bool enabled = qEnvironmentVariableIsSet("FM_WATCH_DEBUG");
@@ -1234,6 +1239,7 @@ void DirectoryModel::processPendingInserts()
         if (absoluteIdx >= 0 && absoluteIdx < m_entries.size()) {
             FileEntry &existing = m_entries[absoluteIdx];
             const bool hasChanged = fileEntryMetadataChanged(existing, entry);
+            const bool thumbnailChanged = hasChanged && thumbnailIdentityChanged(existing, entry);
             const bool sortOrderChanged = hasChanged && (compareEntries(existing, entry) || compareEntries(entry, existing));
 
             int filteredRow = -1;
@@ -1263,6 +1269,7 @@ void DirectoryModel::processPendingInserts()
                 bool wasSelected = existing.isSelected;
                 existing = entry;
                 existing.isSelected = wasSelected;
+                if (thumbnailChanged) m_thumbnailRevisions[entry.path] = m_thumbnailRevisions.value(entry.path, 0) + 1;
                 emit dataChanged(index(filteredRow), index(filteredRow));
                 if (sortOrderChanged) {
                     sortModel();
@@ -1271,6 +1278,7 @@ void DirectoryModel::processPendingInserts()
                 bool wasSelected = existing.isSelected;
                 existing = entry;
                 existing.isSelected = wasSelected;
+                if (thumbnailChanged) m_thumbnailRevisions[entry.path] = m_thumbnailRevisions.value(entry.path, 0) + 1;
             }
             m_foundPaths.insert(normalizedPath);
         } else {
@@ -2351,6 +2359,7 @@ bool DirectoryModel::upsertPath(const QString &path)
     FileEntry &existing = m_entries[absoluteIdx];
     const bool wasSelected = existing.isSelected;
     const bool changed = fileEntryMetadataChanged(existing, entry);
+    const bool thumbnailChanged = changed && thumbnailIdentityChanged(existing, entry);
     const bool sortOrderChanged = changed && (compareEntries(existing, entry) || compareEntries(entry, existing));
     entry.isSelected = wasSelected;
 
@@ -2381,6 +2390,7 @@ bool DirectoryModel::upsertPath(const QString &path)
 
     if (changed) {
         existing = entry;
+        if (thumbnailChanged) m_thumbnailRevisions[entry.path] = m_thumbnailRevisions.value(entry.path, 0) + 1;
         if (filteredRow != -1) {
             emit dataChanged(index(filteredRow), index(filteredRow));
             if (sortOrderChanged) {
@@ -2928,6 +2938,7 @@ void DirectoryModel::processAllPendingInsertsFast()
             if (absoluteIdx >= 0 && absoluteIdx < m_entries.size()) {
                 FileEntry &existing = m_entries[absoluteIdx];
                 const bool changed = fileEntryMetadataChanged(existing, entry);
+                const bool thumbnailChanged = changed && thumbnailIdentityChanged(existing, entry);
                 const bool sortOrderChanged = changed && (compareEntries(existing, entry) || compareEntries(entry, existing));
 
                 const bool visible = m_showHidden || !entry.isHidden;
@@ -2962,6 +2973,7 @@ void DirectoryModel::processAllPendingInsertsFast()
                     bool wasSelected = existing.isSelected;
                     existing = entry;
                     existing.isSelected = wasSelected;
+                    if (thumbnailChanged) m_thumbnailRevisions[entry.path] = m_thumbnailRevisions.value(entry.path, 0) + 1;
                     emit dataChanged(index(filteredRow), index(filteredRow));
                     if (sortOrderChanged) {
                         sortModel();
@@ -2970,6 +2982,7 @@ void DirectoryModel::processAllPendingInsertsFast()
                     bool wasSelected = existing.isSelected;
                     existing = entry;
                     existing.isSelected = wasSelected;
+                    if (thumbnailChanged) m_thumbnailRevisions[entry.path] = m_thumbnailRevisions.value(entry.path, 0) + 1;
                 }
                 m_foundPaths.insert(normalizedPath);
             } else {

@@ -961,7 +961,20 @@ void OperationQueue::copyTo(const QStringList &sources, const QString &destinati
         setStatusMessage(QStringLiteral("Archive contents are read-only"));
         return;
     }
-    enqueue({Type::Copy, sources, destination});
+    enqueue({Type::Copy, sources, destination, false, {}});
+}
+
+void OperationQueue::copyToExactDestinations(const QStringList &sources, const QStringList &destinations)
+{
+    if (sources.isEmpty() || sources.size() != destinations.size()) return;
+    for (const QString &destination : destinations) {
+        if (destination.isEmpty() || ArchiveSupport::isArchivePath(destination)) return;
+    }
+    Request request;
+    request.type = Type::Copy;
+    request.sources = sources;
+    request.explicitDestinations = destinations;
+    enqueue(std::move(request));
 }
 
 void OperationQueue::copyToAsAdministrator(const QStringList &sources, const QString &destination)
@@ -979,7 +992,7 @@ void OperationQueue::copyToAsAdministrator(const QStringList &sources, const QSt
             return;
         }
     }
-    enqueue({Type::Copy, sources, destination, true});
+    enqueue({Type::Copy, sources, destination, true, {}});
 }
 
 void OperationQueue::createFolderAsAdministrator(const QString &destination, const QString &name)
@@ -991,7 +1004,7 @@ void OperationQueue::createFolderAsAdministrator(const QString &destination, con
         setStatusMessage(QStringLiteral("Archive contents are read-only"));
         return;
     }
-    enqueue({Type::CreateFolder, {name.trimmed()}, destination, true});
+    enqueue({Type::CreateFolder, {name.trimmed()}, destination, true, {}});
 }
 
 void OperationQueue::duplicateInPlace(const QStringList &sources, const QString &destinationHint)
@@ -1008,7 +1021,7 @@ void OperationQueue::duplicateInPlace(const QStringList &sources, const QString 
         setStatusMessage(QStringLiteral("Only files can be duplicated"));
         return;
     }
-    enqueue({Type::Duplicate, sources, destinationHint});
+    enqueue({Type::Duplicate, sources, destinationHint, false, {}});
 }
 
 void OperationQueue::moveTo(const QStringList &sources, const QString &destination)
@@ -1026,7 +1039,7 @@ void OperationQueue::moveTo(const QStringList &sources, const QString &destinati
             return;
         }
     }
-    enqueue({Type::Move, sources, destination});
+    enqueue({Type::Move, sources, destination, false, {}});
 }
 
 void OperationQueue::extractTo(const QStringList &sources, const QString &destination)
@@ -1045,7 +1058,7 @@ void OperationQueue::extractTo(const QStringList &sources, const QString &destin
         }
     }
 
-    enqueue({Type::Extract, normalizedSources, destination});
+    enqueue({Type::Extract, normalizedSources, destination, false, {}});
 }
 
 void OperationQueue::compressToArchive(const QStringList &sources, const QString &archivePath)
@@ -1067,7 +1080,7 @@ void OperationQueue::compressToArchive(const QStringList &sources, const QString
             return;
         }
     }
-    enqueue({Type::Compress, sources, archivePath});
+    enqueue({Type::Compress, sources, archivePath, false, {}});
 }
 
 void OperationQueue::compressToSevenZip(const QStringList &sources, const QString &archivePath)
@@ -1086,7 +1099,7 @@ void OperationQueue::deletePaths(const QStringList &paths)
             return;
         }
     }
-    enqueue({Type::Delete, paths, {}});
+    enqueue({Type::Delete, paths, {}, false, {}});
 }
 
 void OperationQueue::deletePathsAsAdministrator(const QStringList &paths)
@@ -1100,7 +1113,7 @@ void OperationQueue::deletePathsAsAdministrator(const QStringList &paths)
             return;
         }
     }
-    enqueue({Type::Delete, paths, {}, true});
+    enqueue({Type::Delete, paths, {}, true, {}});
 }
 
 void OperationQueue::resolveConflict(ConflictResolution resolution, bool applyToAll)
@@ -1310,6 +1323,8 @@ void OperationQueue::finishCurrent()
     if (request.administrator && result.succeededCount > 0) {
         emit administratorOperationSucceeded();
     }
+    emit operationFinishedDetailed(request.type, request.sources, request.destination,
+                                   result.succeededCount, result.failedCount, result.failedPaths, result.aborted);
     emit operationFinished(request.type, request.sources, request.destination);
     runNext();
 }
@@ -1785,7 +1800,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
     }
 
     if (request.type == Type::Copy || request.type == Type::Move || request.type == Type::Duplicate) {
-        for (const QString &source : request.sources) {
+        for (int sourceIndex = 0; sourceIndex < request.sources.size(); ++sourceIndex) {
+            const QString &source = request.sources.at(sourceIndex);
             if (ArchiveSupport::isArchivePath(source)) {
                 continue;
             }
@@ -1796,14 +1812,17 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
             }
 
             const QString sourceName = destinationNameForCopy(srcProvider, source);
+            const QString explicitDestination = request.explicitDestinations.size() == request.sources.size()
+                ? request.explicitDestinations.at(sourceIndex) : QString();
             FileProvider* destProvider = request.type == Type::Duplicate
                 ? srcProvider
-                : getProviderForPath(request.destination);
+                : getProviderForPath(explicitDestination.isEmpty() ? request.destination : explicitDestination);
             const QString destinationPath = request.type == Type::Duplicate
                 ? duplicateDestinationPath(source)
-                : (request.destination.isEmpty()
+                : (!explicitDestination.isEmpty() ? explicitDestination
+                   : (request.destination.isEmpty()
                     ? QString()
-                    : destProvider->childPath(request.destination, sourceName));
+                    : destProvider->childPath(request.destination, sourceName)));
 
             if (srcProvider == destProvider && isDescendantPath(*srcProvider, destinationPath, source)) {
                 const QString message = QStringLiteral("Cannot %1 folder %2 into itself or one of its subfolders")
@@ -2093,7 +2112,7 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         }
     }
 
-    if (request.type == Type::Copy
+    if (request.type == Type::Copy && request.explicitDestinations.isEmpty()
         && copySmallLocalFilesToProviderBatch(request.sources, request.destination, totalBytes, currentProgressBytes)) {
         if (m_abort) {
             result.aborted = true;
@@ -2106,7 +2125,7 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         return result;
     }
 
-    if (request.type == Type::Copy
+    if (request.type == Type::Copy && request.explicitDestinations.isEmpty()
         && copyProviderFilesToLocalBatch(request.sources, request.destination, totalBytes, currentProgressBytes)) {
         if (m_abort) {
             result.aborted = true;
@@ -2119,7 +2138,7 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         return result;
     }
 
-    if (request.type == Type::Copy
+    if (request.type == Type::Copy && request.explicitDestinations.isEmpty()
         && copyProviderFilesToProviderStagedBatch(request.sources, request.destination, totalBytes, currentProgressBytes)) {
         if (m_abort) {
             result.aborted = true;
@@ -2142,13 +2161,16 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
         const std::optional<FileEntry> sourceInfo = srcProvider->entryInfo(source);
         const QString sourceName = sourceInfo ? sourceInfo->name : srcProvider->fileName(source);
         const QString destinationName = destinationNameForCopy(srcProvider, source);
+        const QString explicitDestination = request.explicitDestinations.size() == request.sources.size()
+            ? request.explicitDestinations.at(i) : QString();
         FileProvider* destProvider = request.type == Type::Duplicate
             ? srcProvider
-            : getProviderForPath(request.destination);
+            : getProviderForPath(explicitDestination.isEmpty() ? request.destination : explicitDestination);
         const QString destinationPath = request.type == Type::Duplicate
             ? duplicateDestinationPath(source)
-            : (request.destination.isEmpty() ? QString() : destProvider->childPath(request.destination, destinationName));
-        if (request.type == Type::Copy) {
+            : (!explicitDestination.isEmpty() ? explicitDestination
+               : (request.destination.isEmpty() ? QString() : destProvider->childPath(request.destination, destinationName)));
+        if (request.type == Type::Copy && request.explicitDestinations.isEmpty()) {
             const int batchCount = copyNextSmallLocalFilesToProviderBatch(
                 request.sources,
                 i,
@@ -2172,7 +2194,8 @@ OperationQueue::OperationResult OperationQueue::execute(const Request &request)
 
         try {
             if (request.type == Type::Copy) {
-                copyPath(source, destinationPath, totalBytes, currentProgressBytes, Type::Copy);
+                copyPath(source, destinationPath, totalBytes, currentProgressBytes, Type::Copy,
+                         !explicitDestination.isEmpty());
             } else if (request.type == Type::Duplicate) {
                 copyPath(source, destinationPath, totalBytes, currentProgressBytes, Type::Duplicate);
             } else if (request.type == Type::Extract) {
@@ -4375,7 +4398,8 @@ void OperationQueue::copyPath(const QString &sourcePath,
                               const QString &destinationPath,
                               qint64 totalBytes,
                               qint64 &copiedBytes,
-                              Type labelType)
+                              Type labelType,
+                              bool replaceExactDestination)
 {
     if (m_abort) return;
 
@@ -4430,35 +4454,41 @@ void OperationQueue::copyPath(const QString &sourcePath,
 
         QString targetPath = frame.destinationPath;
         if (pathExists(targetPath)) {
-            ConflictResolution res = waitForResolution(frame.sourcePath, targetPath);
-            if (res == ConflictResolution::Skip) {
-                copiedBytes += totalBytesForPath(frame.sourcePath);
-                continue;
-            } else if (res == ConflictResolution::KeepBoth) {
-                targetPath = uniqueDestinationPath(targetPath);
-            } else if (res == ConflictResolution::Replace) {
-                // Safety check: is targetPath the source archive itself (or its parent)?
-                if (ArchiveSupport::isArchivePath(frame.sourcePath)) {
-                    QString physicalPath = ArchiveSupport::physicalArchivePath(frame.sourcePath);
-                    FileProvider* localProvider = getProviderForPath(physicalPath);
-                    if (samePath(*localProvider, targetPath, physicalPath) || isDescendantPath(*localProvider, physicalPath, targetPath)) {
-                        // Override Replace with KeepBoth to prevent destroying the source archive
-                        res = ConflictResolution::KeepBoth;
-                        targetPath = uniqueDestinationPath(targetPath);
-                        QMetaObject::invokeMethod(this, [this]() {
-                            setStatusMessage("Cannot replace the source archive. The item has been renamed.");
-                        }, Qt::QueuedConnection);
-                    }
+            if (replaceExactDestination) {
+                if (!removePathIfExists(targetPath)) {
+                    throw std::runtime_error(QStringLiteral("Cannot replace %1").arg(targetPath).toStdString());
                 }
+            } else {
+                ConflictResolution res = waitForResolution(frame.sourcePath, targetPath);
+                if (res == ConflictResolution::Skip) {
+                    copiedBytes += totalBytesForPath(frame.sourcePath);
+                    continue;
+                } else if (res == ConflictResolution::KeepBoth) {
+                    targetPath = uniqueDestinationPath(targetPath);
+                } else if (res == ConflictResolution::Replace) {
+                    // Safety check: is targetPath the source archive itself (or its parent)?
+                    if (ArchiveSupport::isArchivePath(frame.sourcePath)) {
+                        QString physicalPath = ArchiveSupport::physicalArchivePath(frame.sourcePath);
+                        FileProvider* localProvider = getProviderForPath(physicalPath);
+                        if (samePath(*localProvider, targetPath, physicalPath) || isDescendantPath(*localProvider, physicalPath, targetPath)) {
+                            // Override Replace with KeepBoth to prevent destroying the source archive
+                            res = ConflictResolution::KeepBoth;
+                            targetPath = uniqueDestinationPath(targetPath);
+                            QMetaObject::invokeMethod(this, [this]() {
+                                setStatusMessage("Cannot replace the source archive. The item has been renamed.");
+                            }, Qt::QueuedConnection);
+                        }
+                    }
 
-                if (res == ConflictResolution::Replace) {
-                    if (!removePathIfExists(targetPath)) {
-                        throw std::runtime_error(QStringLiteral("Cannot replace %1").arg(targetPath).toStdString());
+                    if (res == ConflictResolution::Replace) {
+                        if (!removePathIfExists(targetPath)) {
+                            throw std::runtime_error(QStringLiteral("Cannot replace %1").arg(targetPath).toStdString());
+                        }
                     }
+                } else if (res == ConflictResolution::Cancel) {
+                    m_abort = true;
+                    return;
                 }
-            } else if (res == ConflictResolution::Cancel) {
-                m_abort = true;
-                return;
             }
         }
 
@@ -5210,6 +5240,18 @@ void OperationQueue::copyPath(const QString &sourcePath,
                 source->close();
                 destProvider->removePath(tempPath);
                 throw std::runtime_error(QStringLiteral("Flush failed: %1 (%2)")
+                                             .arg(targetPath, error)
+                                             .toStdString());
+            }
+            if (srcProvider->scheme() == QLatin1String("file")
+                && destProvider->scheme() == QLatin1String("file")
+                && !destinationFile->setFileTime(QFileInfo(frame.sourcePath).lastModified(),
+                                                 QFileDevice::FileModificationTime)) {
+                const QString error = destinationFile->errorString();
+                destination->close();
+                source->close();
+                destProvider->removePath(tempPath);
+                throw std::runtime_error(QStringLiteral("Cannot preserve modification time for %1 (%2)")
                                              .arg(targetPath, error)
                                              .toStdString());
             }

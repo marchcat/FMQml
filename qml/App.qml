@@ -33,9 +33,27 @@ ApplicationWindow {
         return root.quickLookPopupItem
     }
 
-    function openQuickLookPath(targetPath) {
+    function openQuickLookPath(targetPath, loadTarget) {
         const popup = root.ensureQuickLookPopup()
+        popup.restorePreviewOnClose = false
         popup.previewPath = targetPath
+        if (loadTarget !== false && targetPath && root.quickLookService && root.quickLookService.preview) {
+            root.quickLookService.preview(targetPath)
+        }
+        popup.open()
+    }
+
+    function openTransientQuickLookPath(targetPath) {
+        const popup = root.ensureQuickLookPopup()
+        const previousPath = root.quickLookService ? (root.quickLookService.path || "") : ""
+        const controller = activePanelController()
+        popup.restorePreviewOnClose = true
+        popup.restorePreviewPath = previousPath
+        popup.restorePreviewSelection = previousPath === "selection://" && controller
+                                        ? controller.selectedPaths() : []
+        popup.previewPath = targetPath
+        if (targetPath && root.quickLookService && root.quickLookService.preview)
+            root.quickLookService.preview(targetPath)
         popup.open()
     }
 
@@ -857,7 +875,7 @@ ApplicationWindow {
         } else {
             quickLookController.preview(targetPath)
         }
-        root.openQuickLookPath(targetPath)
+        root.openQuickLookPath(targetPath, false)
     }
 
     function openHelpDialog() {
@@ -943,6 +961,17 @@ ApplicationWindow {
             return
         }
         workspaceOverlays.openFileSearch(path, true)
+    }
+
+    function openFolderCompare() {
+        const left = workspaceController ? workspaceController.leftPanel : null
+        const right = workspaceController ? workspaceController.rightPanel : null
+        if (!workspaceController || !workspaceController.splitEnabled || !left || !right
+                || !folderCompareController.canCompare(left.currentPath, right.currentPath)) {
+            showTransientInfo("Open two regular local folders in split view before comparing.")
+            return
+        }
+        workspaceOverlays.openFolderCompare(left.currentPath, right.currentPath)
     }
 
     function showTransientInfo(message) {
@@ -1812,6 +1841,7 @@ ApplicationWindow {
         openSettingsDataFolder: root.openSettingsDataFolder
         openDiskUsage: root.openDiskUsage
         openFileSearch: root.openFileSearch
+        openFolderCompare: root.openFolderCompare
         resetSavedWorkspaceState: root.resetSavedWorkspaceState
         resetCommandUsageStats: root.resetCommandUsageStats
         relaunchAsAdmin: root.relaunchAsAdmin

@@ -9,6 +9,9 @@ Popup {
     id: root
 
     property string previewPath: ""
+    property bool restorePreviewOnClose: false
+    property string restorePreviewPath: ""
+    property var restorePreviewSelection: []
     property bool imageMetadataHidden: false
     property bool playbackControlsReady: false
     readonly property bool useHighQualitySystemIcons: typeof appSettings !== "undefined" && appSettings
@@ -354,7 +357,18 @@ Popup {
         root.ensureBookContent()
         Qt.callLater(() => contentItem.forceActiveFocus())
     }
-    onClosed: root.updateImageMetadataDemand()
+    onClosed: {
+        root.updateImageMetadataDemand()
+        if (root.restorePreviewOnClose && typeof quickLookController !== "undefined" && quickLookController) {
+            if (root.restorePreviewPath === "selection://" && root.restorePreviewSelection.length > 1)
+                quickLookController.previewSelection(root.restorePreviewSelection)
+            else
+                quickLookController.preview(root.restorePreviewPath)
+        }
+        root.restorePreviewOnClose = false
+        root.restorePreviewPath = ""
+        root.restorePreviewSelection = []
+    }
 
     Connections {
         target: typeof quickLookController !== "undefined" ? quickLookController : null

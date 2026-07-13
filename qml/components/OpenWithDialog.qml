@@ -77,11 +77,12 @@ Popup {
     function useSystemDefault() {
         if (!root.controller || !root.controller.clearOpenWithPreferredCandidate) return
         root.controller.clearOpenWithPreferredCandidate(root.targetPath)
-        root.candidates = root.controller.openWithCandidatesForPath(root.targetPath)
+        root.candidates = root.controller.openWithCandidatesForPaths(root.targetPaths)
         for (let index = 0; index < root.candidates.length; ++index) {
             const candidate = root.candidates[index]
-            if (candidate && candidate.available === true && candidate.systemDefault === true) {
-                root.controller.openPathWithApplication(root.targetPath, candidate.id)
+            if (candidate && candidate.available === true && candidate.systemDefault === true
+                    && (root.targetPaths.length <= 1 || candidate.supportsMultipleFiles === true)) {
+                root.controller.openPathsWithApplication(root.targetPaths, candidate.id)
                 root.close()
                 return
             }
@@ -219,58 +220,79 @@ Popup {
             }
         }
 
-        CheckBox {
+        Item {
             id: alwaysUseCheck
             Layout.fillWidth: true
-            text: "Always use this application in FM"
-            checked: root.alwaysUseInFm
-            enabled: root.selectedCandidate() !== null && root.selectedCandidate().available === true
-                     && (root.targetPaths.length <= 1 || root.selectedCandidate().supportsMultipleFiles === true)
-            onToggled: root.alwaysUseInFm = checked
-            indicator: Rectangle {
-                implicitWidth: 14
-                implicitHeight: 14
+            implicitHeight: 20
+            readonly property bool enabledForSelection: root.selectedCandidate() !== null
+                                                     && root.selectedCandidate().available === true
+                                                     && (root.targetPaths.length <= 1 || root.selectedCandidate().supportsMultipleFiles === true)
+
+            Rectangle {
+                id: alwaysUseIndicator
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: 14
+                height: 14
                 radius: Theme.radiusSm
-                color: alwaysUseCheck.checked ? Theme.categoryAction : "transparent"
-                border.color: alwaysUseCheck.checked ? Theme.categoryAction : Theme.panelBorder
-                border.width: alwaysUseCheck.checked ? 0 : 1
+                color: root.alwaysUseInFm ? Theme.categoryAction : "transparent"
+                border.color: root.alwaysUseInFm ? Theme.categoryAction : Theme.panelBorder
+                border.width: root.alwaysUseInFm ? 0 : 1
 
                 Image {
                     anchors.centerIn: parent
                     width: 8
                     height: 8
                     source: "qrc:/qt/qml/FM/qml/assets/icons/select-all.svg"
-                    visible: alwaysUseCheck.checked
+                    visible: root.alwaysUseInFm
                     layer.enabled: true
                     layer.effect: MultiEffect { colorization: 1.0; colorizationColor: "white" }
                 }
             }
-            contentItem: Label {
-                text: alwaysUseCheck.text
-                leftPadding: 20
-                color: alwaysUseCheck.enabled ? Theme.textPrimary : Theme.textSecondary
+
+            Label {
+                anchors.left: alwaysUseIndicator.right
+                anchors.leftMargin: 7
+                anchors.verticalCenter: parent.verticalCenter
+                text: "Always use this application in FM"
+                color: alwaysUseCheck.enabledForSelection ? Theme.textPrimary : Theme.textSecondary
                 font.pixelSize: Math.round(Theme.fontSizeLabel * 0.75)
-                verticalAlignment: Text.AlignVCenter
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: alwaysUseCheck.enabledForSelection
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                onClicked: root.alwaysUseInFm = !root.alwaysUseInFm
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Item { Layout.fillWidth: true }
+            DialogActionButton {
+                text: "Use system default"
+                highlighted: false
+                secondaryTextColor: Theme.categoryAction
+                enabled: root.candidates.some(candidate => candidate && candidate.available === true && candidate.systemDefault === true)
+                onClicked: root.useSystemDefault()
             }
         }
 
         DialogFooter {
             Layout.fillWidth: true
 
-            Item { Layout.fillWidth: true }
-            DialogActionButton {
-                text: "Use system default"
-                highlighted: false
-                enabled: root.candidates.some(candidate => candidate && candidate.available === true && candidate.systemDefault === true)
-                onClicked: root.useSystemDefault()
-            }
             DialogActionButton {
                 text: "Cancel"
+                Layout.fillWidth: true
                 highlighted: false
                 onClicked: root.close()
             }
             DialogActionButton {
                 text: "Open"
+                Layout.fillWidth: true
+                highlighted: true
+                primaryColor: Theme.categoryAction
                 enabled: root.selectedCandidate() !== null && root.selectedCandidate().available === true
                          && (root.targetPaths.length <= 1 || root.selectedCandidate().supportsMultipleFiles === true)
                 onClicked: root.launchSelected()

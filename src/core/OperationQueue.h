@@ -60,6 +60,7 @@ public:
         QStringList sources;
         QString destination;
         bool administrator = false;
+        QStringList explicitDestinations;
     };
 
     struct OperationResult {
@@ -96,6 +97,7 @@ public:
     bool remoteQuotaNoticeVisible() const;
 
     Q_INVOKABLE void copyTo(const QStringList &sources, const QString &destination);
+    void copyToExactDestinations(const QStringList &sources, const QStringList &destinations);
     Q_INVOKABLE void copyToAsAdministrator(const QStringList &sources, const QString &destination);
     Q_INVOKABLE void createFolderAsAdministrator(const QString &destination, const QString &name);
     Q_INVOKABLE void duplicateInPlace(const QStringList &sources, const QString &destinationHint = {});
@@ -137,6 +139,8 @@ signals:
     void remoteQuotaNoticeVisibleChanged();
     void operationStarted(OperationQueue::Type type, const QStringList &sources, const QString &destination);
     void operationFinished(OperationQueue::Type type, const QStringList &sources, const QString &destination);
+    void operationFinishedDetailed(OperationQueue::Type type, const QStringList &sources, const QString &destination,
+                                   int succeededCount, int failedCount, const QStringList &failedPaths, bool aborted);
     void administratorOperationSucceeded();
     void conflictDetected(const QString &source, const QString &destination,
                           qint64 sourceSize, const QDateTime &sourceModified,
@@ -171,7 +175,8 @@ private:
                   const QString &destinationPath,
                   qint64 totalBytes,
                   qint64 &copiedBytes,
-                  Type labelType = Type::Copy);
+                  Type labelType = Type::Copy,
+                  bool replaceExactDestination = false);
     void copyPathAsAdministrator(const QString &sourcePath,
                                  const QString &destinationPath,
                                  qint64 totalBytes,

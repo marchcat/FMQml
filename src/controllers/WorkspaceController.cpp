@@ -787,6 +787,7 @@ FilePanelController *WorkspaceController::panelForPath(const QString &path)
 
 void WorkspaceController::recordOperationHistory(OperationQueue::Type type, const QStringList &sources, const QString &destination)
 {
+    if (destination.isEmpty()) return;
     HistoryAction::Type historyType;
     switch (type) {
     case OperationQueue::Type::Copy:

@@ -24,6 +24,7 @@ Item {
     property var archivePasswordDialog: null
     property var diskUsageDialog: null
     property var fileSearchDialog: null
+    property var folderCompareDialog: null
     property var batchRenameDialog: null
     property var checksumDialog: null
     property var debugInformationDialog: null
@@ -108,6 +109,10 @@ Item {
         if (!root.fileSearchDialog) root.fileSearchDialog = fileSearchDialogComponent.createObject(root)
         return root.fileSearchDialog
     }
+    function ensureFolderCompareDialog() {
+        if (!root.folderCompareDialog) root.folderCompareDialog = folderCompareDialogComponent.createObject(root)
+        return root.folderCompareDialog
+    }
 
     function ensureBatchRenameDialog() {
         if (!root.batchRenameDialog) root.batchRenameDialog = batchRenameDialogComponent.createObject(root)
@@ -153,6 +158,7 @@ Item {
                                                  || root.isOpen(root.deleteConfirmDialog)
                                                  || root.isOpen(root.diskUsageDialog)
                                                  || root.isOpen(root.fileSearchDialog)
+                                                 || root.isOpen(root.folderCompareDialog)
                                                  || root.isOpen(root.batchRenameDialog)
                                                  || root.isOpen(root.checksumDialog)
                                                  || root.isOpen(root.debugInformationDialog)
@@ -415,6 +421,9 @@ Item {
         root.searchReturnAvailable = false
         root.ensureFileSearchDialog().openFor(path, includeHidden === true)
     }
+    function openFolderCompare(leftPath, rightPath) {
+        if (leftPath && rightPath) root.ensureFolderCompareDialog().openFor(leftPath, rightPath)
+    }
 
     function openNestedArchive(controller, path, displayName, sizeText) {
         root.ensureNestedArchiveDialog().openFor(controller, path, displayName || "", sizeText || "")
@@ -604,6 +613,10 @@ Item {
                 root.searchReturnAvailable = false
             }
         }
+    }
+    Component {
+        id: folderCompareDialogComponent
+        FolderCompareDialog { appRoot: root.appRoot }
     }
 
     Component {

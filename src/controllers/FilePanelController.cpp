@@ -2263,6 +2263,20 @@ void FilePanelController::openItem(int row)
             return;
         }
 
+        const auto preferredCandidate = openWithService().effectiveCandidate(path);
+        if (preferredCandidate && preferredCandidate->fmDefault) {
+            const OpenWithResult openWithResult = openWithService().openWith(path, preferredCandidate->id);
+            if (!openWithResult.ok) {
+                setStatusMessage(openWithResult.message.isEmpty()
+                                     ? QStringLiteral("Could not open file.")
+                                     : openWithResult.message);
+                setLastError(openWithErrorInfo(openWithResult, path));
+            } else {
+                setLastError({});
+            }
+            return;
+        }
+
         const LaunchService::LaunchResult launchResult = LaunchService::openPath(path);
         if (!launchResult.ok) {
             setStatusMessage(launchResult.message.isEmpty()

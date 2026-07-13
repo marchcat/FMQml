@@ -66,6 +66,8 @@ public:
 
     Q_INVOKABLE QVariantMap workspaceState() const;
     Q_INVOKABLE void saveWorkspaceState(const QVariantMap &state);
+    Q_INVOKABLE QVariantMap folderComparePreferences() const;
+    Q_INVOKABLE void saveFolderComparePreferences(const QVariantMap &preferences);
     Q_INVOKABLE QString safeFolderPath(const QString &path) const;
     Q_INVOKABLE QVariantMap sanitizedWindowGeometry(const QVariantMap &state,
                                                     int fallbackWidth,

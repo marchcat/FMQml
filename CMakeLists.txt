@@ -166,6 +166,8 @@ qt_add_executable(fm
     src/models/DiskUsageModel.h
     src/models/FileSearchModel.cpp
     src/models/FileSearchModel.h
+    src/models/FolderCompareModel.cpp
+    src/models/FolderCompareModel.h
     src/models/FavoritesModel.cpp
     src/models/FavoritesModel.h
     src/models/TreeModel.cpp
@@ -176,6 +178,8 @@ qt_add_executable(fm
     src/controllers/FilePanelController.h
     src/controllers/FileSearchController.cpp
     src/controllers/FileSearchController.h
+    src/controllers/FolderCompareController.cpp
+    src/controllers/FolderCompareController.h
     src/controllers/PluginActionController.cpp
     src/controllers/PluginActionController.h
     src/controllers/DiskUsageController.cpp
@@ -215,6 +219,8 @@ qt_add_executable(fm
     src/core/DiskUsageScanner.h
     src/core/FileSearchScanner.cpp
     src/core/FileSearchScanner.h
+    src/core/FolderCompareScanner.cpp
+    src/core/FolderCompareScanner.h
     src/core/QtDirectoryChangeWatcher.cpp
     src/core/QtDirectoryChangeWatcher.h
     src/core/WinDirectoryChangeWatcher.cpp
@@ -366,6 +372,7 @@ set(MY_QML_FILES
     qml/components/PropertiesDialog.qml
     qml/components/ProviderPropertiesOverlay.qml
     qml/components/FileSearchDialog.qml
+    qml/components/FolderCompareDialog.qml
     qml/components/SettingsDialog.qml
     qml/components/SteamProtonLaunchDialog.qml
     qml/components/FontSelectorPopup.qml
@@ -493,6 +500,7 @@ qt_add_qml_module(fm
         src/controllers/AppSettingsController.h
         src/controllers/FilePanelController.h
         src/controllers/FileSearchController.h
+        src/controllers/FolderCompareController.h
         src/controllers/PluginActionController.h
         src/controllers/DiskUsageController.h
         src/controllers/FavoritesController.h
@@ -652,6 +660,7 @@ qt_add_qml_module(fm
         qml/assets/toolbar-next/eye.svg
         qml/assets/toolbar-next/eye-off.svg
         qml/assets/toolbar-next/folder-plus.svg
+        qml/assets/toolbar-next/folder-compare.svg
         qml/assets/toolbar-next/funnel.svg
         qml/assets/toolbar-next/info.svg
         qml/assets/toolbar-next/layout-grid.svg
@@ -814,6 +823,14 @@ if(UNIX AND NOT APPLE)
     target_sources(fm PRIVATE
         src/core/LinuxFileEnumerator.cpp
         src/core/LinuxFileEnumerator.h
+        src/core/ArchiveSupport.cpp
+        src/core/ArchiveSupport.h
+        src/core/DriveUtils.cpp
+        src/core/DriveUtils.h
+        src/core/LocalFileBadgeResolver.cpp
+        src/core/LocalFileBadgeResolver.h
+        src/core/LocalMountPointIndex.cpp
+        src/core/LocalMountPointIndex.h
         src/core/LinuxDeviceMonitor.cpp
         src/core/LinuxDeviceMonitor.h
         src/core/LinuxDirectoryChangeWatcher.cpp
@@ -1314,6 +1331,27 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(open_with_service_test PRIVATE src/core src/platform/openwith)
     target_link_libraries(open_with_service_test PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME open_with_service_test COMMAND open_with_service_test)
+
+    add_executable(folder_compare_scanner_test
+        tests/core/FolderCompareScannerTest.cpp
+        src/core/FolderCompareScanner.cpp
+        src/core/FolderCompareScanner.h
+        src/models/FolderCompareModel.cpp
+        src/models/FolderCompareModel.h
+        src/core/LinuxFileEnumerator.cpp
+        src/core/LinuxFileEnumerator.h
+        src/core/DriveUtils.cpp
+        src/core/DriveUtils.h
+        src/core/ArchiveSupport.cpp
+        src/core/ArchiveSupport.h
+        src/core/LocalFileBadgeResolver.cpp
+        src/core/LocalFileBadgeResolver.h
+        src/core/LocalMountPointIndex.cpp
+        src/core/LocalMountPointIndex.h
+    )
+    target_include_directories(folder_compare_scanner_test PRIVATE src/core src/models)
+    target_link_libraries(folder_compare_scanner_test PRIVATE Qt6::Core)
+    add_test(NAME folder_compare_scanner_test COMMAND folder_compare_scanner_test)
 
     add_executable(linux_admin_broker_test
         tests/core/LinuxAdminBrokerTest.cpp

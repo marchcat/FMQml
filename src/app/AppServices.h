@@ -8,6 +8,7 @@
 #include "../controllers/DiskUsageController.h"
 #include "../controllers/FavoritesController.h"
 #include "../controllers/FileSearchController.h"
+#include "../controllers/FolderCompareController.h"
 #include "../controllers/PluginActionController.h"
 #include "../controllers/ProviderPropertiesController.h"
 #include "../controllers/PropertiesController.h"
@@ -33,6 +34,7 @@ public:
     SystemInfoProvider *systemInfo();
     DiskUsageController *diskUsage();
     FileSearchController *fileSearch();
+    FolderCompareController *folderCompare();
     AppSettingsController *settings();
     AdminController *admin();
     FavoritesController *favorites();
@@ -60,6 +62,7 @@ private:
     SystemInfoProvider m_systemInfo;
     DiskUsageController m_diskUsage;
     FileSearchController m_fileSearch;
+    FolderCompareController m_folderCompare;
     AppSettingsController m_settings;
     AdminController m_admin;
     FavoritesController m_favorites;

@@ -16,7 +16,7 @@ LinuxAdminPolicy::Decision deny(const QString &code, const QString &message, con
     return {false, code, message, path};
 }
 
-QString normalizedLocalPath(const QString &path)
+QString adminPolicyNormalizedLocalPath(const QString &path)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(path));
 }
@@ -53,7 +53,7 @@ LinuxAdminPolicy::Decision validateLocalPathShape(const QString &path, const QSt
         return deny(QStringLiteral("invalid-path"), QStringLiteral("%1 path must not point inside an archive").arg(role), path);
     }
 
-    const QString normalized = normalizedLocalPath(path);
+    const QString normalized = adminPolicyNormalizedLocalPath(path);
     if (!QFileInfo(normalized).isAbsolute()) {
         return deny(QStringLiteral("invalid-path"), QStringLiteral("%1 path must be absolute").arg(role), path);
     }
@@ -70,7 +70,7 @@ LinuxAdminPolicy::Decision validateRegularSource(const QString &sourcePath)
         return shape;
     }
 
-    const QFileInfo info(normalizedLocalPath(sourcePath));
+    const QFileInfo info(adminPolicyNormalizedLocalPath(sourcePath));
     if (info.isSymLink()) {
         return deny(QStringLiteral("symlink-policy-denied"), QStringLiteral("Source symlinks are not supported for administrator operations"), sourcePath);
     }
@@ -87,7 +87,7 @@ LinuxAdminPolicy::Decision validateDeleteSource(const QString &sourcePath)
         return shape;
     }
 
-    const QFileInfo info(normalizedLocalPath(sourcePath));
+    const QFileInfo info(adminPolicyNormalizedLocalPath(sourcePath));
     if (info.isSymLink()) {
         return deny(QStringLiteral("symlink-policy-denied"), QStringLiteral("Source symlinks are not supported for administrator operations"), sourcePath);
     }
@@ -107,7 +107,7 @@ LinuxAdminPolicy::Decision validatePermissionTarget(const QString &sourcePath)
         return shape;
     }
 
-    const QFileInfo info(normalizedLocalPath(sourcePath));
+    const QFileInfo info(adminPolicyNormalizedLocalPath(sourcePath));
     if (info.isSymLink()) {
         return deny(QStringLiteral("symlink-policy-denied"), QStringLiteral("Symlinks are not supported for permission changes"), sourcePath);
     }
@@ -124,7 +124,7 @@ LinuxAdminPolicy::Decision validateDestination(const QString &destinationPath, b
         return shape;
     }
 
-    const QString normalized = normalizedLocalPath(destinationPath);
+    const QString normalized = adminPolicyNormalizedLocalPath(destinationPath);
     const QFileInfo destinationInfo(normalized);
     if (rejectExistingSymlink && destinationInfo.isSymLink()) {
         return deny(QStringLiteral("symlink-policy-denied"), QStringLiteral("Destination symlinks are not supported for administrator operations"), normalized);
@@ -150,8 +150,8 @@ LinuxAdminPolicy::Decision validateRenameDestination(const QString &sourcePath, 
         return destination;
     }
 
-    const QString normalizedSource = normalizedLocalPath(sourcePath);
-    const QString normalizedDestination = normalizedLocalPath(destinationPath);
+    const QString normalizedSource = adminPolicyNormalizedLocalPath(sourcePath);
+    const QString normalizedDestination = adminPolicyNormalizedLocalPath(destinationPath);
     if (QFileInfo(normalizedSource).absolutePath() != QFileInfo(normalizedDestination).absolutePath()) {
         return deny(QStringLiteral("invalid-path"), QStringLiteral("Administrator rename must stay in the same folder"), normalizedDestination);
     }

@@ -48,6 +48,7 @@ QtObject {
     property var openSettingsDataFolder
     property var openDiskUsage
     property var openFileSearch
+    property var openFolderCompare
     property var resetSavedWorkspaceState
     property var resetCommandUsageStats
     property var relaunchAsAdmin
@@ -1223,6 +1224,17 @@ QtObject {
                 return ""
             },
             run: function() { if (root.openFileSearch) root.openFileSearch() }
+        },
+        {
+            id: "tools.folderCompare",
+            title: "Compare panel folders",
+            subtitle: "Read-only comparison of the left and right panel folders",
+            category: "Tools",
+            shortcut: "",
+            keywords: ["compare", "diff", "folders", "sync"],
+            enabled: function() { return root.workspaceCommandsEnabled && root.workspaceController && root.workspaceController.splitEnabled },
+            disabledReason: function() { return root.workspaceController && !root.workspaceController.splitEnabled ? "Split view is required" : "Overlays are open" },
+            run: function() { if (root.openFolderCompare) root.openFolderCompare() }
         },
         {
             id: "settings.open",
