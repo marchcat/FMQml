@@ -38,8 +38,11 @@ using OperationQueuePrivate::isDescendantPath;
 
 #ifdef Q_OS_LINUX
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <cerrno>
+#include <cstring>
 #endif
 
 namespace {
@@ -47,6 +50,40 @@ constexpr qint64 DirectArchiveExtractThreshold = 64 * 1024 * 1024;
 constexpr qint64 CopyProgressUpdateIntervalMs = 100;
 constexpr qint64 LinuxCrossFilesystemCopyBufferSize = 1 * 1024 * 1024;
 constexpr qint64 LinuxCrossFilesystemCopyCacheWindow = 32 * 1024 * 1024;
+
+bool preserveLocalModificationTime(const QString &sourcePath, const QString &destinationPath, QString *error)
+{
+#ifdef Q_OS_LINUX
+    struct stat sourceStat {};
+    const QByteArray sourceBytes = QFile::encodeName(sourcePath);
+    if (::stat(sourceBytes.constData(), &sourceStat) != 0) {
+        if (error) {
+            *error = QString::fromLocal8Bit(std::strerror(errno));
+        }
+        return false;
+    }
+    struct timespec times[2] = {{0, UTIME_OMIT}, sourceStat.st_mtim};
+    const QByteArray destinationBytes = QFile::encodeName(destinationPath);
+    if (::utimensat(AT_FDCWD, destinationBytes.constData(), times, 0) != 0) {
+        if (error) {
+            *error = QString::fromLocal8Bit(std::strerror(errno));
+        }
+        return false;
+    }
+    return true;
+#else
+    QFile destination(destinationPath);
+    const QDateTime modificationTime = QFileInfo(sourcePath).lastModified();
+    const bool ok = modificationTime.isValid()
+        && destination.open(QIODevice::ReadWrite)
+        && destination.setFileTime(modificationTime, QFileDevice::FileModificationTime);
+    if (!ok && error) {
+        *error = destination.errorString();
+    }
+    destination.close();
+    return ok;
+#endif
+}
 }
 
 
@@ -1156,21 +1193,20 @@ void OperationQueue::copyPath(const QString &sourcePath,
                                              .arg(targetPath, error)
                                              .toStdString());
             }
-            if (srcProvider->scheme() == QLatin1String("file")
-                && destProvider->scheme() == QLatin1String("file")
-                && !destinationFile->setFileTime(QFileInfo(frame.sourcePath).lastModified(),
-                                                 QFileDevice::FileModificationTime)) {
-                const QString error = destinationFile->errorString();
-                destination->close();
-                source->close();
-                destProvider->removePath(tempPath);
-                throw std::runtime_error(QStringLiteral("Cannot preserve modification time for %1 (%2)")
-                                             .arg(targetPath, error)
-                                             .toStdString());
-            }
         }
         destination->close();
         source->close();
+
+        if (srcProvider->scheme() == QLatin1String("file")
+            && destProvider->scheme() == QLatin1String("file")) {
+            QString timestampError;
+            if (!preserveLocalModificationTime(frame.sourcePath, tempPath, &timestampError)) {
+                destProvider->removePath(tempPath);
+                throw std::runtime_error(QStringLiteral("Cannot preserve modification time for %1 (%2)")
+                                             .arg(targetPath, timestampError)
+                                             .toStdString());
+            }
+        }
 
         if (m_abort) {
             destProvider->removePath(tempPath);

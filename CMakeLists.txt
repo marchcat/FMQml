@@ -257,6 +257,11 @@ qt_add_executable(fm
     src/core/WinDirectoryChangeWatcher.cpp
     src/core/WinDirectoryChangeWatcher.h
     src/core/LocalFileProvider.cpp
+    src/core/LocalFileProviderMetadata.inc
+    src/core/LocalFileProviderMutations.inc
+    src/core/LocalFileProviderScan.inc
+    src/core/LocalFileProviderSupport.inc
+    src/core/LocalFileProviderTransfers.inc
     src/core/LocalFileProvider.h
     src/core/ArchiveSupport.cpp
     src/core/ArchiveSupport.h
@@ -480,7 +485,12 @@ set(MY_QML_FILES
     qml/components/PreviewPane.qml
     qml/components/QuickLook.qml
     qml/components/ThemeEditorDialog.qml
+    qml/components/ThemeEditorModePill.qml
+    qml/components/ThemeEditorPreviewMarkerChip.qml
+    qml/components/ThemeEditorPreviewSection.qml
     qml/components/ThemeEditorPreviewCard.qml
+    qml/components/ThemeEditorSaveTargetSection.qml
+    qml/components/ThemeEditorTokenRow.qml
     qml/components/ThemeSchemeCard.qml
     qml/components/ThemeSelectorMenu.qml
     qml/components/ThemedContextMenu.qml

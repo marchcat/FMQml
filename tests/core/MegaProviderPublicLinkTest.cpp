@@ -573,6 +573,10 @@ int main(int argc, char **argv)
         if (QFile::exists(destination + QStringLiteral(".part"))) {
             return fail(QStringLiteral("successful fake download should remove .part file"));
         }
+        if (!QFileInfo(destination).lastModified().isValid()
+            || QFileInfo(destination).lastModified().toSecsSinceEpoch() <= 0) {
+            return fail(QStringLiteral("MEGA download must not leave an unknown timestamp as Unix epoch zero"));
+        }
     }
 
 

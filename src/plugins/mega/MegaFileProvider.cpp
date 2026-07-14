@@ -23,6 +23,22 @@
 
 using namespace MegaProviderRuntime;
 
+namespace {
+void applyMegaDownloadModificationTime(const QString &sourcePath, const QString &destinationFilePath)
+{
+    const std::optional<FileEntry> cachedEntry = MegaCache::getEntry(MegaPath::normalizedPath(sourcePath));
+    const QDateTime modificationTime = cachedEntry && cachedEntry->modified.isValid()
+            && cachedEntry->modified.toSecsSinceEpoch() > 0
+        ? cachedEntry->modified
+        : QDateTime::currentDateTimeUtc();
+    QFile downloadedFile(destinationFilePath);
+    if (downloadedFile.open(QIODevice::ReadWrite)) {
+        downloadedFile.setFileTime(modificationTime, QFileDevice::FileModificationTime);
+        downloadedFile.close();
+    }
+}
+} // namespace
+
 class MegaFileProvider final : public FileProvider
 {
     Q_OBJECT
@@ -761,6 +777,8 @@ public:
             return false;
         }
 
+        applyMegaDownloadModificationTime(normalized, destinationFilePath);
+
         if (megaProviderTimingEnabled()) {
             qWarning() << "[MegaFileProvider] copyToLocalFile success"
                        << "request:" << downloadRequestId
@@ -1038,6 +1056,7 @@ public:
                 }
                 return false;
             }
+            applyMegaDownloadModificationTime(download.sourcePath, download.item.destinationFilePath);
             ++successCount;
         }
 

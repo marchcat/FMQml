@@ -17,6 +17,7 @@ using namespace mega;
 #include <QMetaObject>
 #include <QSet>
 #include <QStandardPaths>
+#include <QTimeZone>
 
 #include <algorithm>
 
@@ -121,6 +122,22 @@ int megaUploadConnectionLimit()
         return DefaultMegaUploadConnectionLimit;
     }
     return std::clamp(requested, 1, MaxMegaUploadConnectionLimit);
+}
+
+QDateTime megaNodeModificationTime(MegaNode *node)
+{
+    if (!node) {
+        return QDateTime::currentDateTimeUtc();
+    }
+    const int64_t modificationTime = node->getModificationTime();
+    if (modificationTime > 0) {
+        return QDateTime::fromSecsSinceEpoch(modificationTime, QTimeZone::UTC);
+    }
+    const int64_t creationTime = node->getCreationTime();
+    if (creationTime > 0) {
+        return QDateTime::fromSecsSinceEpoch(creationTime, QTimeZone::UTC);
+    }
+    return QDateTime::currentDateTimeUtc();
 }
 
 QString megaSdkStateRoot()
@@ -1559,7 +1576,7 @@ void MegaClient::traverseAndCacheAccount(MegaApi *api, MegaNode *node, const QSt
     const int suffixIndex = entry.name.lastIndexOf(QLatin1Char('.'));
     entry.suffix = (!entry.isDirectory && suffixIndex >= 0) ? entry.name.mid(suffixIndex + 1).toLower() : QString{};
     entry.isReadOnly = false;
-    entry.modified = QDateTime::fromSecsSinceEpoch(node->getModificationTime());
+    entry.modified = megaNodeModificationTime(node);
     entry.iconName = entry.isDirectory ? QStringLiteral("folder") : QString{};
     entry.path = virtualPath;
     MegaPresentation::enrichEntryPresentation(entry);
@@ -1631,7 +1648,7 @@ void MegaClient::traverseAndCache(MegaApi *api, MegaNode *node, const QString &p
     };
     entry.isImage = !entry.isDirectory && imageSuffixes.contains(entry.suffix);
     entry.hasThumbnail = !entry.isDirectory && previewSuffixes.contains(entry.suffix);
-    entry.modified = QDateTime::fromSecsSinceEpoch(node->getModificationTime());
+    entry.modified = megaNodeModificationTime(node);
     entry.iconName = entry.isDirectory ? QStringLiteral("folder") : QString{};
 
     QString virtualPath;
