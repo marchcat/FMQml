@@ -1228,6 +1228,12 @@ if(HAS_MEGA_PLUGIN)
         src/plugins/mega/MegaAuth.h
         src/plugins/mega/MegaFileProviderPlugin.cpp
         src/plugins/mega/MegaFileProviderPlugin.h
+        src/plugins/mega/MegaFileProvider.cpp
+        src/plugins/mega/MegaFileProvider.h
+        src/plugins/mega/MegaProviderActions.cpp
+        src/plugins/mega/MegaProviderActions.h
+        src/plugins/mega/MegaProviderRuntime.cpp
+        src/plugins/mega/MegaProviderRuntime.h
         src/plugins/mega/MegaPath.cpp
         src/plugins/mega/MegaPath.h
         src/plugins/mega/MegaPresentation.cpp
@@ -1632,6 +1638,12 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
             src/plugins/mega/MegaAuth.h
             src/plugins/mega/MegaFileProviderPlugin.cpp
             src/plugins/mega/MegaFileProviderPlugin.h
+            src/plugins/mega/MegaFileProvider.cpp
+            src/plugins/mega/MegaFileProvider.h
+            src/plugins/mega/MegaProviderActions.cpp
+            src/plugins/mega/MegaProviderActions.h
+            src/plugins/mega/MegaProviderRuntime.cpp
+            src/plugins/mega/MegaProviderRuntime.h
             src/plugins/mega/MegaClientInterface.h
             src/plugins/mega/MegaPath.cpp
             src/plugins/mega/MegaPath.h

@@ -1,0 +1,1656 @@
+#include "MegaFileProvider.h"
+#include "MegaProviderRuntime.h"
+#include "MegaPath.h"
+#include "MegaCache.h"
+#include "MegaClientInterface.h"
+#include "MegaPresentation.h"
+#include "FileProvider.h"
+#include "CleanupSubsystem.h"
+
+#include <QDateTime>
+#include <QCryptographicHash>
+#include <QDebug>
+#include <QDir>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QFileInfo>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QTemporaryFile>
+#include <QWaitCondition>
+#include <algorithm>
+#include <memory>
+
+using namespace MegaProviderRuntime;
+
+class MegaFileProvider final : public FileProvider
+{
+    Q_OBJECT
+
+public:
+    explicit MegaFileProvider(QObject *parent = nullptr)
+        : FileProvider(parent)
+        , m_currentGeneration(0)
+        , m_pendingScanGeneration(0)
+    {
+        connect(&megaClient(), &MegaClientInterface::publicLinkLoaded, this, &MegaFileProvider::onPublicLinkLoaded);
+        connect(&megaClient(), &MegaClientInterface::accountNodesLoaded, this, &MegaFileProvider::onAccountNodesLoaded);
+        connect(&megaClient(), &MegaClientInterface::accountNodesChanged, this, &MegaFileProvider::onAccountNodesChanged);
+    }
+
+    ~MegaFileProvider() override = default;
+
+    QString scheme() const override
+    {
+        return QStringLiteral("mega");
+    }
+
+    bool canHandle(const QString &path) const override
+    {
+        if (MegaPath::isSchemePath(path)) {
+            return true;
+        }
+        QString linkId, linkKey;
+        bool isFolder = false;
+        return !MegaPath::fromUserInput(path, linkId, linkKey, isFolder).isEmpty();
+    }
+
+    Capabilities capabilities() const override
+    {
+        return Browse | ReadMetadata | Create | Rename | Remove | Transfer;
+    }
+
+    bool canCreateChildren(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        return !MegaPath::isLinkPath(normalized) && megaClient().isAccountAuthenticated();
+    }
+
+    bool canRemovePath(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        return normalized != MegaPath::Root
+            && !MegaPath::isLinkPath(normalized)
+            && megaClient().isAccountAuthenticated();
+    }
+
+    bool isReadOnlyContainer(const QString &path) const override
+    {
+        return MegaPath::isLinkPath(MegaPath::normalizedPath(path)) || !megaClient().isAccountAuthenticated();
+    }
+
+    void scan(const QString &path) override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        m_currentPath = normalized;
+        m_currentGeneration++;
+
+        emit started();
+
+        if (!MegaPath::isLinkPath(normalized)) {
+            if (MegaCache::getChildren(normalized).has_value()) {
+                if (megaProviderTimingEnabled()) {
+                    qDebug() << "[MegaTiming] provider scan cache-hit"
+                             << "path:" << normalized
+                             << "generation:" << m_currentGeneration;
+                }
+                emitChildEntries(normalized, m_currentGeneration);
+                emit finished(normalized, true, m_currentGeneration);
+                return;
+            }
+
+            if (!megaClient().isAccountAuthenticated()) {
+                emit finished(normalized, false, m_currentGeneration, QStringLiteral("MEGA account is not signed in"));
+                return;
+            }
+
+            m_pendingScanPath = normalized;
+            m_pendingScanGeneration = m_currentGeneration;
+            m_pendingScanStartMs = QDateTime::currentMSecsSinceEpoch();
+            if (megaProviderTimingEnabled()) {
+                qDebug() << "[MegaTiming] provider scan sdk-wait"
+                         << "path:" << normalized
+                         << "generation:" << m_currentGeneration;
+            }
+            if (megaClient().loadAccountRoot() != 0) {
+                m_pendingScanPath.clear();
+                m_pendingScanStartMs = 0;
+                emit finished(normalized, false, m_currentGeneration, QStringLiteral("Could not load MEGA account root"));
+            }
+            return;
+        }
+
+        const QString linkId = MegaPath::linkIdForPath(normalized);
+
+        // If the path is already cached
+        if (MegaCache::getChildren(normalized).has_value()) {
+            emitChildEntries(normalized, m_currentGeneration);
+            emit finished(normalized, true, m_currentGeneration);
+            return;
+        }
+
+        // If the root of this link is loaded but this sub-path is not cached -> not found
+        const QString rootPath = QStringLiteral("mega://link/") + linkId;
+        if (MegaCache::getEntry(rootPath).has_value()) {
+            emit finished(normalized, false, m_currentGeneration, QStringLiteral("Path not found"));
+            return;
+        }
+
+        // Otherwise, fetch from SDK
+        m_pendingScanPath = normalized;
+        m_pendingScanGeneration = m_currentGeneration;
+        m_pendingScanStartMs = QDateTime::currentMSecsSinceEpoch();
+
+        megaClient().getPublicNode(linkId);
+    }
+
+    void refresh(const QString &path) override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (MegaPath::isLinkPath(normalized) || megaClient().hasFreshAccountNodes()) {
+            if (megaProviderTimingEnabled()) {
+                qDebug() << "[MegaTiming] provider refresh delegated-scan"
+                         << "path:" << normalized;
+            }
+            scan(normalized);
+            return;
+        }
+
+        m_currentPath = normalized;
+        m_currentGeneration++;
+        emit started();
+
+        if (!megaClient().isAccountAuthenticated()) {
+            emit finished(normalized, false, m_currentGeneration, QStringLiteral("MEGA account is not signed in"));
+            return;
+        }
+
+        m_pendingScanPath = normalized;
+        m_pendingScanGeneration = m_currentGeneration;
+        m_pendingScanStartMs = QDateTime::currentMSecsSinceEpoch();
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider refresh sdk-wait"
+                     << "path:" << normalized
+                     << "generation:" << m_currentGeneration;
+        }
+        if (megaClient().loadAccountRoot() != 0) {
+            m_pendingScanPath.clear();
+            m_pendingScanStartMs = 0;
+            emit finished(normalized, false, m_currentGeneration, QStringLiteral("Could not load MEGA account root"));
+        }
+    }
+
+    void cancel() override
+    {
+        megaClient().cancelAll();
+    }
+
+    void cacheUploadedLocalFile(const QString &sourceFilePath, const QString &destinationPath) const
+    {
+        const QFileInfo sourceInfo(sourceFilePath);
+        const QString normalized = MegaPath::normalizedPath(destinationPath);
+        const QString parent = MegaPath::parentPath(normalized);
+
+        FileEntry entry;
+        entry.name = MegaPath::fallbackFileNameForPath(normalized);
+        entry.path = normalized;
+        entry.isDirectory = false;
+        entry.isReadOnly = false;
+        entry.size = sourceInfo.size();
+        const int suffixIndex = entry.name.lastIndexOf(QLatin1Char('.'));
+        entry.suffix = suffixIndex >= 0 ? entry.name.mid(suffixIndex + 1).toLower() : QString{};
+        entry.modified = sourceInfo.lastModified();
+        entry.created = sourceInfo.birthTime().isValid() ? sourceInfo.birthTime() : sourceInfo.lastModified();
+        entry.iconName = {};
+        MegaPresentation::enrichEntryPresentation(entry);
+        MegaCache::cacheEntry(normalized, entry, {});
+        MegaCache::appendChild(parent, normalized);
+    }
+
+    void setShowHidden(bool show) override
+    {
+        Q_UNUSED(show)
+    }
+
+    bool isRunning() const override
+    {
+        return !m_pendingScanPath.isEmpty();
+    }
+
+    QString currentPath() const override
+    {
+        return m_currentPath;
+    }
+
+    int currentGeneration() const override
+    {
+        return m_currentGeneration;
+    }
+
+    bool pathExists(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        return normalized == MegaPath::Root || MegaCache::getEntry(normalized).has_value();
+    }
+
+    bool isDirectory(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        const auto entry = MegaCache::getEntry(normalized);
+        return normalized == MegaPath::Root || (entry.has_value() && entry->isDirectory);
+    }
+
+    bool isSymLink(const QString &path) const override
+    {
+        Q_UNUSED(path)
+        return false;
+    }
+
+    QString normalizedPath(const QString &path) const override
+    {
+        return MegaPath::normalizedPath(path);
+    }
+
+    QString fileName(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (MegaPath::isLinkPath(normalized) && MegaPath::relativePathForPath(normalized).isEmpty()) {
+            const auto entry = MegaCache::getEntry(normalized);
+            const QString linkId = MegaPath::linkIdForPath(normalized);
+            if (entry && !entry->name.trimmed().isEmpty() && entry->name != linkId) {
+                return entry->name;
+            }
+            return QStringLiteral("MEGA Public Folder");
+        }
+        return MegaPath::fallbackFileNameForPath(normalized);
+    }
+
+    QString absolutePath(const QString &path) const override
+    {
+        return MegaPath::normalizedPath(path);
+    }
+
+    QString parentPath(const QString &path) const override
+    {
+        return MegaPath::parentPath(path);
+    }
+
+    QString childPath(const QString &parentPath, const QString &name) const override
+    {
+        return MegaPath::childPath(parentPath, name);
+    }
+
+    std::optional<FileEntry> entryInfo(const QString &path) const override
+    {
+        return MegaCache::getEntry(MegaPath::normalizedPath(path));
+    }
+
+    QString megaThumbnailCacheIdentity(const QString &normalized) const
+    {
+        const std::optional<FileEntry> entry = MegaCache::getEntry(normalized);
+        const std::optional<QString> handleStr = MegaCache::getMegaHandle(normalized);
+        if (!entry || entry->isDirectory || !handleStr || handleStr->isEmpty()) {
+            return {};
+        }
+        const QByteArray handleHash = QCryptographicHash::hash(handleStr->toUtf8(), QCryptographicHash::Sha1)
+                                          .toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals);
+        const QString modifiedIso = entry->modified.isValid()
+            ? entry->modified.toUTC().toString(Qt::ISODateWithMs)
+            : QString{};
+        QString identity = QStringLiteral("mega:%1:%2:%3:thumb")
+            .arg(QString::fromLatin1(handleHash), modifiedIso, QString::number(entry->size));
+        const QString repairedToken = repairedMegaThumbnailIdentityToken(normalized);
+        if (!repairedToken.isEmpty()) {
+            identity += QStringLiteral(":%1").arg(repairedToken);
+            if (megaThumbnailTraceEnabled()) {
+                qInfo().noquote()
+                    << "[MegaThumbnail] identity-repaired"
+                    << "path=" << normalized
+                    << "identity=" << identity;
+            }
+        }
+        return identity;
+    }
+
+    QString thumbnailCacheIdentity(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (normalized.isEmpty()) {
+            return {};
+        }
+        return megaThumbnailCacheIdentity(normalized);
+    }
+
+    ProviderThumbnailResult thumbnailForPath(const QString &path,
+                                            const QSize &requestedSize,
+                                            QString *error) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (megaThumbnailTraceEnabled()) {
+            qInfo().noquote()
+                << "[MegaThumbnail] request"
+                << "path=" << normalized
+                << "requested=" << QStringLiteral("%1x%2").arg(requestedSize.width()).arg(requestedSize.height());
+        }
+        if (normalized.isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("MEGA path is invalid");
+            }
+            return {};
+        }
+
+        const std::optional<FileEntry> entry = MegaCache::getEntry(normalized);
+        if (!entry || entry->isDirectory) {
+            if (error) {
+                *error = QStringLiteral("MEGA entry is not a file");
+            }
+            return {};
+        }
+
+        const std::optional<QString> handleStr = MegaCache::getMegaHandle(normalized);
+        if (!handleStr || handleStr->isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("MEGA node handle is not available for this entry");
+            }
+            return {};
+        }
+
+        const QString cacheIdentity = megaThumbnailCacheIdentity(normalized);
+        const QByteArray repairedBytes = repairedMegaThumbnailBytes(normalized);
+        if (!repairedBytes.isEmpty()) {
+            ProviderThumbnailResult repaired;
+            repaired.kind = ProviderThumbnailResult::Kind::EncodedBytes;
+            repaired.encodedBytes = repairedBytes;
+            repaired.mimeType = QStringLiteral("image/jpeg");
+            repaired.cacheIdentity = cacheIdentity;
+            return repaired;
+        }
+        if (megaThumbnailInCooldown()) {
+            if (megaThumbnailTraceEnabled()) {
+                qInfo().noquote() << "[MegaThumbnail] temporary-unavailable" << "path=" << normalized << "reason=cooldown";
+            }
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail requests are cooling down after a transient provider failure");
+            }
+            ProviderThumbnailResult unavailable;
+            unavailable.kind = ProviderThumbnailResult::Kind::TemporaryUnavailable;
+            unavailable.cacheIdentity = cacheIdentity;
+            return unavailable;
+        }
+
+        const QString stagingRoot = StagingLocationPolicy::resolveStagingParentDirectory(
+            QString(), normalized, QString(), true);
+        if (stagingRoot.isEmpty()) {
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail staging directory is not available");
+            }
+            ProviderThumbnailResult unavailable;
+            unavailable.kind = ProviderThumbnailResult::Kind::TemporaryUnavailable;
+            unavailable.cacheIdentity = cacheIdentity;
+            return unavailable;
+        }
+
+        const QString thumbDir = QDir(stagingRoot).filePath(QStringLiteral("mega-thumbnails"));
+        if (!QDir().mkpath(thumbDir)) {
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail staging directory could not be created");
+            }
+            ProviderThumbnailResult unavailable;
+            unavailable.kind = ProviderThumbnailResult::Kind::TemporaryUnavailable;
+            unavailable.cacheIdentity = cacheIdentity;
+            return unavailable;
+        }
+
+        QTemporaryFile tempFile(QDir(thumbDir).filePath(QStringLiteral("fm-mega-thumb-XXXXXX.jpg")));
+        tempFile.setAutoRemove(false);
+        if (!tempFile.open()) {
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail staging file could not be created");
+            }
+            ProviderThumbnailResult none;
+            none.cacheIdentity = cacheIdentity;
+            return none;
+        }
+        tempFile.close();
+
+        QString leaseId;
+        CleanupSubsystem::instance().registerArtifact(
+            CleanupArtifactKind::ThumbnailAdapter,
+            tempFile.fileName(),
+            thumbDir,
+            false,
+            &leaseId);
+
+        QString fetchError;
+        const bool allowPreviewFallback = requestedSize.width() >= 256 || requestedSize.height() >= 256;
+        if (megaThumbnailTraceEnabled()) {
+            qInfo().noquote()
+                << "[MegaThumbnail] sdk-fetch-start"
+                << "path=" << normalized
+                << "previewFallback=" << allowPreviewFallback
+                << "file=" << tempFile.fileName();
+        }
+        const bool ok = megaClient().getNodeThumbnail(normalized,
+                                                     tempFile.fileName(),
+                                                     allowPreviewFallback,
+                                                     8000,
+                                                     &fetchError);
+        if (!ok) {
+            if (megaThumbnailTraceEnabled()) {
+                qInfo().noquote()
+                    << "[MegaThumbnail] sdk-fetch-failed"
+                    << "path=" << normalized
+                    << "error=" << fetchError;
+            }
+            if (error) {
+                *error = fetchError;
+            }
+            if (leaseId.isEmpty()) {
+                QFile::remove(tempFile.fileName());
+            } else {
+                CleanupSubsystem::instance().scheduleDeleteOnFailure(leaseId);
+            }
+            if (fetchError.contains(QStringLiteral("timed out"), Qt::CaseInsensitive)
+                || fetchError.contains(QStringLiteral("quota"), Qt::CaseInsensitive)
+                || fetchError.contains(QStringLiteral("rate limit"), Qt::CaseInsensitive)
+                || fetchError.contains(QStringLiteral("temporarily unavailable"), Qt::CaseInsensitive)) {
+                startMegaThumbnailCooldown();
+                if (megaThumbnailTraceEnabled()) {
+                    qInfo().noquote()
+                        << "[MegaThumbnail] temporary-unavailable"
+                        << "path=" << normalized
+                        << "error=" << fetchError;
+                }
+                ProviderThumbnailResult unavailable;
+                unavailable.kind = ProviderThumbnailResult::Kind::TemporaryUnavailable;
+                unavailable.cacheIdentity = cacheIdentity;
+                return unavailable;
+            }
+            ProviderThumbnailResult none;
+            none.cacheIdentity = cacheIdentity;
+            return none;
+        }
+
+        QFile reader(tempFile.fileName());
+        if (!reader.open(QIODevice::ReadOnly)) {
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail file could not be read");
+            }
+            if (leaseId.isEmpty()) {
+                QFile::remove(tempFile.fileName());
+            } else {
+                CleanupSubsystem::instance().scheduleDeleteOnFailure(leaseId);
+            }
+            ProviderThumbnailResult none;
+            none.cacheIdentity = cacheIdentity;
+            return none;
+        }
+        const QByteArray bytes = reader.readAll();
+        reader.close();
+
+        if (leaseId.isEmpty()) {
+            QFile::remove(tempFile.fileName());
+        } else {
+            CleanupSubsystem::instance().scheduleDeleteOnFailure(leaseId);
+        }
+
+        if (bytes.isEmpty()) {
+            if (megaThumbnailTraceEnabled()) {
+                qInfo().noquote() << "[MegaThumbnail] sdk-fetch-empty" << "path=" << normalized;
+            }
+            if (error) {
+                *error = QStringLiteral("MEGA thumbnail file is empty");
+            }
+            ProviderThumbnailResult none;
+            none.cacheIdentity = cacheIdentity;
+            return none;
+        }
+
+        if (megaThumbnailTraceEnabled()) {
+            qInfo().noquote()
+                << "[MegaThumbnail] sdk-fetch-ok"
+                << "path=" << normalized
+                << "bytes=" << bytes.size();
+        }
+        ProviderThumbnailResult result;
+        result.kind = ProviderThumbnailResult::Kind::EncodedBytes;
+        result.encodedBytes = bytes;
+        result.mimeType = QStringLiteral("image/jpeg");
+        result.cacheIdentity = cacheIdentity;
+        return result;
+    }
+
+    bool ensureParentDirectory(const QString &path) const override
+    {
+        const QString parent = MegaPath::parentPath(path);
+        return !parent.isEmpty() && isDirectory(parent) && canCreateChildren(parent);
+    }
+
+    bool makePath(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        const QString parent = MegaPath::parentPath(normalized);
+        const QString name = MegaPath::fallbackFileNameForPath(normalized);
+        if (parent.isEmpty() || name.isEmpty()) {
+            return false;
+        }
+        QString createdPath;
+        return const_cast<MegaFileProvider *>(this)->createFolder(parent, name, &createdPath);
+    }
+
+    bool removePath(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (!canRemovePath(normalized)) {
+            return false;
+        }
+        QString error;
+        if (!waitForMegaMutation([normalized]() { return megaClient().startRemove(normalized); },
+                                 QStringLiteral("remove"),
+                                 normalized,
+                                 nullptr,
+                                 &error)) {
+            qWarning() << "[MegaFileProvider] removePath failed" << normalized << error;
+            return false;
+        }
+        MegaCache::removeChild(MegaPath::parentPath(normalized), normalized);
+        MegaCache::removeSubtree(normalized);
+        return true;
+    }
+
+    QStringList childPaths(const QString &path, bool includeHidden = true) const override
+    {
+        Q_UNUSED(includeHidden)
+        return MegaCache::getChildren(MegaPath::normalizedPath(path)).value_or(QStringList{});
+    }
+
+    bool movePath(const QString &sourcePath, const QString &destinationPath) const override
+    {
+        const QString source = MegaPath::normalizedPath(sourcePath);
+        const QString destination = MegaPath::normalizedPath(destinationPath);
+        if (!canRemovePath(source)
+            || MegaPath::isLinkPath(destination)
+            || destination == MegaPath::Root
+            || !megaClient().isAccountAuthenticated()) {
+            return false;
+        }
+        QString resultPath;
+        QString error;
+        if (!waitForMegaMutation([source, destination]() { return megaClient().startMove(source, destination); },
+                                 QStringLiteral("move"),
+                                 source,
+                                 &resultPath,
+                                 &error)) {
+            qWarning() << "[MegaFileProvider] movePath failed" << source << destination << error;
+            return false;
+        }
+        const QString resolvedDestination = resultPath.isEmpty() ? destination : MegaPath::normalizedPath(resultPath);
+        MegaCache::removeChild(MegaPath::parentPath(source), source);
+        MegaCache::appendChild(MegaPath::parentPath(resolvedDestination), resolvedDestination);
+        MegaCache::renameSubtree(source, resolvedDestination, MegaPath::fallbackFileNameForPath(resolvedDestination));
+        return true;
+    }
+
+    std::unique_ptr<QIODevice> openRead(const QString &path) const override
+    {
+        return openRead(path, {});
+    }
+
+    std::unique_ptr<QIODevice> openRead(const QString &path, const QString &stagingParentPath) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+
+        const std::optional<FileEntry> entry = MegaCache::getEntry(normalized);
+        if (entry && !entry->isDirectory && entry->size > MegaOpenReadFallbackLimitBytes) {
+            qWarning() << "[MegaFileProvider] openRead refused large fallback materialization"
+                       << "path:" << normalized
+                       << "size:" << entry->size
+                       << "limit:" << MegaOpenReadFallbackLimitBytes;
+            return nullptr;
+        }
+
+        const QString stagingRoot = megaOpenReadStagingRoot(stagingParentPath, normalized);
+        if (stagingRoot.isEmpty()) {
+            qWarning() << "[MegaFileProvider] openRead cannot resolve cleanup staging root"
+                       << "path:" << normalized
+                       << "stagingParent:" << stagingParentPath;
+            return nullptr;
+        }
+
+        QString templatePath = QDir(stagingRoot).filePath(QStringLiteral("mega-preview-XXXXXX"));
+        const QString suffix = QFileInfo(MegaPath::fallbackFileNameForPath(normalized)).suffix();
+        if (!suffix.isEmpty()) {
+            templatePath += QLatin1Char('.') + suffix;
+        }
+
+        auto tempFile = std::make_unique<CleanupManagedTemporaryFile>(templatePath);
+        if (!tempFile->open()) {
+            return nullptr;
+        }
+
+        const QString tempPath = tempFile->fileName();
+        tempFile->close();
+
+        QString leaseId;
+        CleanupSubsystem::instance().registerArtifact(
+            CleanupArtifactKind::RemotePreview,
+            tempPath,
+            stagingRoot,
+            false,
+            &leaseId);
+        tempFile->setCleanupLeaseId(leaseId);
+
+        if (!copyToLocalFile(normalized, tempPath, nullptr, nullptr)) {
+            if (!leaseId.isEmpty()) {
+                CleanupSubsystem::instance().scheduleDeleteOnFailure(leaseId);
+                tempFile->setCleanupLeaseId({});
+            }
+            return nullptr;
+        }
+
+        if (!tempFile->QFile::open(QIODevice::ReadOnly)) {
+            if (!leaseId.isEmpty()) {
+                CleanupSubsystem::instance().scheduleDeleteOnFailure(leaseId);
+                tempFile->setCleanupLeaseId({});
+            }
+            return nullptr;
+        }
+
+        return tempFile;
+    }
+
+    bool copyToLocalFile(const QString &sourcePath,
+                         const QString &destinationFilePath,
+                         const std::function<bool(qint64 processedBytes, qint64 totalBytes)> &progressCallback,
+                         QString *errorStr) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(sourcePath);
+
+        const QString partialPath = destinationFilePath + QStringLiteral(".part");
+        QFile::remove(partialPath);
+
+        QElapsedTimer elapsed;
+        elapsed.start();
+
+        QMutex waitMutex;
+        QWaitCondition waitCondition;
+        bool transferSuccess = false;
+        bool transferFinished = false;
+        QString transferError;
+        qint64 downloadRequestId = 0;
+
+        MegaClientInterface &client = megaClient();
+
+        QMetaObject::Connection progressConn = connect(&client, &MegaClientInterface::downloadProgress,
+            &client,
+            [&](qint64 requestId, const QString &path, qint64 processed, qint64 total) {
+                if ((downloadRequestId > 0 && requestId != downloadRequestId) || MegaPath::normalizedPath(path) != normalized) {
+                    return;
+                }
+
+
+                if (progressCallback && !progressCallback(processed, total)) {
+                    qWarning() << "[MegaFileProvider] copyToLocalFile progress callback cancelled"
+                               << "request:" << requestId
+                               << "source:" << normalized;
+                    megaClient().cancelAll();
+                }
+            }, Qt::DirectConnection);
+
+        QMetaObject::Connection finishedConn = connect(&client, &MegaClientInterface::downloadFinished,
+            &client,
+            [&](qint64 requestId, const QString &path, bool success, const QString &errorString) {
+                if ((downloadRequestId > 0 && requestId != downloadRequestId) || MegaPath::normalizedPath(path) != normalized) {
+                    return;
+                }
+
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    transferSuccess = success;
+                    transferFinished = true;
+                    transferError = errorString;
+                }
+
+                waitCondition.wakeAll();
+            }, Qt::DirectConnection);
+
+        downloadRequestId = client.startDownload(normalized, partialPath);
+
+        bool timedOut = false;
+        {
+            QMutexLocker waitLocker(&waitMutex);
+            if (!transferFinished) {
+                timedOut = !waitCondition.wait(&waitMutex, MegaSingleDownloadTimeoutMs);
+            }
+        }
+
+        disconnect(progressConn);
+        disconnect(finishedConn);
+
+        if (timedOut) {
+            transferError = QStringLiteral("MEGA download timed out");
+            qWarning() << "[MegaFileProvider] copyToLocalFile timeout"
+                       << "request:" << downloadRequestId
+                       << "source:" << normalized
+                       << "elapsedMs:" << elapsed.elapsed();
+            megaClient().cancelAll();
+        }
+
+        if (!transferFinished || !transferSuccess) {
+            qWarning() << "[MegaFileProvider] copyToLocalFile failed"
+                       << "request:" << downloadRequestId
+                       << "finished:" << transferFinished
+                       << "success:" << transferSuccess
+                       << "error:" << transferError
+                       << "partialExists:" << QFile::exists(partialPath)
+                       << "elapsedMs:" << elapsed.elapsed()
+                       << "source:" << normalized;
+            QFile::remove(partialPath);
+            if (errorStr) {
+                *errorStr = transferError.isEmpty() ? QStringLiteral("Unknown download error") : transferError;
+            }
+            return false;
+        }
+
+        QFile::remove(destinationFilePath);
+        if (!QFile::rename(partialPath, destinationFilePath)) {
+            QFile::remove(partialPath);
+            if (errorStr) {
+                *errorStr = QStringLiteral("Could not move MEGA download into place");
+            }
+            return false;
+        }
+
+        if (megaProviderTimingEnabled()) {
+            qWarning() << "[MegaFileProvider] copyToLocalFile success"
+                       << "request:" << downloadRequestId
+                       << "destination:" << destinationFilePath
+                       << "bytes:" << QFileInfo(destinationFilePath).size()
+                       << "elapsedMs:" << elapsed.elapsed();
+        }
+
+        return true;
+    }
+
+    bool supportsLocalFileBatchMaterialize() const override { return true; }
+
+    bool copyToLocalFiles(const QVector<LocalFileMaterializeItem> &items,
+                          const std::function<bool(const QString &currentSourcePath, qint64 processedBytes, qint64 totalBytes)> &progressCallback,
+                          QString *errorStr) const override
+    {
+        if (items.isEmpty()) {
+            if (errorStr) {
+                errorStr->clear();
+            }
+            return true;
+        }
+
+        struct DownloadState {
+            LocalFileMaterializeItem item;
+            QString sourcePath;
+            QString partialPath;
+            qint64 requestId = 0;
+            qint64 processed = 0;
+            bool started = false;
+            bool finished = false;
+            bool success = false;
+            QString error;
+            QElapsedTimer elapsed;
+        };
+
+        QVector<DownloadState> downloads;
+        downloads.reserve(items.size());
+        qint64 totalBytes = 0;
+        for (const LocalFileMaterializeItem &item : items) {
+            const QString normalized = MegaPath::normalizedPath(item.sourcePath);
+            const QFileInfo destinationInfo(item.destinationFilePath);
+            if (destinationInfo.absolutePath().isEmpty() || !QDir().mkpath(destinationInfo.absolutePath())) {
+                if (errorStr) {
+                    *errorStr = QStringLiteral("Cannot create MEGA download destination folder");
+                }
+                return false;
+            }
+
+            LocalFileMaterializeItem normalizedItem = item;
+            normalizedItem.size = (std::max<qint64>)(0, item.size);
+            totalBytes += normalizedItem.size;
+
+            DownloadState download;
+            download.item = normalizedItem;
+            download.sourcePath = normalized;
+            download.partialPath = item.destinationFilePath + QStringLiteral(".part");
+            QFile::remove(download.partialPath);
+            downloads.push_back(download);
+        }
+
+        const int concurrency = megaDownloadConcurrency();
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider batch download start"
+                     << "files:" << downloads.size()
+                     << "bytes:" << totalBytes
+                     << "concurrency:" << concurrency;
+        }
+
+        QMutex waitMutex;
+        QWaitCondition waitCondition;
+        QHash<qint64, qsizetype> indexByRequestId;
+        qsizetype nextIndex = 0;
+        int activeCount = 0;
+        int finishedCount = 0;
+        bool cancelRequested = false;
+        bool stopScheduling = false;
+        QString firstError;
+        QElapsedTimer elapsed;
+        elapsed.start();
+
+        MegaClientInterface &client = megaClient();
+
+        auto aggregateProgressLocked = [&]() -> qint64 {
+            qint64 processed = 0;
+            for (const DownloadState &download : std::as_const(downloads)) {
+                processed += std::clamp<qint64>(download.processed, 0, download.item.size);
+            }
+            return processed;
+        };
+
+        auto takeNextDownloadsLocked = [&]() {
+            QVector<qsizetype> indices;
+            while (!cancelRequested && !stopScheduling && activeCount < concurrency && nextIndex < downloads.size()) {
+                DownloadState &download = downloads[nextIndex];
+                download.started = true;
+                download.elapsed.start();
+                ++activeCount;
+                indices.push_back(nextIndex);
+                ++nextIndex;
+            }
+            return indices;
+        };
+
+        auto startDownloads = [&](const QVector<qsizetype> &indices) {
+            for (qsizetype index : indices) {
+                const qint64 requestId = client.startDownload(downloads[index].sourcePath, downloads[index].partialPath);
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    downloads[index].requestId = requestId;
+                    indexByRequestId.insert(requestId, index);
+                }
+                if (megaDownloadItemTimingEnabled()) {
+                    qDebug() << "[MegaTiming] provider batch download item start"
+                             << "request:" << requestId
+                             << "source:" << downloads[index].sourcePath
+                             << "bytes:" << downloads[index].item.size;
+                }
+            }
+        };
+
+        QMetaObject::Connection progressConn = connect(&client, &MegaClientInterface::downloadProgress,
+            &client,
+            [&](qint64 requestId, const QString &, qint64 processed, qint64 total) {
+                QString currentSourcePath;
+                qint64 aggregate = 0;
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    const qsizetype index = indexByRequestId.value(requestId, -1);
+                    if (index < 0 || index >= downloads.size()) {
+                        return;
+                    }
+                    DownloadState &download = downloads[index];
+                    const qint64 itemTotal = download.item.size > 0 ? download.item.size : total;
+                    download.processed = std::clamp<qint64>(processed, 0, (std::max<qint64>)(0, itemTotal));
+                    currentSourcePath = download.sourcePath;
+                    aggregate = aggregateProgressLocked();
+                }
+                bool shouldCancel = false;
+                if (progressCallback && !progressCallback(currentSourcePath, aggregate, totalBytes)) {
+                    QMutexLocker waitLocker(&waitMutex);
+                    if (!cancelRequested) {
+                        cancelRequested = true;
+                        firstError = QStringLiteral("MEGA download canceled");
+                        shouldCancel = true;
+                    }
+                    waitCondition.wakeAll();
+                }
+                if (shouldCancel) {
+                    megaClient().cancelAll();
+                }
+            }, Qt::DirectConnection);
+
+        QMetaObject::Connection finishedConn = connect(&client, &MegaClientInterface::downloadFinished,
+            &client,
+            [&](qint64 requestId, const QString &, bool success, const QString &errorString) {
+                QVector<qsizetype> downloadsToStart;
+                qsizetype finishedIndex = -1;
+                qint64 finishedElapsedMs = 0;
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    const qsizetype index = indexByRequestId.value(requestId, -1);
+                    if (index < 0 || index >= downloads.size()) {
+                        return;
+                    }
+
+                    DownloadState &download = downloads[index];
+                    if (download.finished) {
+                        return;
+                    }
+                    download.finished = true;
+                    download.success = success;
+                    download.error = errorString;
+                    download.processed = success ? download.item.size : download.processed;
+                    --activeCount;
+                    ++finishedCount;
+                    indexByRequestId.remove(requestId);
+                    finishedIndex = index;
+                    finishedElapsedMs = download.elapsed.isValid() ? download.elapsed.elapsed() : 0;
+                    if (!success) {
+                        download.processed = 0;
+                        if (firstError.isEmpty()) {
+                            firstError = errorString.trimmed().isEmpty()
+                                ? QStringLiteral("MEGA download failed")
+                                : errorString.trimmed();
+                        }
+                        if (megaDownloadQuotaError(errorString.trimmed())) {
+                            stopScheduling = true;
+                        }
+                    }
+
+                    downloadsToStart = takeNextDownloadsLocked();
+                    waitCondition.wakeAll();
+                }
+
+                if (megaDownloadItemTimingEnabled() && finishedIndex >= 0 && finishedIndex < downloads.size()) {
+                    qDebug() << "[MegaTiming] provider batch download item finish"
+                             << "request:" << requestId
+                             << "source:" << downloads[finishedIndex].sourcePath
+                             << "success:" << success
+                             << "elapsedMs:" << finishedElapsedMs
+                             << "bytes:" << downloads[finishedIndex].item.size;
+                }
+                startDownloads(downloadsToStart);
+            }, Qt::DirectConnection);
+
+        {
+            QVector<qsizetype> downloadsToStart;
+            {
+                QMutexLocker waitLocker(&waitMutex);
+                downloadsToStart = takeNextDownloadsLocked();
+            }
+            startDownloads(downloadsToStart);
+        }
+
+        bool timedOut = false;
+        {
+            QMutexLocker waitLocker(&waitMutex);
+            while ((stopScheduling ? activeCount > 0 : finishedCount < downloads.size()) && !cancelRequested) {
+                if (!waitCondition.wait(&waitMutex, 30 * 60 * 1000)) {
+                    firstError = QStringLiteral("MEGA download timed out");
+                    cancelRequested = true;
+                    timedOut = true;
+                    break;
+                }
+            }
+            while (activeCount > 0 && cancelRequested) {
+                waitCondition.wait(&waitMutex, 5000);
+                break;
+            }
+        }
+        if (timedOut) {
+            megaClient().cancelAll();
+        }
+
+        disconnect(progressConn);
+        disconnect(finishedConn);
+
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider batch download finish"
+                     << "files:" << downloads.size()
+                     << "finished:" << finishedCount
+                     << "success:" << !cancelRequested
+                     << "stopped:" << stopScheduling
+                     << "elapsedMs:" << elapsed.elapsed();
+        }
+
+        if (cancelRequested || (!stopScheduling && finishedCount < downloads.size())) {
+            for (const DownloadState &download : std::as_const(downloads)) {
+                QFile::remove(download.partialPath);
+            }
+            if (errorStr) {
+                *errorStr = firstError.isEmpty() ? QStringLiteral("MEGA download failed") : firstError;
+            }
+            return false;
+        }
+
+        int successCount = 0;
+        int failedCount = 0;
+        for (const DownloadState &download : std::as_const(downloads)) {
+            if (!download.success) {
+                ++failedCount;
+                QFile::remove(download.partialPath);
+                QFile::remove(download.item.destinationFilePath);
+                continue;
+            }
+            QFile::remove(download.item.destinationFilePath);
+            if (!QFile::rename(download.partialPath, download.item.destinationFilePath)) {
+                for (const DownloadState &cleanupDownload : std::as_const(downloads)) {
+                    QFile::remove(cleanupDownload.partialPath);
+                }
+                if (errorStr) {
+                    *errorStr = QStringLiteral("Could not move MEGA download into place");
+                }
+                return false;
+            }
+            ++successCount;
+        }
+
+        if (successCount == 0) {
+            if (errorStr) {
+                *errorStr = firstError.isEmpty() ? QStringLiteral("MEGA download failed") : firstError;
+            }
+            return false;
+        }
+
+        if (failedCount > 0) {
+            qWarning() << "[MegaClient] provider batch download skipped failed files"
+                       << "failed:" << failedCount
+                       << "success:" << successCount
+                       << "firstError:" << firstError;
+        }
+
+        if (progressCallback && !progressCallback(QString{}, totalBytes, totalBytes)) {
+            if (errorStr) {
+                *errorStr = QStringLiteral("MEGA download canceled");
+            }
+            return false;
+        }
+        if (errorStr) {
+            errorStr->clear();
+        }
+        return true;
+    }
+
+    bool copyFromLocalFile(const QString &sourceFilePath,
+                           const QString &destinationPath,
+                           const std::function<bool(qint64 processedBytes, qint64 totalBytes)> &progressCallback,
+                           QString *errorStr) const override
+    {
+        const QFileInfo sourceInfo(sourceFilePath);
+        if (!sourceInfo.isFile()) {
+            if (errorStr) {
+                *errorStr = QStringLiteral("MEGA upload source is not a regular file");
+            }
+            return false;
+        }
+
+        const QString normalized = MegaPath::normalizedPath(destinationPath);
+        const QString parent = MegaPath::parentPath(normalized);
+        if (!canCreateChildren(parent)) {
+            if (errorStr) {
+                *errorStr = QStringLiteral("MEGA upload destination is not writable");
+            }
+            return false;
+        }
+
+        QMutex waitMutex;
+        QWaitCondition waitCondition;
+        bool transferSuccess = false;
+        bool transferFinished = false;
+        QString transferError;
+        qint64 uploadRequestId = 0;
+        QElapsedTimer uploadElapsed;
+        uploadElapsed.start();
+
+        MegaClientInterface &client = megaClient();
+        QMetaObject::Connection progressConn = connect(&client, &MegaClientInterface::uploadProgress,
+            &client,
+            [&](qint64 requestId, const QString &path, qint64 processed, qint64 total) {
+                if ((uploadRequestId > 0 && requestId != uploadRequestId) || MegaPath::normalizedPath(path) != normalized) {
+                    return;
+                }
+                if (progressCallback && !progressCallback(processed, total)) {
+                    qWarning() << "[MegaFileProvider] copyFromLocalFile progress callback cancelled"
+                               << "request:" << requestId
+                               << "destination:" << normalized;
+                    megaClient().cancelAll();
+                }
+            }, Qt::DirectConnection);
+
+        QMetaObject::Connection finishedConn = connect(&client, &MegaClientInterface::mutationFinished,
+            &client,
+            [&](qint64 requestId, const QString &operation, const QString &path, bool success, const QString &errorString, const QString &) {
+                if ((uploadRequestId > 0 && requestId != uploadRequestId)
+                    || operation != QStringLiteral("upload")
+                    || MegaPath::normalizedPath(path) != normalized) {
+                    return;
+                }
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    transferSuccess = success;
+                    transferFinished = true;
+                    transferError = errorString;
+                }
+                waitCondition.wakeAll();
+            }, Qt::DirectConnection);
+
+        uploadRequestId = client.startUpload(sourceFilePath, normalized);
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider upload wait start"
+                     << "request:" << uploadRequestId
+                     << "destination:" << normalized
+                     << "sourceBytes:" << sourceInfo.size();
+        }
+
+        bool timedOut = false;
+        {
+            QMutexLocker waitLocker(&waitMutex);
+            if (!transferFinished) {
+                timedOut = !waitCondition.wait(&waitMutex, 30 * 60 * 1000);
+            }
+        }
+
+        disconnect(progressConn);
+        disconnect(finishedConn);
+
+        if (timedOut) {
+            transferError = QStringLiteral("MEGA upload timed out");
+            megaClient().cancelAll();
+        }
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider upload wait finish"
+                     << "request:" << uploadRequestId
+                     << "destination:" << normalized
+                     << "finished:" << transferFinished
+                     << "success:" << transferSuccess
+                     << "elapsedMs:" << uploadElapsed.elapsed();
+        }
+        if (!transferFinished || !transferSuccess) {
+            if (errorStr) {
+                *errorStr = transferError.isEmpty() ? QStringLiteral("Unknown upload error") : transferError;
+            }
+            return false;
+        }
+        cacheUploadedLocalFile(sourceFilePath, normalized);
+        if (errorStr) {
+            errorStr->clear();
+        }
+        return true;
+    }
+
+    bool supportsLocalFileBatchCopy() const override { return true; }
+
+    bool copyFromLocalFiles(const QVector<LocalFileCopyItem> &items,
+                            const std::function<bool(const QString &currentFilePath, qint64 processedBytes, qint64 totalBytes)> &progressCallback,
+                            QString *errorStr) const override
+    {
+        if (items.isEmpty()) {
+            if (errorStr) {
+                errorStr->clear();
+            }
+            return true;
+        }
+
+        struct UploadState {
+            LocalFileCopyItem item;
+            QString destinationPath;
+            qint64 requestId = 0;
+            qint64 processed = 0;
+            bool started = false;
+            bool finished = false;
+            bool success = false;
+            QString error;
+        };
+
+        QVector<UploadState> uploads;
+        uploads.reserve(items.size());
+        qint64 totalBytes = 0;
+        for (const LocalFileCopyItem &item : items) {
+            const QFileInfo sourceInfo(item.sourceFilePath);
+            if (!sourceInfo.isFile()) {
+                if (errorStr) {
+                    *errorStr = QStringLiteral("MEGA upload source is not a regular file");
+                }
+                return false;
+            }
+            const QString normalized = MegaPath::normalizedPath(item.destinationPath);
+            const QString parent = MegaPath::parentPath(normalized);
+            if (!canCreateChildren(parent)) {
+                if (errorStr) {
+                    *errorStr = QStringLiteral("MEGA upload destination is not writable");
+                }
+                return false;
+            }
+
+            LocalFileCopyItem normalizedItem = item;
+            normalizedItem.size = sourceInfo.size();
+            totalBytes += normalizedItem.size;
+            UploadState upload;
+            upload.item = normalizedItem;
+            upload.destinationPath = normalized;
+            uploads.push_back(upload);
+        }
+
+        const int concurrency = megaUploadConcurrency();
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider batch upload start"
+                     << "files:" << uploads.size()
+                     << "bytes:" << totalBytes
+                     << "concurrency:" << concurrency;
+        }
+
+        QMutex waitMutex;
+        QWaitCondition waitCondition;
+        QHash<qint64, qsizetype> indexByRequestId;
+        qsizetype nextIndex = 0;
+        int activeCount = 0;
+        int finishedCount = 0;
+        bool cancelRequested = false;
+        QString firstError;
+        QElapsedTimer elapsed;
+        elapsed.start();
+
+        MegaClientInterface &client = megaClient();
+
+        auto aggregateProgressLocked = [&]() -> qint64 {
+            qint64 processed = 0;
+            for (const UploadState &upload : std::as_const(uploads)) {
+                processed += std::clamp<qint64>(upload.processed, 0, upload.item.size);
+            }
+            return processed;
+        };
+
+        auto takeNextUploadsLocked = [&]() {
+            QVector<qsizetype> indices;
+            while (!cancelRequested && activeCount < concurrency && nextIndex < uploads.size()) {
+                UploadState &upload = uploads[nextIndex];
+                upload.started = true;
+                ++activeCount;
+                indices.push_back(nextIndex);
+                ++nextIndex;
+            }
+            return indices;
+        };
+
+        auto startUploads = [&](const QVector<qsizetype> &indices) {
+            for (qsizetype index : indices) {
+                const qint64 requestId = client.startUpload(uploads[index].item.sourceFilePath, uploads[index].destinationPath);
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    uploads[index].requestId = requestId;
+                    indexByRequestId.insert(requestId, index);
+                }
+                if (megaProviderUploadItemTimingEnabled()) {
+                    qDebug() << "[MegaTiming] provider batch upload item start"
+                             << "request:" << requestId
+                             << "destination:" << uploads[index].destinationPath
+                             << "bytes:" << uploads[index].item.size;
+                }
+            }
+        };
+
+        QMetaObject::Connection progressConn = connect(&client, &MegaClientInterface::uploadProgress,
+            &client,
+            [&](qint64 requestId, const QString &, qint64 processed, qint64 total) {
+                QString currentFilePath;
+                qint64 aggregate = 0;
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    const qsizetype index = indexByRequestId.value(requestId, -1);
+                    if (index < 0 || index >= uploads.size()) {
+                        return;
+                    }
+                    UploadState &upload = uploads[index];
+                    upload.processed = std::clamp<qint64>(processed, 0, upload.item.size);
+                    currentFilePath = upload.item.sourceFilePath;
+                    aggregate = aggregateProgressLocked();
+                    Q_UNUSED(total)
+                }
+                bool shouldCancel = false;
+                if (progressCallback && !progressCallback(currentFilePath, aggregate, totalBytes)) {
+                    QMutexLocker waitLocker(&waitMutex);
+                    if (!cancelRequested) {
+                        cancelRequested = true;
+                        firstError = QStringLiteral("MEGA upload canceled");
+                        shouldCancel = true;
+                    }
+                    waitCondition.wakeAll();
+                }
+                if (shouldCancel) {
+                    megaClient().cancelAll();
+                }
+            }, Qt::DirectConnection);
+
+        QMetaObject::Connection finishedConn = connect(&client, &MegaClientInterface::mutationFinished,
+            &client,
+            [&](qint64 requestId, const QString &operation, const QString &, bool success, const QString &errorString, const QString &) {
+                if (operation != QStringLiteral("upload")) {
+                    return;
+                }
+                QVector<qsizetype> uploadsToStart;
+                bool shouldCancel = false;
+                {
+                    QMutexLocker waitLocker(&waitMutex);
+                    const qsizetype index = indexByRequestId.value(requestId, -1);
+                    if (index < 0 || index >= uploads.size()) {
+                        return;
+                    }
+
+                    UploadState &upload = uploads[index];
+                    if (upload.finished) {
+                        return;
+                    }
+                    upload.finished = true;
+                    upload.success = success;
+                    upload.error = errorString;
+                    upload.processed = success ? upload.item.size : upload.processed;
+                    --activeCount;
+                    ++finishedCount;
+                    indexByRequestId.remove(requestId);
+                    if (!success && firstError.isEmpty()) {
+                        firstError = errorString.trimmed().isEmpty()
+                            ? QStringLiteral("MEGA upload failed")
+                            : errorString.trimmed();
+                        cancelRequested = true;
+                        shouldCancel = true;
+                    }
+
+                    uploadsToStart = takeNextUploadsLocked();
+                    waitCondition.wakeAll();
+                }
+
+                if (shouldCancel) {
+                    megaClient().cancelAll();
+                }
+                startUploads(uploadsToStart);
+            }, Qt::DirectConnection);
+
+        {
+            QVector<qsizetype> uploadsToStart;
+            {
+                QMutexLocker waitLocker(&waitMutex);
+                uploadsToStart = takeNextUploadsLocked();
+            }
+            startUploads(uploadsToStart);
+        }
+
+        bool timedOut = false;
+        {
+            QMutexLocker waitLocker(&waitMutex);
+            while (finishedCount < uploads.size() && !cancelRequested) {
+                if (!waitCondition.wait(&waitMutex, 30 * 60 * 1000)) {
+                    firstError = QStringLiteral("MEGA upload timed out");
+                    cancelRequested = true;
+                    timedOut = true;
+                    break;
+                }
+            }
+            while (activeCount > 0 && cancelRequested) {
+                waitCondition.wait(&waitMutex, 5000);
+                break;
+            }
+        }
+        if (timedOut) {
+            megaClient().cancelAll();
+        }
+
+        disconnect(progressConn);
+        disconnect(finishedConn);
+
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider batch upload finish"
+                     << "files:" << uploads.size()
+                     << "finished:" << finishedCount
+                     << "success:" << !cancelRequested
+                     << "elapsedMs:" << elapsed.elapsed();
+        }
+
+        if (cancelRequested || finishedCount < uploads.size()) {
+            if (errorStr) {
+                *errorStr = firstError.isEmpty() ? QStringLiteral("MEGA upload failed") : firstError;
+            }
+            return false;
+        }
+
+        for (const UploadState &upload : std::as_const(uploads)) {
+            if (!upload.success) {
+                if (errorStr) {
+                    *errorStr = upload.error.trimmed().isEmpty()
+                        ? QStringLiteral("MEGA upload failed")
+                        : upload.error.trimmed();
+                }
+                return false;
+            }
+            cacheUploadedLocalFile(upload.item.sourceFilePath, upload.destinationPath);
+        }
+
+        if (progressCallback && !progressCallback(QString{}, totalBytes, totalBytes)) {
+            if (errorStr) {
+                *errorStr = QStringLiteral("MEGA upload canceled");
+            }
+            return false;
+        }
+        if (errorStr) {
+            errorStr->clear();
+        }
+        return true;
+    }
+
+    std::unique_ptr<QIODevice> openWrite(const QString &path, bool truncate = true) const override
+    {
+        Q_UNUSED(path)
+        Q_UNUSED(truncate)
+        return nullptr;
+    }
+
+    bool renamePath(const QString &oldPath, const QString &newName) override
+    {
+        const QString normalized = MegaPath::normalizedPath(oldPath);
+        const QString trimmedName = newName.trimmed();
+        if (!canRemovePath(normalized) || trimmedName.isEmpty() || trimmedName.contains(QLatin1Char('/'))) {
+            return false;
+        }
+        QString resultPath;
+        QString error;
+        if (!waitForMegaMutation([normalized, trimmedName]() { return megaClient().startRename(normalized, trimmedName); },
+                                 QStringLiteral("rename"),
+                                 normalized,
+                                 &resultPath,
+                                 &error)) {
+            qWarning() << "[MegaFileProvider] renamePath failed" << normalized << trimmedName << error;
+            return false;
+        }
+        const QString renamedPath = resultPath.isEmpty()
+            ? MegaPath::childPath(MegaPath::parentPath(normalized), trimmedName)
+            : MegaPath::normalizedPath(resultPath);
+        MegaCache::removeChild(MegaPath::parentPath(normalized), normalized);
+        MegaCache::appendChild(MegaPath::parentPath(renamedPath), renamedPath);
+        MegaCache::renameSubtree(normalized, renamedPath, trimmedName);
+        return true;
+    }
+
+    bool createFolder(const QString &parentPath, const QString &name, QString *createdPath = nullptr) override
+    {
+        if (createdPath) {
+            createdPath->clear();
+        }
+        const QString parent = MegaPath::normalizedPath(parentPath);
+        const QString trimmedName = name.trimmed();
+        if (!canCreateChildren(parent) || trimmedName.isEmpty() || trimmedName.contains(QLatin1Char('/'))) {
+            return false;
+        }
+        QString resultPath;
+        QString error;
+        if (!waitForMegaMutation([parent, trimmedName]() { return megaClient().startCreateFolder(parent, trimmedName); },
+                                 QStringLiteral("createFolder"),
+                                 MegaPath::childPath(parent, trimmedName),
+                                 &resultPath,
+                                 &error)) {
+            qWarning() << "[MegaFileProvider] createFolder failed" << parent << trimmedName << error;
+            return false;
+        }
+        if (createdPath) {
+            *createdPath = resultPath.isEmpty() ? MegaPath::childPath(parent, trimmedName) : resultPath;
+        }
+        const QString path = resultPath.isEmpty() ? MegaPath::childPath(parent, trimmedName) : resultPath;
+        FileEntry entry;
+        entry.name = trimmedName;
+        entry.path = path;
+        entry.isDirectory = true;
+        entry.isReadOnly = false;
+        entry.iconName = QStringLiteral("folder");
+        MegaPresentation::enrichEntryPresentation(entry);
+        MegaCache::cacheEntry(path, entry, {});
+        MegaCache::cacheChildren(path, {});
+        MegaCache::appendChild(parent, path);
+        return true;
+    }
+
+    bool createFile(const QString &parentPath, const QString &name, QString *createdPath = nullptr) override
+    {
+        if (createdPath) {
+            createdPath->clear();
+        }
+        const QString parent = MegaPath::normalizedPath(parentPath);
+        const QString trimmedName = name.trimmed();
+        if (!canCreateChildren(parent) || trimmedName.isEmpty() || trimmedName.contains(QLatin1Char('/'))) {
+            return false;
+        }
+
+        const QString stagingRoot = megaOpenReadStagingRoot({}, MegaPath::childPath(parent, trimmedName));
+        if (stagingRoot.isEmpty()) {
+            return false;
+        }
+        auto tempFile = std::make_unique<CleanupManagedTemporaryFile>(
+            QDir(stagingRoot).filePath(QStringLiteral("mega-empty-upload-XXXXXX")));
+        if (!tempFile->open()) {
+            return false;
+        }
+        const QString tempPath = tempFile->fileName();
+        QString leaseId;
+        CleanupSubsystem::instance().registerArtifact(
+            CleanupArtifactKind::ProviderTransfer,
+            tempPath,
+            stagingRoot,
+            false,
+            &leaseId);
+        tempFile->setCleanupLeaseId(leaseId);
+        tempFile->close();
+
+        QString uploadError;
+        const QString destination = MegaPath::childPath(parent, trimmedName);
+        const bool uploaded = copyFromLocalFile(tempPath, destination, nullptr, &uploadError);
+        if (!leaseId.isEmpty()) {
+            CleanupSubsystem::instance().scheduleDelete(leaseId);
+            tempFile->setCleanupLeaseId({});
+        }
+        if (!uploaded) {
+            qWarning() << "[MegaFileProvider] createFile upload failed" << destination << uploadError;
+            return false;
+        }
+        if (createdPath) {
+            *createdPath = destination;
+        }
+        return true;
+    }
+
+    QVariantMap storageInfo(const QString &path) const override
+    {
+        const QString normalized = MegaPath::normalizedPath(path);
+        if (MegaPath::isLinkPath(normalized) || !megaClient().isAccountAuthenticated()) {
+            return {};
+        }
+        return megaStorageInfoMap();
+    }
+
+private slots:
+    void onAccountNodesChanged(const QString &reason)
+    {
+        Q_UNUSED(reason)
+
+        if (m_currentPath.isEmpty() || MegaPath::isLinkPath(m_currentPath)) {
+            return;
+        }
+
+        emit statusMessage(QStringLiteral("MEGA changed remotely; refresh to update."));
+    }
+
+    void onAccountNodesLoaded(bool success, const QString &errorString)
+    {
+        if (m_pendingScanPath.isEmpty()) {
+            return;
+        }
+
+        const QString scanPath = m_pendingScanPath;
+        const int gen = m_pendingScanGeneration;
+        m_pendingScanPath.clear();
+        const qint64 elapsedMs = m_pendingScanStartMs > 0
+            ? QDateTime::currentMSecsSinceEpoch() - m_pendingScanStartMs
+            : -1;
+        m_pendingScanStartMs = 0;
+        if (megaProviderTimingEnabled()) {
+            qDebug() << "[MegaTiming] provider account scan finish"
+                     << "path:" << scanPath
+                     << "generation:" << gen
+                     << "success:" << success
+                     << "elapsedMs:" << elapsedMs;
+        }
+
+        if (success) {
+            if (MegaCache::getChildren(scanPath).has_value()) {
+                emitChildEntries(scanPath, gen);
+                emit finished(scanPath, true, gen);
+            } else {
+                emit finished(scanPath, false, gen, QStringLiteral("Path not found after loading MEGA account"));
+            }
+        } else {
+            emit finished(scanPath, false, gen, errorString);
+        }
+    }
+
+    void onPublicLinkLoaded(const QString &linkId, bool success, const QString &errorString)
+    {
+        if (m_pendingScanPath.isEmpty()) {
+            return;
+        }
+
+        const QString pendingLinkId = MegaPath::linkIdForPath(m_pendingScanPath);
+        if (pendingLinkId != linkId) {
+            return;
+        }
+
+        const QString scanPath = m_pendingScanPath;
+        const int gen = m_pendingScanGeneration;
+        m_pendingScanPath.clear();
+
+        if (success) {
+            if (MegaCache::getEntry(scanPath).has_value()) {
+                emitChildEntries(scanPath, gen);
+                emit finished(scanPath, true, gen);
+            } else {
+                emit finished(scanPath, false, gen, QStringLiteral("Path not found after loading link"));
+            }
+        } else {
+            emit finished(scanPath, false, gen, errorString);
+        }
+    }
+
+private:
+    void emitChildEntries(const QString &parentPath, int generation)
+    {
+        const QList<FileEntry> entries = MegaCache::childEntries(parentPath);
+        if (!entries.isEmpty()) {
+            emit batchReady(entries, generation);
+        }
+    }
+
+    QString m_currentPath;
+    int m_currentGeneration;
+    QString m_pendingScanPath;
+    int m_pendingScanGeneration;
+    qint64 m_pendingScanStartMs = 0;
+};
+
+
+std::unique_ptr<FileProvider> createMegaFileProvider()
+{
+    return std::make_unique<MegaFileProvider>();
+}
+
+#include "MegaFileProvider.moc"
