@@ -1,6 +1,8 @@
 #include "BatchRenameEngine.h"
 
 #include <QCoreApplication>
+#include <QFile>
+#include <QTemporaryDir>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -38,6 +40,42 @@ int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
     BatchRenameEngine engine;
+
+    const auto literalPreview = engine.generatePreview(
+        {QStringLiteral("/tmp/Holiday Photo.jpeg")},
+        {rule({{QStringLiteral("type"), QStringLiteral("replace")},
+               {QStringLiteral("search"), QStringLiteral("holiday")},
+               {QStringLiteral("replace"), QStringLiteral("Summer")},
+               {QStringLiteral("caseSensitive"), false},
+               {QStringLiteral("regex"), false}})});
+    if (!expectName(literalPreview, 0, QStringLiteral("Summer Photo.jpeg"))) return 1;
+
+    const auto formatPreview = engine.generatePreview(
+        {QStringLiteral("/tmp/report.tar.gz")},
+        {rule({{QStringLiteral("type"), QStringLiteral("format")},
+               {QStringLiteral("prefix"), QStringLiteral("final-")},
+               {QStringLiteral("suffix"), QStringLiteral("-signed")}})});
+    if (!expectName(formatPreview, 0, QStringLiteral("final-report.tar-signed.gz"))) return 1;
+
+    const auto prefixNumberPreview = engine.generatePreview(
+        {QStringLiteral("/tmp/photo.png")},
+        {rule({{QStringLiteral("type"), QStringLiteral("numbering")},
+               {QStringLiteral("start"), 7},
+               {QStringLiteral("padding"), 3},
+               {QStringLiteral("position"), QStringLiteral("prefix")}})});
+    if (!expectName(prefixNumberPreview, 0, QStringLiteral("007photo.png"))) return 1;
+
+    const auto templatePreview = engine.generatePreview(
+        {QStringLiteral("/tmp/old-a.txt"), QStringLiteral("/tmp/old-b.txt")},
+        {rule({{QStringLiteral("type"), QStringLiteral("template")},
+               {QStringLiteral("text"), QStringLiteral("Document-")},
+               {QStringLiteral("start"), 4},
+               {QStringLiteral("padding"), 2}})});
+    if (!expectName(templatePreview, 0, QStringLiteral("Document-04.txt"))
+        || !expectName(templatePreview, 1, QStringLiteral("Document-05.txt"))) return 1;
+
+    const auto unchangedPreview = engine.generatePreview({QStringLiteral("/tmp/same.txt")}, {});
+    if (!expectName(unchangedPreview, 0, QStringLiteral("same.txt"))) return 1;
 
     QVariantList stackedRules;
     stackedRules << rule({
@@ -92,6 +130,39 @@ int main(int argc, char **argv)
     if (badRegexPreview.isEmpty() || !badRegexPreview.at(0).hasConflict
         || !badRegexPreview.at(0).error.startsWith(QStringLiteral("Invalid regular expression:"))) {
         std::fprintf(stderr, "Invalid regex was not reported\n");
+        return 1;
+    }
+
+    const auto duplicatePreview = engine.generatePreview(
+        {QStringLiteral("/tmp/A.txt"), QStringLiteral("/tmp/B.txt")},
+        {rule({{QStringLiteral("type"), QStringLiteral("replace")},
+               {QStringLiteral("search"), QStringLiteral("A|B")},
+               {QStringLiteral("replace"), QStringLiteral("same")},
+               {QStringLiteral("caseSensitive"), true},
+               {QStringLiteral("regex"), true}})});
+    if (duplicatePreview.size() != 2 || !duplicatePreview.at(1).hasConflict
+        || duplicatePreview.at(1).error != QStringLiteral("Duplicate name in batch")) {
+        std::fprintf(stderr, "Duplicate destination was not reported\n");
+        return 1;
+    }
+
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid()) return 1;
+    const QString sourcePath = tempDir.filePath(QStringLiteral("source.txt"));
+    const QString occupiedPath = tempDir.filePath(QStringLiteral("occupied.txt"));
+    QFile source(sourcePath);
+    QFile occupied(occupiedPath);
+    if (!source.open(QIODevice::WriteOnly) || !occupied.open(QIODevice::WriteOnly)) return 1;
+    source.close();
+    occupied.close();
+    const auto filesystemConflict = engine.generatePreview(
+        {sourcePath},
+        {rule({{QStringLiteral("type"), QStringLiteral("replace")},
+               {QStringLiteral("search"), QStringLiteral("source")},
+               {QStringLiteral("replace"), QStringLiteral("occupied")}})});
+    if (filesystemConflict.size() != 1 || !filesystemConflict.first().hasConflict
+        || filesystemConflict.first().error != QStringLiteral("File already exists")) {
+        std::fprintf(stderr, "Existing filesystem destination was not reported\n");
         return 1;
     }
 

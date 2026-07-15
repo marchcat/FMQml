@@ -13,14 +13,12 @@ Dialog {
     property var controller: null
     property var appRoot: null
     property var sourcePaths: []
-    property var previewModel: []
-    property bool hasConflicts: false
-    property bool isApplied: false
-    property int successCount: 0
-    property int failCount: 0
-    property string searchFilter: ""
     property bool suppressPreviewUpdates: false
-    property int selectedRuleIndex: -1
+    readonly property bool hasConflicts: renameSession.hasConflicts
+    readonly property bool isApplied: renameSession.isApplied
+    readonly property int successCount: renameSession.successCount
+    readonly property int failCount: renameSession.failCount
+    readonly property bool isApplying: root.controller ? root.controller.batchRenameInProgress : false
     readonly property bool useNativeIcons: typeof appSettings !== "undefined" && appSettings
                                            ? appSettings.useNativeIcons
                                            : true
@@ -165,12 +163,16 @@ Dialog {
         iconSource: "qrc:/qt/qml/FM/qml/assets/icons/rename.svg"
         iconTint: Theme.categoryAction
         accentColor: Theme.categoryAction
-        title: root.isApplied ? "Batch Rename Status" : "Batch Rename"
-        subtitle: root.isApplied
+        title: root.isApplied ? "Batch Rename Status" : (root.isApplying ? "Renaming Files" : "Batch Rename")
+        subtitle: root.isApplying
+                  ? (root.controller.batchRenameCompletedCount + " of " + root.controller.batchRenameTotalCount + " items processed")
+                  : root.isApplied
                   ? (root.successCount + " of " + (root.successCount + root.failCount) + " items renamed successfully")
                   : (root.sourcePaths.length + " items selected")
         closeText: "x"
-        onCloseRequested: root.isApplied ? root.accept() : root.reject()
+        onCloseRequested: {
+            if (!root.isApplying) root.isApplied ? root.accept() : root.reject()
+        }
     }
 
     footer: DialogFooter {
@@ -181,13 +183,14 @@ Dialog {
         DialogActionButton {
             text: "Cancel"
             visible: !root.isApplied
+            enabled: !root.isApplying
             highlighted: false
             onClicked: root.reject()
         }
 
         DialogActionButton {
-            text: root.isApplied ? "Close" : "Apply Changes"
-            enabled: root.isApplied || (!root.hasConflicts && root.previewModel.length > 0)
+            text: root.isApplied ? "Close" : (root.isApplying ? "Renaming..." : "Apply Changes")
+            enabled: root.isApplied || (!root.isApplying && !root.hasConflicts && renameSession.totalCount > 0)
             highlighted: true
             onClicked: {
                 if (root.isApplied) {
@@ -199,23 +202,22 @@ Dialog {
         }
     }
 
-    ListModel {
-        id: internalPreviewModel
+    BatchRenameSession {
+        id: renameSession
     }
 
-    ListModel {
-        id: ruleModel
+    Connections {
+        target: root.controller
+        function onBatchRenameFinished(results) {
+            renameSession.applyResults(results)
+        }
     }
 
     onOpened: {
         Qt.callLater(() => contentItem.forceActiveFocus())
-        root.isApplied = false
-        root.successCount = 0
-        root.failCount = 0
-        root.searchFilter = ""
         filterInput.text = ""
-        ensureDefaultRule()
-        updatePreview()
+        renameSession.reset(root.sourcePaths)
+        loadRuleToEditor(renameSession.selectedRuleIndex)
     }
 
     onClosed: {
@@ -227,40 +229,9 @@ Dialog {
 
     function resetEditorState() {
         root.suppressPreviewUpdates = true
-
-        ruleModel.clear()
-        root.selectedRuleIndex = -1
         filterInput.text = ""
-
-        root.searchFilter = ""
-        root.previewModel = []
-        root.hasConflicts = false
-        root.isApplied = false
-        root.successCount = 0
-        root.failCount = 0
-        internalPreviewModel.clear()
-
+        renameSession.reset([])
         root.suppressPreviewUpdates = false
-    }
-
-    function defaultRule(type) {
-        const ruleType = type || "replace"
-        return {
-            "type": ruleType,
-            "search": "",
-            "replace": "",
-            "caseSensitive": false,
-            "regex": false,
-            "prefix": "",
-            "suffixText": "",
-            "start": 0,
-            "padding": 2,
-            "position": "suffix",
-            "text": "",
-            "seqStart": 1,
-            "seqPadding": 2,
-            "mode": "lowercase"
-        }
     }
 
     function ruleTypeIndex(type) {
@@ -290,63 +261,28 @@ Dialog {
         return modes[Math.max(0, Math.min(index, modes.length - 1))]
     }
 
-    function ruleTitle(rule) {
-        if (!rule) return "Rule"
-        if (rule.type === "format") return "Format"
-        if (rule.type === "numbering") return "Numbering"
-        if (rule.type === "template") return "Sequence"
-        if (rule.type === "transform") return "Transform"
-        return rule.regex ? "Regex Replace" : "Search & Replace"
-    }
-
-    function ruleSummary(rule) {
-        if (!rule) return ""
-        if (rule.type === "replace") {
-            const search = rule.search || "text"
-            return search + " -> " + (rule.replace || "")
-        }
-        if (rule.type === "format") return (rule.prefix || "") + "name" + (rule.suffixText || "")
-        if (rule.type === "numbering") return rule.position + " from " + rule.start
-        if (rule.type === "template") return (rule.text || "Name") + " + number"
-        if (rule.type === "transform") {
-            const labels = ["lowercase", "UPPERCASE", "Title Case", "Trim whitespace", "Collapse spaces", "Spaces to underscores", "Spaces to dashes", "Remove special chars"]
-            return labels[transformModeIndex(rule.mode)]
-        }
-        return ""
-    }
-
-    function ensureDefaultRule() {
-        if (ruleModel.count === 0) {
-            ruleModel.append(defaultRule("replace"))
-        }
-        selectRule(Math.max(0, Math.min(root.selectedRuleIndex, ruleModel.count - 1)))
-    }
-
     function selectRule(index) {
-        if (index < 0 || index >= ruleModel.count) return
-        root.selectedRuleIndex = index
+        if (index < 0 || index >= renameSession.ruleModel.count) return
+        renameSession.selectedRuleIndex = index
         loadRuleToEditor(index)
     }
 
     function addRule(type) {
         saveSelectedRule()
-        ruleModel.append(defaultRule(type || ruleTypeFromIndex(ruleTypeCombo.currentIndex)))
-        selectRule(ruleModel.count - 1)
-        updatePreview()
+        const index = renameSession.addRule(type || ruleTypeFromIndex(ruleTypeCombo.currentIndex))
+        loadRuleToEditor(index)
     }
 
     function removeSelectedRule() {
-        if (ruleModel.count <= 1 || root.selectedRuleIndex < 0) return
-        const nextIndex = Math.min(root.selectedRuleIndex, ruleModel.count - 2)
-        ruleModel.remove(root.selectedRuleIndex)
-        selectRule(nextIndex)
-        updatePreview()
+        if (renameSession.removeSelectedRule()) {
+            loadRuleToEditor(renameSession.selectedRuleIndex)
+        }
     }
 
     function loadRuleToEditor(index) {
-        if (index < 0 || index >= ruleModel.count) return
+        if (index < 0 || index >= renameSession.ruleModel.count) return
         root.suppressPreviewUpdates = true
-        const rule = ruleModel.get(index)
+        const rule = renameSession.ruleModel.get(index)
         ruleTypeCombo.currentIndex = ruleTypeIndex(rule.type)
         findField.text = rule.search || ""
         replaceField.text = rule.replace || ""
@@ -365,8 +301,8 @@ Dialog {
     }
 
     function saveSelectedRule() {
-        if (root.suppressPreviewUpdates || root.selectedRuleIndex < 0 || root.selectedRuleIndex >= ruleModel.count) return
-        ruleModel.set(root.selectedRuleIndex, {
+        if (root.suppressPreviewUpdates) return
+        renameSession.updateSelectedRule({
             "type": ruleTypeFromIndex(ruleTypeCombo.currentIndex),
             "search": findField.text,
             "replace": replaceField.text,
@@ -387,135 +323,13 @@ Dialog {
     function editorChanged() {
         if (root.suppressPreviewUpdates) return
         saveSelectedRule()
-        updatePreview()
-    }
-
-    function getRules() {
-        saveSelectedRule()
-        let rules = []
-        for (let i = 0; i < ruleModel.count; ++i) {
-            const rule = ruleModel.get(i)
-            if (rule.type === "replace") {
-                rules.push({
-                "type": "replace",
-                    "search": rule.search || "",
-                    "replace": rule.replace || "",
-                    "caseSensitive": rule.caseSensitive || false,
-                    "regex": rule.regex || false
-                })
-            } else if (rule.type === "format") {
-                rules.push({
-                "type": "format",
-                    "prefix": rule.prefix || "",
-                    "suffix": rule.suffixText || ""
-                })
-            } else if (rule.type === "numbering") {
-                rules.push({
-                "type": "numbering",
-                    "start": rule.start || 0,
-                    "padding": rule.padding || 2,
-                    "position": rule.position || "suffix"
-                })
-            } else if (rule.type === "template") {
-                rules.push({
-                "type": "template",
-                    "text": rule.text || "",
-                    "start": rule.seqStart || 1,
-                    "padding": rule.seqPadding || 2
-                })
-            } else if (rule.type === "transform") {
-                rules.push({
-                    "type": "transform",
-                    "mode": rule.mode || "lowercase"
-                })
-            }
-        }
-        return rules
-    }
-
-    function updatePreview() {
-        if (root.suppressPreviewUpdates) {
-            return;
-        }
-        if (!controller) {
-            return;
-        }
-        if (root.isApplied) {
-            return;
-        }
-        
-        let rules = getRules()
-        let preview = controller.previewBatchRename(sourcePaths, rules)
-        
-        root.previewModel = preview
-        filterPreviewModel()
-    }
-
-    function filterPreviewModel() {
-        internalPreviewModel.clear()
-        let conflict = false
-        let query = root.searchFilter.toLowerCase().trim()
-        
-        for (let i = 0; i < root.previewModel.length; i++) {
-            let item = root.previewModel[i]
-            if (item.hasConflict) {
-                conflict = true
-            }
-            
-            if (query === "" || 
-                item.oldName.toLowerCase().includes(query) || 
-                item.newName.toLowerCase().includes(query)) {
-                
-                internalPreviewModel.append({
-                    "oldPath": item.oldPath,
-                    "oldName": item.oldName,
-                    "newName": item.newName,
-                    "newPath": item.newPath,
-                    "hasConflict": item.hasConflict || false,
-                    "error": item.error || "",
-                    "success": (item.success !== undefined && item.success !== null) ? item.success : false,
-                    "originalIndex": i
-                })
-            }
-        }
-        root.hasConflicts = conflict
     }
 
     function applyChanges() {
-        if (!controller) return;
-        
-        let rules = getRules()
-        let results = controller.applyBatchRename(sourcePaths, rules)
-        
-        let successCount = 0
-        let failCount = 0
-        let updatedPreview = []
-        
-        for (let i = 0; i < results.length; i++) {
-            let res = results[i]
-            let prevItem = root.previewModel[i]
-            let successVal = res.success === true
-            if (successVal) {
-                successCount++
-            } else {
-                failCount++
-            }
-            updatedPreview.push({
-                "oldPath": prevItem.oldPath,
-                "oldName": prevItem.oldName,
-                "newName": prevItem.newName,
-                "newPath": prevItem.newPath,
-                "hasConflict": prevItem.hasConflict || false,
-                "success": successVal,
-                "error": res.error || ""
-            })
-        }
-        
-        root.successCount = successCount
-        root.failCount = failCount
-        root.isApplied = true
-        root.previewModel = updatedPreview
-        filterPreviewModel()
+        if (!controller || root.isApplying) return
+        saveSelectedRule()
+        renameSession.regeneratePreview()
+        controller.startBatchRename(renameSession.sourcePaths, renameSession.engineRules())
     }
 
     contentItem: RowLayout {
@@ -527,12 +341,12 @@ Dialog {
 
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Escape) {
-                root.reject()
+                if (!root.isApplying) root.reject()
                 event.accepted = true
             } else if (event.key === Qt.Key_Enter || event.key === Qt.Key_Return) {
                 if (root.isApplied) {
                     root.accept()
-                } else if (!root.hasConflicts && root.previewModel.length > 0) {
+                } else if (!root.hasConflicts && renameSession.totalCount > 0) {
                     applyChanges()
                 }
                 event.accepted = true
@@ -569,15 +383,15 @@ Dialog {
                         Label { text: "RULES"; color: Theme.categoryAction; font.pixelSize: Theme.fontSizeMicro; font.bold: true; font.letterSpacing: 1 }
 
                         Repeater {
-                            model: ruleModel
+                            model: renameSession.ruleModel
                             delegate: Rectangle {
                                 width: 288
                                 height: 46
                                 radius: Theme.radiusSm
-                                color: index === root.selectedRuleIndex
+                                color: index === renameSession.selectedRuleIndex
                                        ? Theme.withAlpha(Theme.categoryAction, themeController.isDark ? 0.18 : 0.10)
                                        : Theme.panelSurfaceSoft
-                                border.color: index === root.selectedRuleIndex
+                                border.color: index === renameSession.selectedRuleIndex
                                               ? Theme.withAlpha(Theme.categoryAction, 0.48)
                                               : Theme.panelBorder
                                 border.width: 1
@@ -598,7 +412,7 @@ Dialog {
                                         Layout.fillWidth: true
                                         spacing: 1
                                         Label {
-                                            text: (index + 1) + ". " + root.ruleTitle(ruleModel.get(index))
+                                            text: (index + 1) + ". " + model.title
                                             color: Theme.textPrimary
                                             font.pixelSize: Theme.fontSizeLabel
                                             font.weight: Font.DemiBold
@@ -606,7 +420,7 @@ Dialog {
                                             Layout.fillWidth: true
                                         }
                                         Label {
-                                            text: root.ruleSummary(ruleModel.get(index))
+                                            text: model.summary
                                             color: Theme.textSecondary
                                             font.pixelSize: Theme.fontSizeCaption
                                             elide: Text.ElideRight
@@ -616,7 +430,7 @@ Dialog {
 
                                     Button {
                                         flat: true
-                                        enabled: ruleModel.count > 1
+                                        enabled: renameSession.ruleModel.count > 1
                                         Layout.preferredWidth: 26
                                         Layout.preferredHeight: 26
                                         onClicked: {
@@ -958,8 +772,7 @@ Dialog {
                         leftPadding: 4
                         background: Rectangle { color: "transparent" }
                         onTextChanged: {
-                            root.searchFilter = text
-                            filterPreviewModel()
+                            renameSession.filterText = text
                         }
                     }
                     
@@ -991,7 +804,7 @@ Dialog {
                     }
                     Item { Layout.fillWidth: true }
                     Label {
-                        text: internalPreviewModel.count + " files"
+                        text: renameSession.previewModel.count + " files"
                         color: Theme.textSecondary; font.pixelSize: Theme.fontSizeMicro; font.bold: true
                     }
                 }
@@ -1003,7 +816,7 @@ Dialog {
                 id: previewList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                model: internalPreviewModel
+                model: renameSession.previewModel
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 

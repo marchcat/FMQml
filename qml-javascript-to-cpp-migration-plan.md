@@ -19,6 +19,53 @@ The testing plan assumes one developer, not a QA team. The default verification 
 - a short manual smoke test for QML binding and visual behavior;
 - no screenshot tests, live-network tests, or exhaustive provider/account matrices.
 
+## Implementation Status — 2026-07-15
+
+The first delivery group is complete and committed. The working tree was clean
+when this status was recorded.
+
+| Track | Status | Commit | Result |
+| --- | --- | --- | --- |
+| Track 3 — Folder Compare transitions | Complete | `cd43bcb` | Planned-action cycling and validation are owned by `FolderCompareModel`; QML no longer calculates the next state. Scanner failures such as inaccessible paths are retained as per-entry results instead of aborting the whole comparison. |
+| Track 1 — Path semantics and action availability | Complete for the planned migration scope | `acd5073` | `PathSemantics` and `FileActionPolicyEvaluator` own the migrated classification and policy rules. QML call sites delegate semantic questions to the controller/policy instead of parsing schemes themselves. |
+| Track 2 — Provider presentation and special entries | Complete | `acd5073` | Provider entries carry semantic action, overlay, and recolor roles; C++ owns Load More dispatch and shared presentation resolution for panels, breadcrumbs, previews, and Quick Look. The obsolete `FilePanelIconPolicy.qml` was removed. |
+| Track 5 — Batch Rename session | Complete; async apply verification pending | — | C++ typed rule, preview, and session models own rules, debounced preview generation, filtering, counts, and path-based apply reconciliation. QML no longer owns internal rule/preview arrays, and the obsolete controller preview adapter was removed. After the synchronous migration passed manual smoke, batch apply was moved to a queued `FilePanelController` state machine with progress and path-based completion while preserving preflight, order, conflict, and result semantics. |
+| Track 4 — Audio Tag Editor session | Not started | — | Planned after Batch Rename because it has the higher async and file-I/O risk. |
+
+Validation completed for the first delivery group:
+
+- the full CTest suite passes: 31/31;
+- the Folder Compare state-number/`nextPlanAction` cleanup gate has no matches;
+- QML contains no `__load_more__` construction or dispatch;
+- remaining `isProviderPath`, `pathCanShowProperties`, and
+  `pathCanBeFavorited` QML helpers are thin controller delegates or UI
+  composition checks, not independent scheme parsers;
+- manual smoke testing covered Folder Compare, inaccessible scan entries,
+  combined one-sided/different filtering, provider Load More, context-menu
+  icons, breadcrumb menus and Telegram avatars, branded-icon recoloring,
+  middle elision, and native/non-native provider folder badges.
+
+Implementation notes:
+
+- Some proposed test executable names were not copied literally. Coverage lives
+  in the existing `folder_compare_scanner_test` plus the new
+  `path_semantics_test`, `file_action_policy_evaluator_test`,
+  `file_entry_presentation_resolver_test`, and
+  `provider_semantic_plumbing_test` targets.
+- Provider root URL constants remain in QML only where they are navigation
+  destinations or provider-specific preview content identifiers. They are not
+  used to synthesize model entries or infer Load More behavior.
+
+### Next checkpoint
+
+Manually verify queued Batch Rename apply with a medium local set before marking
+its async extension complete. The controller executes one rename per event-loop
+turn and keeps thread-affine `FileProvider` objects on their owning thread.
+Providers whose individual `renamePath()` implementation blocks internally may
+still pause one step and require a provider-specific async mutation API. Within
+the original JavaScript-to-C++ migration plan, Track 4 — Audio Tag Editor is the
+remaining product track.
+
 ## Current Boundary Problems
 
 The QML code is not merely formatting data. In several places it currently:

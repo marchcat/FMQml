@@ -328,6 +328,8 @@ qt_add_executable(fm
     src/controllers/ThumbnailController.h
     src/controllers/QuickLookController.cpp
     src/controllers/QuickLookController.h
+    src/controllers/BatchRenameSession.cpp
+    src/controllers/BatchRenameSession.h
     src/preview/AudioCoverExtractor.cpp
     src/preview/AudioCoverExtractor.h
     src/preview/Fb2PreviewLoader.cpp
@@ -354,6 +356,10 @@ qt_add_executable(fm
     src/core/ChecksumCalculator.h
     src/core/BatchRenameEngine.cpp
     src/core/BatchRenameEngine.h
+    src/models/BatchRenameRuleModel.cpp
+    src/models/BatchRenameRuleModel.h
+    src/models/BatchRenamePreviewModel.cpp
+    src/models/BatchRenamePreviewModel.h
     src/core/DriveUtils.cpp
     src/core/DriveUtils.h
     src/core/VolumeMonitor.cpp
@@ -1455,6 +1461,21 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(batch_rename_engine_test PRIVATE src/core)
     target_link_libraries(batch_rename_engine_test PRIVATE Qt6::Core)
     add_test(NAME batch_rename_engine_test COMMAND batch_rename_engine_test)
+
+    add_executable(batch_rename_session_test
+        tests/core/BatchRenameSessionTest.cpp
+        src/controllers/BatchRenameSession.cpp
+        src/controllers/BatchRenameSession.h
+        src/models/BatchRenameRuleModel.cpp
+        src/models/BatchRenameRuleModel.h
+        src/models/BatchRenamePreviewModel.cpp
+        src/models/BatchRenamePreviewModel.h
+        src/core/BatchRenameEngine.cpp
+        src/core/BatchRenameEngine.h
+    )
+    target_include_directories(batch_rename_session_test PRIVATE src/core src/models src/controllers)
+    target_link_libraries(batch_rename_session_test PRIVATE Qt6::Core Qt6::Qml)
+    add_test(NAME batch_rename_session_test COMMAND batch_rename_session_test)
 
     add_executable(path_semantics_test
         tests/core/PathSemanticsTest.cpp

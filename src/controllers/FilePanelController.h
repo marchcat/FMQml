@@ -6,6 +6,7 @@
 #include <QSet>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QPointer>
 #include <QLatin1String>
 #include <atomic>
 #include <memory>
@@ -56,6 +57,9 @@ class FilePanelController final : public QObject {
     Q_PROPERTY(bool categoryFilterSuspended READ categoryFilterSuspended NOTIFY categoryFilterStateChanged)
     Q_PROPERTY(QString categoryFilterSummary READ categoryFilterSummary NOTIFY categoryFilterStateChanged)
     Q_PROPERTY(ChecksumCalculator* checksumCalculator READ checksumCalculator CONSTANT)
+    Q_PROPERTY(bool batchRenameInProgress READ batchRenameInProgress NOTIFY batchRenameStateChanged)
+    Q_PROPERTY(int batchRenameCompletedCount READ batchRenameCompletedCount NOTIFY batchRenameStateChanged)
+    Q_PROPERTY(int batchRenameTotalCount READ batchRenameTotalCount NOTIFY batchRenameStateChanged)
 
     static constexpr QLatin1String DEVICE_ROOT{"devices://"};
     static constexpr QLatin1String FAVORITES_ROOT{"favorites://"};
@@ -108,6 +112,9 @@ public:
     bool categoryFilterActive() const;
     bool categoryFilterSuspended() const;
     QString categoryFilterSummary() const;
+    bool batchRenameInProgress() const;
+    int batchRenameCompletedCount() const;
+    int batchRenameTotalCount() const;
     Q_INVOKABLE QString fileNameForPath(const QString &path) const;
     Q_INVOKABLE QString parentPathForPath(const QString &path) const;
     Q_INVOKABLE QString childPathForPath(const QString &parentPath, const QString &name) const;
@@ -180,8 +187,7 @@ public:
     Q_INVOKABLE bool renamePath(const QString &oldPath, const QString &newName);
     Q_INVOKABLE bool renameAsAdministrator(int row, const QString &newName);
     
-    Q_INVOKABLE QVariantList previewBatchRename(const QStringList &paths, const QVariantList &rules);
-    Q_INVOKABLE QVariantList applyBatchRename(const QStringList &paths, const QVariantList &rules);
+    Q_INVOKABLE bool startBatchRename(const QStringList &paths, const QVariantList &rules);
 
     Q_INVOKABLE bool createFolder(const QString &name);
     Q_INVOKABLE bool createFolderAsAdministrator(const QString &name);
@@ -233,6 +239,8 @@ signals:
     void directorySuggestionEntriesReady(int requestId, const QVariantList &suggestions);
     // Emitted on the GUI thread when async metadata finishes
     void metadataReady(const QString &path, const QVariantMap &meta);
+    void batchRenameStateChanged();
+    void batchRenameFinished(const QVariantList &results);
 
 private slots:
     void onSystemApplicationChooserResponse(uint response, const QVariantMap &results);
@@ -258,6 +266,8 @@ private:
     void setNavigationPending(bool pending, const QString &path = {});
     void recoverFromMissingPath(const QString &path, const QString &error);
     void scheduleCreatedEntryReveal(const QString &path);
+    void processNextBatchRenameItem();
+    void finishBatchRename(QVariantList results, bool refreshPanel);
 
     DirectoryModel m_directoryModel;
     std::unique_ptr<FileProvider> m_fileProvider;
@@ -288,6 +298,13 @@ private:
     QString m_categoryFilterContext;
     ChecksumCalculator m_checksumCalculator;
     BatchRenameEngine m_renameEngine;
+    QList<BatchRenameEngine::RenamePreview> m_batchRenamePreviews;
+    QVariantList m_batchRenameResults;
+    QPointer<FileProvider> m_batchRenameProvider;
+    QString m_batchRenameStartPath;
+    int m_batchRenameIndex = 0;
+    bool m_batchRenameInProgress = false;
+    bool m_batchRenameAllSuccess = true;
 
     void setIsDeviceRoot(bool value);
     void setIsFavoritesRoot(bool value);

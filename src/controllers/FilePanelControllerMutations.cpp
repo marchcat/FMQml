@@ -196,25 +196,23 @@ bool FilePanelController::renameAsAdministrator(int row, const QString &newName)
 #endif
 }
 
-QVariantList FilePanelController::previewBatchRename(const QStringList &paths, const QVariantList &rules)
-{
-    QList<BatchRenameEngine::RenamePreview> previews = m_renameEngine.generatePreview(paths, rules);
-    QVariantList result;
-    for (const auto &p : previews) {
-        QVariantMap map;
-        map["oldPath"] = p.oldPath;
-        map["oldName"] = p.oldName;
-        map["newName"] = p.newName;
-        map["newPath"] = p.newPath;
-        map["hasConflict"] = p.hasConflict;
-        map["error"] = p.error;
-        result.append(map);
-    }
-    return result;
-}
+bool FilePanelController::batchRenameInProgress() const { return m_batchRenameInProgress; }
+int FilePanelController::batchRenameCompletedCount() const { return m_batchRenameIndex; }
+int FilePanelController::batchRenameTotalCount() const { return m_batchRenamePreviews.size(); }
 
-QVariantList FilePanelController::applyBatchRename(const QStringList &paths, const QVariantList &rules)
+bool FilePanelController::startBatchRename(const QStringList &paths, const QVariantList &rules)
 {
+    if (m_batchRenameInProgress) return false;
+
+    m_batchRenameInProgress = true;
+    m_batchRenameIndex = 0;
+    m_batchRenamePreviews.clear();
+    m_batchRenameResults.clear();
+    m_batchRenameProvider = m_fileProvider.get();
+    m_batchRenameStartPath = currentPath();
+    m_batchRenameAllSuccess = true;
+    emit batchRenameStateChanged();
+
     if (isVirtualRoot()
         || !(m_fileProvider->capabilities() & FileProvider::Rename)
         || !pathCanCreateChildren(currentPath())) {
@@ -233,13 +231,15 @@ QVariantList FilePanelController::applyBatchRename(const QStringList &paths, con
         setOperationError(QStringLiteral("You do not have permission to rename items here."),
                           currentPath(),
                           QStringLiteral("rename"));
-        return results;
+        finishBatchRename(results, false);
+        return true;
     }
 
     for (const QString &path : paths) {
         if (ArchiveSupport::isArchivePath(path)) {
             setStatusMessage(QStringLiteral("Archive contents are read-only"));
-            return {};
+            finishBatchRename({}, false);
+            return true;
         }
         if (!pathCanDelete(path)) {
             QVariantList results;
@@ -259,16 +259,17 @@ QVariantList FilePanelController::applyBatchRename(const QStringList &paths, con
             setOperationError(QStringLiteral("You do not have permission to rename one or more selected items."),
                               path,
                               QStringLiteral("rename"));
-            return results;
+            finishBatchRename(results, false);
+            return true;
         }
     }
 
-    QList<BatchRenameEngine::RenamePreview> previews = m_renameEngine.generatePreview(paths, rules);
+    m_batchRenamePreviews = m_renameEngine.generatePreview(paths, rules);
     QVariantList results;
     
     // Check conflicts first
     bool hasAnyConflict = false;
-    for (const auto &p : previews) {
+    for (const auto &p : m_batchRenamePreviews) {
         if (p.hasConflict) {
             hasAnyConflict = true;
             break;
@@ -276,7 +277,7 @@ QVariantList FilePanelController::applyBatchRename(const QStringList &paths, con
     }
     
     if (hasAnyConflict) {
-        for (const auto &p : previews) {
+        for (const auto &p : m_batchRenamePreviews) {
             QVariantMap map;
             map["oldPath"] = p.oldPath;
             map["oldName"] = p.oldName;
@@ -286,46 +287,74 @@ QVariantList FilePanelController::applyBatchRename(const QStringList &paths, con
             map["error"] = p.hasConflict ? p.error : QStringLiteral("Cancelled due to other conflicts");
             results.append(map);
         }
-        return results;
+        finishBatchRename(results, false);
+        return true;
     }
 
-    bool allSuccess = true;
-    for (const auto &p : previews) {
-        QVariantMap map;
-        map["oldPath"] = p.oldPath;
-        map["oldName"] = p.oldName;
-        map["newName"] = p.newName;
-        map["newPath"] = p.newPath;
+    emit batchRenameStateChanged();
+    QTimer::singleShot(0, this, &FilePanelController::processNextBatchRenameItem);
+    return true;
+}
 
-        if (p.newName == p.oldName) {
-            map["success"] = true;
-            map["error"] = QString();
-        } else {
-            if (m_fileProvider->renamePath(p.oldPath, p.newName)) {
-                FileAccessResolver::invalidate(p.oldPath);
-                FileAccessResolver::invalidate(p.newPath);
-                FileAccessResolver::invalidate(m_fileProvider->parentPath(p.oldPath));
-                if (!m_directoryModel.renamePath(p.oldPath, p.newPath)) {
-                    // refresh at the end
-                }
-                emit entryRenamed(p.oldPath, p.newPath);
-                map["success"] = true;
-                map["error"] = QString();
-            } else {
-                allSuccess = false;
-                map["success"] = false;
-                map["error"] = QStringLiteral("Rename failed (system error)");
-            }
-        }
-        results.append(map);
+void FilePanelController::processNextBatchRenameItem()
+{
+    if (!m_batchRenameInProgress) return;
+    if (m_batchRenameIndex >= m_batchRenamePreviews.size()) {
+        finishBatchRename(m_batchRenameResults, true);
+        return;
     }
-    
-    if (!allSuccess) {
+
+    const auto &preview = m_batchRenamePreviews.at(m_batchRenameIndex);
+    QVariantMap result{{QStringLiteral("oldPath"), preview.oldPath},
+                       {QStringLiteral("oldName"), preview.oldName},
+                       {QStringLiteral("newName"), preview.newName},
+                       {QStringLiteral("newPath"), preview.newPath}};
+
+    const bool providerStillValid = m_batchRenameProvider
+        && m_batchRenameProvider == m_fileProvider.get()
+        && currentPath() == m_batchRenameStartPath;
+    if (!providerStillValid) {
+        m_batchRenameAllSuccess = false;
+        result[QStringLiteral("success")] = false;
+        result[QStringLiteral("error")] = QStringLiteral("Cancelled because the location changed");
+    } else if (preview.newName == preview.oldName) {
+        result[QStringLiteral("success")] = true;
+        result[QStringLiteral("error")] = QString();
+    } else if (m_batchRenameProvider->renamePath(preview.oldPath, preview.newName)) {
+        FileAccessResolver::invalidate(preview.oldPath);
+        FileAccessResolver::invalidate(preview.newPath);
+        FileAccessResolver::invalidate(m_batchRenameProvider->parentPath(preview.oldPath));
+        m_directoryModel.renamePath(preview.oldPath, preview.newPath);
+        emit entryRenamed(preview.oldPath, preview.newPath);
+        result[QStringLiteral("success")] = true;
+        result[QStringLiteral("error")] = QString();
+    } else {
+        m_batchRenameAllSuccess = false;
+        result[QStringLiteral("success")] = false;
+        result[QStringLiteral("error")] = QStringLiteral("Rename failed (system error)");
+    }
+
+    m_batchRenameResults.append(result);
+    ++m_batchRenameIndex;
+    emit batchRenameStateChanged();
+    QTimer::singleShot(0, this, &FilePanelController::processNextBatchRenameItem);
+}
+
+void FilePanelController::finishBatchRename(QVariantList results, bool refreshPanel)
+{
+    if (!m_batchRenameAllSuccess) {
         setStatusMessage(QStringLiteral("Some files could not be renamed"));
     }
-    
-    refresh();
-    return results;
+    if (refreshPanel) refresh();
+
+    m_batchRenameInProgress = false;
+    m_batchRenameProvider.clear();
+    m_batchRenamePreviews.clear();
+    m_batchRenameResults.clear();
+    m_batchRenameStartPath.clear();
+    m_batchRenameIndex = 0;
+    emit batchRenameStateChanged();
+    emit batchRenameFinished(results);
 }
 
 bool FilePanelController::createFolder(const QString &name)
@@ -517,4 +546,3 @@ void FilePanelController::scheduleCreatedEntryReveal(const QString &path)
     m_createdEntryRevealAttempts = 0;
     m_createdEntryRevealTimer.start();
 }
-
