@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Effects
 import "../style"
 import "common"
 import "dialogs"
@@ -342,8 +341,8 @@ Popup {
         RowLayout {
             spacing: 8
             Rectangle {
-                width: 3
-                height: 12
+                Layout.preferredWidth: 3
+                Layout.preferredHeight: 12
                 radius: 1.5
                 color: accentColor
             }
@@ -381,7 +380,7 @@ Popup {
                             id: keycapText
                             anchors.centerIn: parent
                             text: modelData.key
-                            font.family: "Segoe UI", "Inter", "sans-serif"
+                            font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontSizeMicro
                             font.weight: Font.DemiBold
                             color: Theme.textPrimary

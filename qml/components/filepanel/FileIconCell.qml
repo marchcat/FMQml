@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
-import QtQuick.Layouts
 import "../../style"
 import "../common"
 
@@ -441,9 +440,6 @@ Item {
                 root.thumbnailDisplayed = true
             }
         }
-
-        layer.enabled: visible
-        layer.effect: null
     }
 
     Rectangle {

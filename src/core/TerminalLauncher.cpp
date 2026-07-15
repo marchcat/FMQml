@@ -114,8 +114,9 @@ namespace {
         // Yakuake's runCommand API targets the newly-added session. Feeding it a
         // short source file mirrors the yakuake-session script and is more reliable
         // across user shells than trying to inline an escaped cd command.
+        QString sessionId;
         if (!runDbus(dbus, {QStringLiteral("org.kde.yakuake"), QStringLiteral("/yakuake/sessions"),
-            QStringLiteral("addSession")})) {
+            QStringLiteral("addSession")}, &sessionId) || sessionId.isEmpty()) {
             if (!sessionLeaseId.isEmpty()) {
                 CleanupSubsystem::instance().scheduleDeleteOnFailure(sessionLeaseId);
             } else {
@@ -135,16 +136,8 @@ namespace {
                 return false;
                          }
 
-                         QString sessionIds;
-                         if (runDbus(dbus, {QStringLiteral("org.kde.yakuake"), QStringLiteral("/yakuake/sessions"),
-                             QStringLiteral("sessionIdList")}, &sessionIds)) {
-                             const QStringList ids = sessionIds.split(QLatin1Char(','), Qt::SkipEmptyParts);
-                             if (!ids.isEmpty()) {
-                                 const QString sessionId = ids.constLast().trimmed();
-                                 runDbus(dbus, {QStringLiteral("org.kde.yakuake"), QStringLiteral("/yakuake/tabs"),
-                                     QStringLiteral("setTabTitle"), sessionId, QFileInfo(workingDirectory).fileName()});
-                             }
-                             }
+                         runDbus(dbus, {QStringLiteral("org.kde.yakuake"), QStringLiteral("/yakuake/tabs"),
+                             QStringLiteral("setTabTitle"), sessionId, QFileInfo(workingDirectory).fileName()});
 
                              if (!sessionLeaseId.isEmpty()) {
                                  QTimer::singleShot(60000, &CleanupSubsystem::instance(), [sessionLeaseId]() {

@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Effects
 import "../style"
 import "filepanel"
 
@@ -387,7 +386,7 @@ Item {
         RowLayout {
             id: fileContent
             anchors.fill: parent
-            anchors.leftMargin: 12
+            anchors.leftMargin: root.panel && root.panel.showSelectionBadges ? 28 : 12
             anchors.rightMargin: 12
             spacing: 12
             visible: !isRenaming

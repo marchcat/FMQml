@@ -81,7 +81,13 @@ bool isImageSuffix(const QString &suffix)
         QStringLiteral("gif"),
         QStringLiteral("bmp"),
         QStringLiteral("webp"),
-        QStringLiteral("ico")
+        QStringLiteral("ico"),
+        QStringLiteral("svg"),
+        QStringLiteral("svgz"),
+        QStringLiteral("tif"),
+        QStringLiteral("tiff"),
+        QStringLiteral("avif"),
+        QStringLiteral("heic")
     };
     return imageSuffixes.contains(suffix.toLower());
 }
@@ -520,4 +526,3 @@ LocalFileProvider::~LocalFileProvider()
         future.waitForFinished();
     }
 }
-

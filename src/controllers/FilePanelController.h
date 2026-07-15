@@ -168,6 +168,7 @@ public:
                                                       bool clearXModifiers);
     Q_INVOKABLE void revealInFileManager(int row);
     Q_INVOKABLE void openInTerminal();
+    Q_INVOKABLE void openPathInTerminal(const QString &path);
     Q_INVOKABLE bool canSetWallpaperPath(const QString &path) const;
     Q_INVOKABLE void setAsWallpaper(int row);
     Q_INVOKABLE void setPathAsWallpaper(const QString &path);

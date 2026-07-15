@@ -45,11 +45,11 @@ Item {
         return dot > 0 && dot < pathFileName.length - 1 ? pathFileName.slice(dot + 1).toUpperCase() : ""
     }
     readonly property string suffixLower: suffix.toLowerCase()
-    readonly property bool mediaEligible: [
-        "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "heic", "heif",
-        "mp4", "m4v", "mov", "webm", "mkv", "avi"
-    ].indexOf(suffixLower) >= 0
+    readonly property string mimeType: info && info.mimeType ? String(info.mimeType).toLowerCase() : ""
     readonly property bool videoFile: ["mp4", "m4v", "mov", "webm", "mkv", "avi"].indexOf(suffixLower) >= 0
+    readonly property bool mediaEligible: (info && info.isImage === true)
+                                          || mimeType.indexOf("image/") === 0
+                                          || videoFile
     readonly property bool hasThumbnail: info && info.hasThumbnail === true
     property bool thumbnailFailed: false
     readonly property bool thumbnailEligible: mediaEligible && hasThumbnail && !thumbnailFailed

@@ -1,6 +1,5 @@
 import "../common"
 import "../../style"
-import QtQml.Models
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

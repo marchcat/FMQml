@@ -327,6 +327,12 @@ void FilePanelController::openInTerminal()
     TerminalLauncher::openTerminalAt(path);
 }
 
+void FilePanelController::openPathInTerminal(const QString &path)
+{
+    if (isVirtualRoot()) return;
+    TerminalLauncher::openTerminalAt(path);
+}
+
 bool FilePanelController::canSetWallpaperPath(const QString &path) const
 {
     if (isProviderUriPath(path)) {

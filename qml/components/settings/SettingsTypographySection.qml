@@ -80,8 +80,8 @@ DialogSection {
                     }
 
                     RecolorSvgIcon {
-                        width: 10
-                        height: 10
+                        Layout.preferredWidth: 10
+                        Layout.preferredHeight: 10
                         sourcePath: "../../assets/icons/arrow-up.svg"
                         sourceSize: Qt.size(16, 16)
                         recolorEnabled: true

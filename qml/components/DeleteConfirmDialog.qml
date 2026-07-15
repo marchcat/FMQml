@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Effects
 import "../style"
 import "dialogs"
 import "common"
@@ -257,7 +256,7 @@ Popup {
                 Rectangle {
                     visible: root.hasMore
                     Layout.fillWidth: true
-                    height: 28
+                    Layout.preferredHeight: 28
                     color: "transparent"
 
                     Label {

@@ -1,7 +1,5 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Dialogs
-import QtQuick.Layouts
 import QtQml
 import ".."
 import "../../style"
@@ -502,7 +500,7 @@ Item {
             iconColor: Theme.actionIconColor("terminal")
             visible: menuPolicy.canOpenTerminal()
             enabled: visible
-            onTriggered: root.controller.openInTerminal()
+            onTriggered: root.controller.openPathInTerminal(root.contextPathValue)
         }
         ThemedMenuSeparator {
             visible: root.customActions.length > 0
