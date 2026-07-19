@@ -53,7 +53,7 @@ if(UNIX AND NOT APPLE)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
 endif()
 
-find_package(Qt6 COMPONENTS Pdf QUIET)
+find_package(Qt6 REQUIRED COMPONENTS Pdf)
 
 option(FM_ENABLE_MEGA_PLUGIN "Enable MEGA.nz provider plugin" ON)
 set(HAS_MEGA_PLUGIN OFF)
